@@ -11,20 +11,65 @@ export const nav = {
 };
 
 export const hero = {
-  headline: "Retrieval starts at the provision, not the chunk",
+  /**
+   * The headline is split so the payoff phrase can carry the accent colour.
+   * Same font, same weight, colour only, which is the emphasis rule: no
+   * second family is injected into a sans headline.
+   */
+  headlineLead: "Retrieval starts at the",
+  headlineAccent: "provision, not the chunk",
   subhead:
     "Tuklas navigates a document tree with lexical, structural, and reference signals, and cites an article and page on every claim.",
   ctaPrimary: "Read the spec",
   ctaSecondary: "View on GitHub",
-  previewCaption: "The explorer tree the agent navigates, as returned by the documents tree endpoint.",
+  command: {
+    label: "Clone",
+    command: "git clone https://github.com/donyelqt/Tuklas-Agent.git",
+  },
+  /**
+   * The reference design language offers an install tab row. Tuklas ships no
+   * installer, so there is one honest command and no tabs to choose between.
+   * The field exists so the layout slot is explicit rather than improvised.
+   */
+  commandTabs: ["Clone"],
 };
 
-export const backends = {
-  label: "Local LLM backends the generation interface targets",
+/**
+ * The left rail mirrors the numbered feature rail in the reference design
+ * language. It is navigation, not decoration: every entry is a real anchor to
+ * a section that exists on this page, and `aria-current` marks the one in view.
+ */
+export const rail = {
   items: [
-    { name: "Ollama", slug: "ollama", alt: "Ollama" },
-    { name: "llama.cpp", slug: "llamacpp", alt: "llama.cpp" },
-    { name: "vLLM", slug: "vllm", alt: "VLLM" },
+    { n: "01", label: "Hierarchy", href: "#problem" },
+    { n: "02", label: "Pipeline", href: "#pipeline" },
+    { n: "03", label: "Tools", href: "#tools" },
+    { n: "04", label: "Comparison", href: "#comparison" },
+    { n: "05", label: "Guardrails", href: "#guardrails" },
+    { n: "06", label: "Run locally", href: "#run-locally" },
+  ],
+};
+
+/**
+ * The strip carries two kinds of thing and the label has to admit that.
+ *
+ * ADR-004 fixes the generation interface to ollama, llama.cpp and vLLM, and
+ * rejects cloud backends, so the three runtimes are the only entries that can
+ * be described as targeted. The models beside them are examples of what those
+ * runtimes can serve locally, not providers Tuklas claims to support.
+ */
+export const backends = {
+  label: "Local runtimes, and the open-weight models they serve",
+  backends: [
+    { name: "Ollama", slug: "ollama" },
+    { name: "llama.cpp", slug: "llamacpp" },
+    { name: "vLLM", slug: "vllm" },
+  ],
+  models: [
+    { name: "Gemma", slug: "googlegemini" },
+    { name: "Qwen", slug: "qwen" },
+    { name: "Mistral", slug: "mistralai" },
+    { name: "DeepSeek", slug: "deepseek" },
   ],
 };
 
@@ -51,6 +96,8 @@ export const problem = {
     ],
   },
   note: "Structure is kept at ingest so a query can use it, rather than trying to recover it from text.",
+  previewCaption:
+    "The explorer tree the agent navigates, as returned by the documents tree endpoint.",
 };
 
 export const pipeline = {

@@ -14,17 +14,32 @@ const FOCUS =
 /**
  * Copies of the logo group in the scrolling track.
  *
- * Three 24px logos with 32px spacing total 168px per group, far less than any
- * viewport. With the original two copies the track measured 677px inside a
- * 1427px strip, so the loop seam and a 751px empty gap were both on screen for
- * most of every cycle, which is what made the duplicate list read as a bug
- * rather than as a loop.
+ * The runtimes list is three 24px marks at 32px spacing with a 32px trailing
+ * pad: 3 x 24 + 2 x 32 + 32 = 168px. The models list adds a 1px seam rule and
+ * 32px of padding, then four marks: 1 + 32 + 4 x 24 + 3 x 32 + 32 = 225px.
+ * One group is therefore 393px.
  *
- * Sixteen copies give a 2688px track, which is wider than any display this
- * page is likely to meet, and the animation steps exactly one group width
- * (`-100% / 16`), so the seam is never inside the viewport at any width.
+ * Seven copies give a 2751px track, wider than the 2560px display this page
+ * is built to survive, so the animation steps exactly one group width
+ * (`-100% / 7`) and the seam is never inside the viewport at that width.
  */
-const GROUPS = 16;
+const GROUPS = 7;
+
+/**
+ * Runtimes first, then the models they serve, with a rule between them.
+ *
+ * The two kinds are not interchangeable. A mark in the first run is a runtime
+ * the product targets directly; a mark in the second is an example of
+ * something a runtime can serve. Read as one undifferentiated run of seven
+ * logos they blur together, so they are separate sibling lists and the seam
+ * between them is a drawn line, not spacing that happens to fall there.
+ */
+const MARK_GROUPS = [
+  { key: "runtimes", items: backends.backends },
+  { key: "models", items: backends.models },
+];
+
+const ALL_MARKS = [...backends.backends, ...backends.models];
 
 /**
  * The one marquee on the page.
@@ -104,7 +119,7 @@ export function BackendMarquee(): React.JSX.Element {
 
       {/* The real list, once, for assistive technology. */}
       <ul className="sr-only">
-        {backends.items.map((item) => (
+        {ALL_MARKS.map((item) => (
           <li key={item.slug}>{item.name}</li>
         ))}
       </ul>
@@ -117,19 +132,27 @@ export function BackendMarquee(): React.JSX.Element {
           aria-hidden="true"
         >
           {Array.from({ length: GROUPS }, (_, group) => (
-            <ul
-              key={group}
-              className="marquee-group flex shrink-0 items-center gap-8 pr-8"
-            >
-              {backends.items.map((item) => (
-                <li
-                  key={item.slug}
-                  className="flex items-center justify-center text-ink-7"
+            <div key={group} className="marquee-group flex shrink-0 items-center">
+              {MARK_GROUPS.map((markGroup) => (
+                <ul
+                  key={markGroup.key}
+                  className={`flex shrink-0 items-center gap-8 pr-8 ${
+                    markGroup.key === "models"
+                      ? "border-l border-ink-4/40 pl-8"
+                      : ""
+                  }`}
                 >
-                  <BackendMark slug={item.slug} />
-                </li>
+                  {markGroup.items.map((item) => (
+                    <li
+                      key={item.slug}
+                      className="flex items-center justify-center text-ink-7"
+                    >
+                      <BackendMark slug={item.slug} />
+                    </li>
+                  ))}
+                </ul>
               ))}
-            </ul>
+            </div>
           ))}
         </div>
       </div>
