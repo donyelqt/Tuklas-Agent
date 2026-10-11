@@ -32,7 +32,7 @@ Honest counter-argument, recorded so the trade-off is on file: Astro ships rough
 
 - Next.js 16, App Router, React 19, TypeScript strict.
 - Tailwind CSS v4 via `@tailwindcss/postcss`. No `tailwind.config.js`. Theme declared with `@theme` in CSS.
-- Fonts self-hosted through `next/font/google`: **Geist** and **JetBrains Mono**, both still loaded, now sitting behind Apple-first `--font-sans` and `--font-mono` stacks (section 4). No `<link>` to Google Fonts.
+- Fonts self-hosted through `next/font/google`: **Geist** and **JetBrains Mono**, both loaded, and both leading the `--font-sans` and `--font-mono` stacks (section 4). No `<link>` to Google Fonts.
 - Icons: `@phosphor-icons/react` only, one family, `weight="regular"` throughout, sized from one scale. No shadcn/ui on the marketing route: it is specified in `architecture.md` §7 for the explorer panes, and adding it here would add Radix and a second button system to a page that needs none.
 - **Animation: `motion` `^14.1.0`, imported as `motion/react`.** It drives the hero backdrop only. Everything else on the page stays plain CSS transitions and the one IntersectionObserver reveal. Framer Motion is the same library under its legacy name; the modern package is the one on npm and in `package.json`, so the legacy alias is not installed and must not be imported. No GSAP: there is no scroll-hijack and no pinning, so ScrollTrigger earns nothing here.
 
@@ -40,7 +40,7 @@ Honest counter-argument, recorded so the trade-off is on file: Astro ships rough
 
 ## 2. Design read and dials
 
-**Reading this as:** a developer-facing landing page for a local-first RAG research artifact, aimed at RAG engineers and legal researchers, in a dark terminal-native harness language borrowed from omp.sh, leaning toward Tailwind v4 tokens plus the Apple-first stacks of section 4 over Geist and JetBrains Mono, hairline rules, sharp corners, and a single locked accent.
+**Reading this as:** a developer-facing landing page for a local-first RAG research artifact, aimed at RAG engineers and legal researchers, in a dark terminal-native harness language borrowed from omp.sh, leaning toward Tailwind v4 tokens plus the webfont-first stacks of section 4, hairline rules, sharp corners, and a single locked accent.
 
 | Dial | Value | Reason |
 |---|---|---|
@@ -53,7 +53,7 @@ Honest counter-argument, recorded so the trade-off is on file: Astro ships rough
 - The full `--color-ink-*` ramp, hue 280, near-neutral graphite.
 - `border-radius: 0` everywhere. All-sharp is omp.sh's shape system and it is the cheapest possible shape consistency lock.
 - `box-shadow: none` on surfaces. Elevation comes from 1px rules and ink-ramp steps only.
-- Geist for sans and display, JetBrains Mono for anything technical, inherited as the fallback half of the section 4 stacks rather than as the first family on any platform.
+- Geist for sans and display, JetBrains Mono for anything technical, inherited as the first family on every platform, with the Apple system families behind them as a fallback (section 4).
 - `--tracking-tight: -0.025em` on display type.
 - `--prose-measure: 66ch` on body copy.
 - `--rule: oklch(100% 0 0 / .08)` and `--rule-strong: oklch(100% 0 0 / .14)` as the only two divider weights.
@@ -129,18 +129,19 @@ The page is dark, single theme, for its full length. No section inverts to a lig
 
 | Role | Family, in resolution order | Weight | Tracking | Notes |
 |---|---|---|---|---|
-| H1 hero | Apple system font, then Geist | 600 | `tracking-tighter` for the hero headline only | 2 lines at desktop, step-sized. The tighter step applies to the hero alone: at the hero's `text-6xl` step the inherited `-0.025em` reads loose. |
-| Section H2 | Apple system font, then Geist | 600 | `-0.025em` | max 8 words |
-| Body | Apple system font, then Geist | 400 | normal | `66ch` measure, `1.625` leading |
-| Lead paragraph | Apple system font, then Geist | 400 | normal | `ink-7`, larger than body |
-| Kicker, labels, code, metrics | SF Mono, then JetBrains Mono | 400, 500 | `+0.02em` on uppercase labels | uppercase labels are `11px` with `0.18em` tracking |
-| Buttons | Apple system font, then Geist | 500 | `-0.01em` | labels are 1 or 2 words |
+| H1 hero | Geist, then Apple system font | 600 | `tracking-tighter` for the hero headline only | 2 lines at desktop, step-sized. The tighter step applies to the hero alone: at the hero's `text-6xl` step the inherited `-0.025em` reads loose. |
+| Section H2 | Geist, then Apple system font | 600 | `-0.025em` | max 8 words |
+| Body | Geist, then Apple system font | 400 | normal | `66ch` measure, `1.625` leading |
+| Lead paragraph | Geist, then Apple system font | 400 | normal | `ink-7`, larger than body |
+| Kicker, labels, code, metrics | JetBrains Mono, then SF Mono | 400, 500 | `+0.02em` on uppercase labels | uppercase labels are `11px` with `0.18em` tracking |
+| Buttons | Geist, then Apple system font | 500 | `-0.01em` | labels are 1 or 2 words |
 
-**The family column is a stack, not a single face.** The two `@theme` tokens in `globals.css` are Apple-first: `--font-sans` resolves `-apple-system`, `BlinkMacSystemFont`, `"SF Pro Text"`, `"SF Pro"`, then `var(--font-geist-sans)`, then `ui-sans-serif, system-ui, sans-serif`; `--font-mono` resolves `SFMono-Regular`, `"SF Mono"`, then `var(--font-jetbrains-mono)`, then `ui-monospace, monospace`. `"SF Pro Text"` is named ahead of the generic `"SF Pro"` because its optical size suits body copy, and `-apple-system` resolves first on Apple platforms anyway, where the OS applies optical sizing itself.
+**The family column is a stack, and the webfonts lead it.** The two `@theme` tokens in `globals.css` are webfont-first: `--font-sans` resolves `var(--font-geist-sans)`, then `-apple-system`, `BlinkMacSystemFont`, `"SF Pro Text"`, `"SF Pro"`, then `ui-sans-serif, system-ui, sans-serif`; `--font-mono` resolves `var(--font-jetbrains-mono)`, then `SFMono-Regular`, `"SF Mono"`, then `ui-monospace, monospace`. Within the Apple fallback, `"SF Pro Text"` is named ahead of the generic `"SF Pro"` because its optical size suits body copy, and `-apple-system` resolves first on Apple platforms anyway, where the OS applies optical sizing itself.
 
-- **The Apple families are named, never shipped.** Apple's Design Resources License section 2B forbids embedding SF Pro or SF Mono, using them to display website content, and making them available over a network, and the SF Pro installer separately restricts the font to Apple-platform interface mockups. Referencing a family is not embedding it: `-apple-system` and `SFMono-Regular` ask the visitor's own operating system for a font already installed on their device, which is the mechanism apple.com itself relies on.
-- **The webfonts stay loaded, on purpose and not as leftovers.** A developer audience is mostly not on Apple, so removing Geist and JetBrains Mono would change what Windows and Linux visitors see and put a font download back in their path. The Apple entries cost zero bytes and zero layout shift, because nothing is downloaded and the OS font is present at first paint, while the fallback path keeps the existing self-hosted `display: swap` and fallback-metrics behaviour from section 11.
-- **This change is invisible off Apple, and that is the contract.** A maintainer on Windows or Linux sees no difference at all, because the stack falls through to the same webfonts as before. That is why a font change here cannot be confirmed by looking at the page locally; check the computed stack instead.
+- **One typeface on every operating system.** The webfont always wins, so a visitor on macOS, Windows and Linux sees the same letterforms. Typography no longer changes with the visitor's hardware, and that is the point of the order.
+- **The Apple families are a fallback, not a direction.** If the webfont ever fails to load, an Apple visitor degrades to real SF Pro rather than to a generic serif; everyone else falls through to their platform's UI font. That is graceful degradation, and it is the only reason the Apple entries are in the stack.
+- **The Apple families are named, never shipped.** Apple's Design Resources License section 2B forbids embedding SF Pro and using it to display website content, and forbids making it available over a network; the SF Pro installer separately restricts it to Apple-platform interface mockups. Naming a family only asks the visitor's own operating system for a font it already has, which is the mechanism apple.com itself relies on. No Apple font file is committed or fetched anywhere under `apps/web`, and each entry sits behind a webfont that always wins.
+- **The webfont costs a download and is worth it.** The self-hosted `display: swap` and fallback-metrics behaviour from section 11 is what pays for it, in exchange for the platform independence above.
 
 No serif anywhere. No italic emphasis words injected into sans headlines. Mono is the only family used for anything that is literally code, a tool signature, a metric, or an identifier.
 
@@ -280,9 +281,9 @@ From `design-taste-frontend` §9, §9.F, §9.G, plus §4.7. Mechanical pre-fligh
 
 | Metric | Target | How |
 |---|---|---|
-| LCP | under 2.0s | Hero renders as static HTML. Fonts via `next/font` with `display: swap`; the Apple entries that lead the stacks download nothing at all (section 4). No hero bitmap to download: the hero is text, a command block and the tree preview panel, all DOM, not image. |
+| LCP | under 2.0s | Hero renders as static HTML. Fonts via `next/font` with `display: swap`; the webfont leads the stacks and the Apple fallback entries behind it download nothing at all (section 4). No hero bitmap to download: the hero is text, a command block and the tree preview panel, all DOM, not image. |
 | INP | under 200ms | Zero JavaScript above the fold except the copy button, the reveal observer, and the hero backdrop. The 2000-dot field draws once on mount and once per resize and never per frame; the backdrop's drift is transform-only and compositor-side; the only per-frame work is the crest layer, about 140 dots, capped at one redraw per `1000/24` ms. That cap is the budget the layer must stay inside: it may not move to a per-frame redraw or grow past a fraction of the 200ms interaction budget. No GSAP, no scroll handlers, no third-party scripts. |
-| CLS | 0 | Fonts loaded via `next/font` with size-adjust metrics, so the webfont fallback keeps its reserved metrics; the Apple path is already present at first paint and shifts nothing. Marquee and code block have explicit reserved dimensions. Reveal animates opacity and transform only. |
+| CLS | 0 | Fonts loaded via `next/font` with size-adjust metrics, so the fallback behind the webfont keeps its reserved metrics and shifts nothing. Marquee and code block have explicit reserved dimensions. Reveal animates opacity and transform only. |
 
 ---
 
@@ -338,7 +339,7 @@ The landing page is done when every line below is verifiable, not asserted.
 [ ] Zero shadow-lg, shadow-xl, shadow-2xl, or drop-shadow in marketing components
 [ ] Zero #000 and zero #fff hex literals; all colour via theme tokens
 [ ] ink-5 appears nowhere in a readable-string context
-[ ] globals.css @theme declares --font-sans as -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif and --font-mono as SFMono-Regular, "SF Mono", var(--font-jetbrains-mono), ui-monospace, monospace; layout.tsx still loads Geist and JetBrains Mono from next/font/google exposing --font-geist-sans and --font-jetbrains-mono; no SF Pro or SF Mono font file is committed anywhere under apps/web; and the visible change is confined to Apple devices, so a font edit is checked by reading the computed stack, not by looking at the page on Windows or Linux (section 4)
+[ ] globals.css @theme declares --font-sans as var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", ui-sans-serif, system-ui, sans-serif and --font-mono as var(--font-jetbrains-mono), SFMono-Regular, "SF Mono", ui-monospace, monospace, so the webfont leads and the page renders identically on every operating system; layout.tsx loads Geist and JetBrains Mono from next/font/google exposing --font-geist-sans and --font-jetbrains-mono; no SF Pro or SF Mono font file is committed anywhere under apps/web, and a font edit can be confirmed on any platform because the webfont always wins (section 4)
 [ ] Every interactive element has a visible focus ring
 [ ] Reduced-motion block present and proven by toggling the media query, and hero-backdrop.tsx gates both layers through useReducedMotion
 [ ] Every image and SVG has alt text or an explicit aria-hidden

@@ -79,13 +79,14 @@ npm run start                       # serve the production build for browser ver
 - Tailwind v4 takes its theme from CSS. There is no `tailwind.config.js` and there
   must not be one. Tokens live in an `@theme` block in `apps/web/src/app/globals.css`.
   Renaming one emits no error, it silently produces no CSS and breaks every consumer.
-- `--font-sans` and `--font-mono` are Apple-first stacks with webfont fallbacks. Geist and
-  JetBrains Mono are loaded on purpose, not leftovers; deleting them changes what every
-  Windows and Linux visitor sees, which is most of the traffic here. The Apple families
-  are named in CSS and never shipped as files: Apple's Design Resources License section
-  2B forbids embedding SF Pro or SF Mono as website content, while naming a family only
-  asks the visitor's own OS for a font it already has. A font change is therefore visible
-  only on Apple devices, so verify it by reading the computed stack, not by looking.
+- `--font-sans` and `--font-mono` are webfont-first stacks: Geist and JetBrains Mono
+  lead, so every platform renders the same typeface and typography does not change with
+  the visitor's hardware. They are load-bearing, not leftovers; deleting either one
+  changes what every visitor sees. The Apple families sit behind them as graceful
+  degradation only: no Apple font file is committed or fetched, because Apple's Design
+  Resources License section 2B forbids embedding SF Pro or using it as website content,
+  and naming a family only asks the visitor's own OS for a font it already has. Verify a
+  font change by reading the computed stack, because the webfont wins on every OS.
 - Import icons from `@phosphor-icons/react/ssr`, never the package root. The root barrel
   calls `createContext` at module scope and the build fails during page-data collection,
   because Server Components resolve React where `createContext` does not exist.
