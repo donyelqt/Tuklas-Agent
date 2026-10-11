@@ -1,4 +1,5 @@
 import { HeroBackdrop } from "@/components/marketing/hero-backdrop";
+import { BrandMark } from "@/components/marketing/brand-mark";
 import { HeroRail } from "@/components/marketing/hero-rail";
 import { CopyCommand } from "@/components/marketing/copy-command";
 import { TreePreview } from "@/components/marketing/tree-preview";
@@ -9,9 +10,6 @@ const FOCUS =
 
 const EASE =
   "transition-[background-color,border-color,color,opacity] duration-150 ease-[cubic-bezier(.4,0,.2,1)]";
-
-const TAB =
-  "inline-flex min-h-11 items-center border-b-2 border-accent px-1 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-9";
 
 /**
  * The hero is a two-column grid from `lg` up: the command-and-headline column
@@ -43,13 +41,13 @@ export function Hero() {
 
       <div className="mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 items-center gap-10 px-4 pt-24 pb-16 sm:px-6 lg:grid-cols-[minmax(0,1fr)_21rem] lg:gap-10 lg:px-8 lg:pb-24">
         <div className="relative z-10 flex flex-col gap-8 lg:pl-16">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {hero.commandTabs.map((tab) => (
-              <button key={tab} type="button" aria-current="true" className={TAB}>
-                {tab}
-              </button>
-            ))}
-          </div>
+          {/* The lockup is a label, not a control. It used to be a row of
+              buttons labelled "Clone", which did nothing when pressed, so it
+              is now a plain span holding the mark and the wordmark. */}
+          <span className="flex min-h-11 items-center gap-3 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-9">
+            <BrandMark size={20} className="shrink-0" />
+            Tuklas
+          </span>
 
           <h1 className="max-w-[15ch] font-sans text-5xl font-semibold leading-[0.95] tracking-tighter text-ink-9 md:text-6xl lg:max-w-none">
             <span>{hero.headlineLead}</span>{" "}

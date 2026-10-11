@@ -26,12 +26,6 @@ export const hero = {
     label: "Clone",
     command: "git clone https://github.com/donyelqt/Tuklas-Agent.git",
   },
-  /**
-   * The reference design language offers an install tab row. Tuklas ships no
-   * installer, so there is one honest command and no tabs to choose between.
-   * The field exists so the layout slot is explicit rather than improvised.
-   */
-  commandTabs: ["Clone"],
 };
 
 /**
