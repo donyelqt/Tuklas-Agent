@@ -1,6 +1,5 @@
 import { HeroBackdrop } from "@/components/marketing/hero-backdrop";
 import { BrandMark } from "@/components/marketing/brand-mark";
-import { HeroRail } from "@/components/marketing/hero-rail";
 import { CopyCommand } from "@/components/marketing/copy-command";
 import { TreePreview } from "@/components/marketing/tree-preview";
 import { hero, nav } from "@/lib/copy";
@@ -31,22 +30,17 @@ export function Hero() {
           paints behind every later positioned layer. */}
       <HeroBackdrop />
 
-      {/* The rail belongs to the hero and scrolls away with it. It is not
-          viewport-fixed: that left a column of numbers floating over every
-          section below. The section is `relative`, so `absolute` anchors it
-          here without touching the sticky header's z layer. */}
-      <div className="absolute top-1/2 left-0 z-40 hidden -translate-y-1/2 lg:block">
-        <HeroRail />
-      </div>
-
       <div className="mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 items-center gap-10 px-4 pt-24 pb-16 sm:px-6 lg:grid-cols-[minmax(0,1fr)_21rem] lg:gap-10 lg:px-8 lg:pb-24">
         <div className="relative z-10 flex flex-col gap-8 lg:pl-16">
           {/* The lockup is a label, not a control. It used to be a row of
               buttons labelled "Clone", which did nothing when pressed, so it
-              is now a plain span holding the mark and the wordmark. */}
-          <span className="flex min-h-11 items-center gap-3 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-9">
+              is now a plain span holding the mark, the wordmark and the
+              byline. The byline sits a step back in the ink ramp so it does
+              not compete with the name it credits. */}
+          <span className="flex min-h-11 items-center gap-3 font-mono text-[11px] uppercase tracking-[0.18em]">
             <BrandMark size={20} className="shrink-0" />
-            Tuklas
+            <span className="text-ink-9">{hero.wordmark}</span>
+            <span className="text-ink-7">{hero.byline}</span>
           </span>
 
           <h1 className="max-w-[15ch] font-sans text-5xl font-semibold leading-[0.95] tracking-tighter text-ink-9 md:text-6xl lg:max-w-none">

@@ -2,6 +2,7 @@ import { BackendMarquee } from "@/components/marketing/backend-marquee";
 import { ComparisonArms } from "@/components/marketing/comparison-arms";
 import { Guardrails } from "@/components/marketing/guardrails";
 import { Hero } from "@/components/marketing/hero";
+import { HeroRail } from "@/components/marketing/hero-rail";
 import { HierarchyProblem } from "@/components/marketing/hierarchy-problem";
 import { Pipeline } from "@/components/marketing/pipeline";
 import { Reveal } from "@/components/marketing/reveal";
@@ -21,7 +22,10 @@ export default function Home() {
   return (
     <>
       <SiteNav />
-      <div className="flex-1">
+      <div className="fixed top-1/2 left-0 z-30 hidden -translate-y-1/2 lg:block">
+        <HeroRail />
+      </div>
+      <div className="flex-1 lg:pl-16">
         <Hero />
         <BackendMarquee />
         <Reveal>
