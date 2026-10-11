@@ -1,3 +1,4 @@
+import { BrandMark } from "@/components/marketing/brand-mark";
 import { nav } from "@/lib/copy";
 import { site } from "@/lib/site";
 /**
@@ -27,8 +28,9 @@ export function SiteNav() {
       >
         <a
           href="#top"
-          className={`inline-flex min-h-11 shrink-0 items-center font-sans text-base font-semibold tracking-tight text-ink-9 ${FOCUS} ${EASE} active:translate-y-px`}
+          className={`inline-flex min-h-11 shrink-0 items-center gap-2 font-sans text-base font-semibold tracking-tight text-ink-9 ${FOCUS} ${EASE} active:translate-y-px`}
         >
+          <BrandMark className="shrink-0" size={20} />
           {site.shortName}
         </a>
 
