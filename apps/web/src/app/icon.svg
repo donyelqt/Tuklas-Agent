@@ -2,31 +2,39 @@
   <!--
     Tuklas Agent favicon.
 
-    Same four primitives and the same gradient as
-    src/components/marketing/brand-mark.tsx. Duplicated rather than shared because
-    a favicon is loaded outside the document and cannot reach the page's module
-    graph, its CSS custom properties, or its font stack.
+    The mark inset on an opaque near-black field, so the icon reads as the same
+    surface as the page rather than as a floating transparent glyph.
+
+    Geometry mirrors src/components/marketing/brand-mark.tsx, scaled to 0.78 about
+    the grid centre and centred, so the mark never touches the tile edge. It is
+    mirrored rather than imported because a favicon is loaded outside the
+    document and cannot reach the module graph, the page's CSS custom properties,
+    or its font stack.
+
+    The field is #050507, the page's --color-ink-0, rather than pure #000000. The
+    project deliberately lifted the page off pure black, and matching the page
+    exactly is what makes the tile edge invisible.
 
     The gradient stops are hex, not oklch. A favicon is rasterised by the
     browser's SVG engine on an unknown baseline, and oklch support there is not
-    guaranteed. The hex values are the computed equivalents of the oklch stops
-    used on the page:
+    guaranteed. These are the computed equivalents of the page's oklch stops:
 
       oklch(0.7 0.24 340) -> #f84fcc  the accent token
       oklch(0.62 0.21 295) -> #9362f4  violet, exists only inside this mark
       oklch(0.81 0.14 200) -> #00dbe4  the accent-2 token
   -->
   <defs>
-    <linearGradient id="t" x1="6" y1="13" x2="58" y2="51" gradientUnits="userSpaceOnUse">
+    <linearGradient id="t" x1="11.72" y1="17.18" x2="52.28" y2="46.86" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#f84fcc"/>
       <stop offset="0.5" stop-color="#9362f4"/>
       <stop offset="1" stop-color="#00dbe4"/>
     </linearGradient>
   </defs>
+  <rect width="64" height="64" fill="#050507"/>
   <g fill="url(#t)">
-    <rect x="6" y="13" width="52" height="11"/>
-    <rect x="28" y="24" width="8" height="10"/>
-    <rect x="11" y="34" width="17" height="17"/>
-    <rect x="36" y="34" width="17" height="17"/>
+    <rect x="11.72" y="17.18" width="40.56" height="8.58"/>
+    <rect x="28.88" y="25.76" width="6.24" height="7.8"/>
+    <rect x="15.62" y="33.56" width="13.26" height="13.26"/>
+    <rect x="35.12" y="33.56" width="13.26" height="13.26"/>
   </g>
 </svg>

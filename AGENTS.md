@@ -100,10 +100,30 @@ npm run start                       # serve the production build for browser ver
 
 ## Brand assets
 
-`apps/web/src/components/marketing/backend-marks.tsx` inlines official third-party
-logos. They are upstream artwork, never hand-drawn, and each carries a provenance
-comment naming its source. If a mark is added or changed, keep that comment accurate.
-ADR-004 restricts which local LLM providers may appear on the strip.
+Two cases, and conflating them is the mistake here.
+
+- Third-party marks in `components/marketing/backend-marks.tsx` are upstream
+  artwork: never hand-drawn, never retyped by eye. Each path comes from the
+  source its header comment names, a Simple Icons slug or a file in
+  ggml-org/llama.brand, and is copied verbatim; the only edits are the two that
+  comment already records, `currentColor` for the fill and cropping llama.cpp to
+  the mark rather than the lockup. That comment is the provenance record. Keep it
+  accurate on any add or change. ADR-004 restricts which local LLM providers may
+  appear on the strip.
+- The project mark in `components/marketing/brand-mark.tsx` is ours and is
+  expected to be hand-drawn. Four rect primitives on a 64-unit grid, kept as
+  separate rects rather than one path so each stays individually reviewable. Its
+  header comment records the construction and why it is not a llama. That
+  comment is load-bearing: change the geometry and the comment changes with it.
+- The favicon assets in `src/app` (`icon.svg`, `favicon.ico`, `icon.png`,
+  `apple-icon.png`) mirror that mark rather than importing it, because a favicon
+  loads outside the document and cannot reach the module graph, the page's CSS
+  custom properties, or its font stack. The duplication is a constraint, not an
+  oversight. Do not remove it.
+- One trap: their gradient stops are hex, not the page's oklch, because the
+  browser rasterises a favicon with its SVG engine on an unknown baseline where
+  oklch support is not guaranteed. Converting the hex back to oklch reads as
+  tidying and breaks the favicon on older browsers, which no desktop test sees.
 
 ## Before you finish
 
