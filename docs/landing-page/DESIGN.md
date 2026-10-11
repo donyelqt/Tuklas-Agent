@@ -1,4 +1,4 @@
-# Tuklas Agent — Landing Page Design Contract
+# Tuklas Agent - Landing Page Design Contract
 
 **Status:** Design contract. Load-bearing. Implementation agents MUST read this file and MUST NOT diverge from it.
 **Reference design language:** [omp.sh](https://omp.sh) (oh-my-pi, `can1357/oh-my-pi`), fetched and analysed 2026-10-12. Raw artefacts in `.tmp_refs/omp.html`, `.tmp_refs/omp.css`.
@@ -41,9 +41,8 @@ docs/landing-page/             this file, COPY.md, STACK.md
 - Next.js 16, App Router, React 19, TypeScript strict.
 - Tailwind CSS v4 via `@tailwindcss/postcss`. No `tailwind.config.js`. Theme declared with `@theme` in CSS.
 - Fonts self-hosted through `next/font/google`: **Geist** and **JetBrains Mono**. No `<link>` to Google Fonts.
-- Icons: `@phosphor-icons/react` only, one family, `weight="regular"` throughout, sized from one scale.
-- No shadcn/ui on the marketing route. shadcn/ui is specified in `architecture.md` §7 for the explorer panes; putting it on the marketing route adds Radix and a second button system to a page that needs none.
-- No GSAP. Motion is CSS transitions plus one IntersectionObserver reveal. The page has no scroll-hijack and no pinning, so ScrollTrigger earns nothing here.
+- Icons: `@phosphor-icons/react` only, one family, `weight="regular"` throughout, sized from one scale. No shadcn/ui on the marketing route: it is specified in `architecture.md` §7 for the explorer panes, and adding it here would add Radix and a second button system to a page that needs none.
+- **Animation: `motion` `^14.1.0`, imported as `motion/react`.** It drives the hero backdrop only. Everything else on the page stays plain CSS transitions and the one IntersectionObserver reveal. Framer Motion is the same library under its legacy name; the modern package is the one on npm and in `package.json`, so the legacy alias is not installed and must not be imported. No GSAP: there is no scroll-hijack and no pinning, so ScrollTrigger earns nothing here.
 
 ---
 
@@ -72,7 +71,7 @@ docs/landing-page/             this file, COPY.md, STACK.md
 ### Rejected
 
 - **`#000000` page background.** omp.sh uses it. `--color-ink-0: #000000` is banned by `design-taste-frontend` §9.A and it visibly smears on OLED panels during scroll. Shifted to `#050507`, one step off pure black, which preserves the exact relationship to `--color-ink-1: #0a0a0c`.
-- **omp.sh's em-dash habit.** `design-taste-frontend` §9.G bans the character outright, page-wide, with no allowance. Zero `—` and zero `–` in any rendered string.
+- **omp.sh's em-dash habit.** `design-taste-frontend` §9.G bans the character outright, page-wide, with no allowance. Zero em-dash and zero en-dash characters in any rendered string. Only the ASCII hyphen.
 - **omp.sh's version kicker** (`omp², soon!`). Version and launch-status labels in the hero are banned by default, and this project is pre-implementation, so a hero kicker would advertise a build that does not exist.
 
 ---
@@ -104,11 +103,18 @@ Values verified by reading `.tmp_refs/omp.css` and by computing WCAG contrast ag
 }
 ```
 
-### Accent lock, with the one documented exception
+### Accent lock, with two documented exceptions
 
 Magenta `--color-accent` is the single accent for the whole page: primary CTA, focus rings, links, active states.
 
-Cyan `--color-accent-2` is permitted **only** in the comparison section (section 6) and only to mark the quarantined dense-vector baseline arm. That distinction is the product's core claim (`ADR-003`), and encoding it in color makes the evaluation section readable without a paragraph of explanation. It must not appear on a CTA, a link, a focus ring, or anywhere outside that section. This is the documented rule that satisfies the color consistency lock.
+Cyan `--color-accent-2` is permitted in exactly two components, and nowhere else:
+
+- `comparison-arms.tsx`, on the quarantined dense-vector baseline arm, as a semantic marker inside a labelled two-arm diagram. That distinction is the product's core claim (`ADR-003`), and encoding it in color makes the evaluation section readable without a paragraph of explanation.
+- `dot-wave.tsx`, on the trailing band of the hero dot field, behind the magenta crest.
+
+The lock survives a second exception because neither use carries meaning by colour alone. The comparison arm sits in a diagram whose heading names it "Dense vector baseline", so the meaning is carried by the diagram and its text; the wave's cyan is ambient background on a canvas that is `aria-hidden` and conveys nothing. Strip the arm's label and the cyan loses its referent; strip the wave and nothing is lost. Cyan still must not appear on a CTA, a link, a focus ring, or any text a user must read. `hero-backdrop.tsx` inherits the same treatment in its crest layer: same token, same fallback literal, same unreadable ambient background, so it counts as `dot-wave.tsx`'s exception and not as a third one.
+
+The backends strip (section 2) carries seven brand marks, all rendered monochrome in the ink ramp via `currentColor`. Ollama's official mark is black and would be invisible on `ink-0`. Brand colour is not used: a brand-coloured mark sitting beside monochrome ones reads as an accident, and vLLM's brand blue would introduce a second accent, which this section locks out.
 
 ### Verified contrast, and what each token may carry
 
@@ -133,7 +139,7 @@ The page is dark, single theme, for its full length. No section inverts to a lig
 
 | Role | Family | Weight | Tracking | Notes |
 |---|---|---|---|---|
-| H1 hero | Geist | 600 | `-0.025em` | 2 lines max on desktop, `clamp()` sized |
+| H1 hero | Geist | 600 | `tracking-tighter` for the hero headline only | 2 lines at desktop, step-sized. The tighter step applies to the hero alone: at the hero's `text-6xl` step the inherited `-0.025em` reads loose. |
 | Section H2 | Geist | 600 | `-0.025em` | max 8 words |
 | Body | Geist | 400 | normal | `66ch` measure, `1.625` leading |
 | Lead paragraph | Geist | 400 | normal | `ink-7`, larger than body |
@@ -142,17 +148,19 @@ The page is dark, single theme, for its full length. No section inverts to a lig
 
 No serif anywhere. No italic emphasis words injected into sans headlines. Mono is the only family used for anything that is literally code, a tool signature, a metric, or an identifier.
 
-Type scale, mobile first: `36px / 44px / 56px` for H1 at `sm / md / lg`, capped so the hero still fits `100dvh` with the CTA visible without scrolling.
+Type scale, mobile first: `text-5xl / md:text-6xl` for the H1, discrete steps rather than a `clamp()`. Below `lg` the headline is held to `max-w-[15ch]`; at `lg` it drops the cap (`lg:max-w-none`) and takes the full width of its grid column. There is no third, larger desktop step: once the panel holds `21rem` of the grid, the headline column is too narrow to carry one, and `text-6xl` is the largest step that still sets the headline as two lines. The headline stays left-aligned inside the content column and is never stretched across the section.
+
+The headline is split into two runs inside one `h1`: `hero.headlineLead` in `ink-9` and `hero.headlineAccent` in `accent`. The accessible name is therefore still one sentence. The emphasis rule is satisfied because both runs are the same family at the same weight and differ by colour alone, and no second font family is injected into a sans headline, which is exactly the failure the taste skill warns about.
 
 ---
 
 ## 5. Shape, spacing, surface
 
 - **Radius: 0.** No `rounded-*` utility anywhere except `rounded-full` on the marquee and on genuine pills (a live-status dot, the copy-confirmation chip). This is the omp.sh shape system and it is a hard lock.
-- **Shadows: none.** Surfaces separate with `--color-rule` borders and ink-ramp steps.
+- **Shadows: none.** Surfaces separate with `--color-rule` borders and ink-ramp steps. **Z-index scale:** declared once as CSS variables, `base 0`, `nav 40`, `overlay 60`, `grain 70`. No ad-hoc `z-50`.
 - **Spacing base:** `0.25rem` (Tailwind default). Section padding `py-20` mobile, `py-28` desktop. Content width `max-w-6xl` for text sections, `max-w-7xl` for the hero and comparison section.
 - **Grain or noise:** if any, `position: fixed; inset: 0; pointer-events: none`. Never on a scrolling container.
-- **Z-index scale:** declared once as CSS variables. `base 0`, `nav 40`, `overlay 60`, `grain 70`. No ad-hoc `z-50`.
+- **The hero background is two canvases, the one place on the page that is not DOM text.** The static 2000-dot field and the animated crest layer are both `pointer-events-none`, `aria-hidden`, and absolutely positioned so neither contributes anything to layout. Only the crest layer redraws, on a wall-clock throttle (§6). A continuously redrawing 2000-dot field is a permanent main-thread cost on a page whose Core Web Vitals are a stated goal (§11), so the big field is drawn once on mount plus once per resize and never again.
 
 ---
 
@@ -164,15 +172,17 @@ Type scale, mobile first: `36px / 44px / 56px` for H1 at `sm / md / lg`, capped 
 | Hover states | opacity, border-color, background-color only. No layout-shifting transform. |
 | Pressed state | `translateY(1px)`, no scale |
 | Reveal on scroll | IntersectionObserver adds a class: `opacity 0 to 1`, `translateY(12px) to 0`, `420ms`, `cubic-bezier(.16,1,.3,1)`, fires once |
-| Marquee | one, `36s` linear infinite, CSS keyframes, duplicated track |
+| Marquee | one, `48s` linear infinite, CSS keyframes, seven duplicated groups, plus a real pause button |
+| Hero backdrop drift | Motion on the static 2000-dot field's wrapper: `x -1.6%`, `y -1.2%`, `scale 1.04`, `duration 22s`, `repeat: Infinity`, `repeatType: "mirror"`, `ease: "easeInOut"`. The field itself draws once on mount and once per resize, debounced into a single `requestAnimationFrame`, and is never redrawn per frame. Transform only, so the drift runs on the compositor. |
+| Hero backdrop crest | A second canvas of roughly 140 dots over the crest band. Redrawn on a wall-clock throttle of `1000 / 24` ms, so at most 24 redraws a second regardless of refresh rate. Shape comes from elapsed time: a `9s` breathe cycle and a `5s` travelling brightness pass, never from a frame counter, so a 120Hz and a 60Hz display show the same wave. |
 | Copy button | label swaps to "copied" for `1600ms` |
 | Backdrop blur | `12px` where glass is used (nav on scroll only) |
 
 Rules:
-
-- **Only `transform` and `opacity` are animated.** Never `top`, `left`, `width`, `height`.
-- **`window.addEventListener('scroll')` is banned.** Reveals use IntersectionObserver, the marquee is pure CSS, the nav is `position: sticky`.
+- **Only `transform` and `opacity` are animated.** Never `top`, `left`, `width`, `height`. **`window.addEventListener('scroll')` is banned:** reveals use IntersectionObserver, the marquee is pure CSS, the nav is `position: sticky`.
 - **Reduced motion:** one global `@media (prefers-reduced-motion: reduce)` block sets animation and transition durations to `0.01ms` and forces every `.reveal` element to its final state with no transform. The marquee stops. Nothing becomes unusable.
+- **The 2000-dot field does not redraw, by decision.** A future maintainer looking at an animated background will assume a per-frame loop; there is none. The only `requestAnimationFrame` in `dot-wave.tsx` is the resize debounce, and the reference design language's WebGL field is deliberately not reproduced. Life comes from the cheap layers instead: a compositor-only drift on the static field's wrapper, and a ~140-dot crest layer small enough to redraw inside the frame budget.
+- **The backdrop honours reduced motion through the library's own hook, not only through CSS.** `useReducedMotion()` gates both layers in `hero-backdrop.tsx`: the drift is not attached and the frame loop returns immediately, and one static crest is drawn at the base crest shape and redrawn on resize. Nothing is hidden. The CSS block below covers everything else on the page.
 
 ---
 
@@ -182,9 +192,10 @@ Eight content sections, eight distinct layout families, zero eyebrows.
 
 | # | Section | Layout family | Eyebrow |
 |---|---|---|---|
-| 1 | Hero | Asymmetric split: copy left, real component preview right | none |
+| 1 | Hero | Two-column grid from `lg` up, one column below: tab row, headline with an accent run, subhead, CTA row and command artifact in the left cell, the real tree preview in the right cell, over the animated backdrop | none |
+| - | Hero internals (not a section) | Backdrop, then the `absolute` numbered rail, then one grid container whose two cells are the content column and the tree preview panel; the panel cell is `hidden` below `lg` | none |
 | 2 | Backends strip | Single infinite marquee of logos | none |
-| 3 | The hierarchy problem | Two-column comparison, flat chunk list versus kept tree | none |
+| 3 | The hierarchy problem | Two-column comparison, a flat chunk list against the structure the tree keeps, plus the closing note | none |
 | 4 | Pipeline | Numbered divide-list, 7 steps, bold lead-in plus one sentence | none |
 | 5 | Retrieval tools | Single code block of the 7 tool signatures | none |
 | 6 | The comparison | Two-arm diagram, magenta versus cyan, plus the real dataset facts | none |
@@ -193,23 +204,34 @@ Eight content sections, eight distinct layout families, zero eyebrows.
 
 Constraints on the set:
 
-- **Exactly one marquee on the page** (section 2). No second kinetic strip.
-- **No section uses three equal cards.** Section 3 is a two-column comparison, section 4 is a numbered divide-list, section 7 is a divide-list. None is a three-across card row.
-- **No section repeats another section's layout family.** All eight differ.
-- **The logo strip is logos only.** No category label printed under any logo.
-- The hero carries at most three text elements: headline, subhead, CTAs. No kicker, no trust strip, no tagline under the buttons.
+- **Exactly one marquee on the page** (section 2), and no second kinetic strip. **No section uses three equal cards:** section 3 is a two-column comparison, section 4 is a numbered divide-list, section 7 is a divide-list. **No section repeats another section's layout family.** All eight differ.
+- **The logo strip is logos only.** No category label printed under any individual logo. The strip carries one section-level label naming both kinds of thing, as recorded in the backends strip content model below.
 
 ### Hero geometry, non-negotiable
 
-- `min-h-[100dvh]`, never `h-screen` (iOS address bar).
-- Top padding capped at `pt-24` desktop.
-- Headline max 2 lines at desktop. Subhead max 20 words.
-- Both CTAs visible without scrolling at `1440x900` and at `390x844`.
-- One primary and one secondary CTA. CTA intent lock: **"Read the spec"** is the only read-docs intent anywhere on the page; **"View on GitHub"** is the only repository intent. Reused verbatim in nav, hero, and footer. No "Get started", no "Learn more", no "Contact".
+- The section is `relative`, `overflow-hidden`, `flex flex-col`, `min-h-[100dvh]`, and carries no padding of its own: `pt-24 pb-16 lg:pb-24` sits on the grid container. That container is `mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 items-center gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_21rem] lg:gap-10 lg:px-8 lg:pb-24`: one column below `lg`, two at `lg` and up, the panel held at `21rem` and the leftover width handed to the content through `minmax(0,1fr)`.
+- The hero renders six things across three layers. The backdrop and the rail are layers; everything else is one grid. The content cell is `relative z-10 flex flex-col gap-8 lg:pl-16` and holds five blocks in order: the command tab row, the `h1`, the subhead, the CTA row, and the command block. No kicker, no trust strip, no tagline under the buttons. The sixth thing, the tree preview panel, occupies its own grid cell.
+- The headline is `max-w-[15ch] text-5xl font-semibold leading-[0.95] tracking-tighter md:text-6xl lg:max-w-none`, 2 lines at desktop. The subhead is capped at `max-w-[52ch]`.
+- **Why a grid, and the panel rule.** The panel was an absolutely positioned layer anchored to the viewport edge; measured, it overlapped the headline's box at 1280 and 1440, so a grid makes the collision impossible instead of tuning it away with breakpoints. The panel cell is `relative z-10 hidden lg:block`: it is the second column of `lg:grid-cols-[minmax(0,1fr)_21rem]`, so it can never collide with the headline and never clips its own caption. Below `lg` the hero already carries the headline, both CTAs and the command block, so the panel hides. The panel carries its own `@container` scope and reveals the node id column with `@md:inline`, so the id drops out when the panel itself is too narrow to carry it: the panel is `21rem` wide on a 1440px viewport, where a viewport breakpoint still showed the id and squeezed the node title into an ellipsis.
+- **The gutter rule.** The gutter is a left padding on the content cell, `lg:pl-16`, sized to the rail's own `w-16`. It replaced a `lg:pl-72` wrapper gutter plus an inner `max-w-3xl`, because the grid already reserves the panel's width and reserving another 288px of gutter beside it starved the headline column.
+- The left rail is `absolute top-1/2 left-0 z-40 hidden -translate-y-1/2 lg:block`, anchored to the `relative` hero section rather than the viewport, so it scrolls away with the hero instead of floating over every section below. It carries one anchor per section, with the visible two-digit number `aria-hidden` and the label as the accessible name. The backdrop fills the section and sits behind both the rail and the content.
+- The command block is the hero's artifact: the slot the reference design language gives to its install command. It is a `git clone` command, **not** `curl | sh`, because nothing is released and no installer exists. An installer command would be a fake install command under §8 rule 6, and that honesty constraint is load-bearing here, not a stylistic preference. The platform note the reference prints beside its install command is deliberately absent: it labels installer choices this project does not ship.
+- The tab row is a label row, not a tab widget: one honest command and nothing to switch between, so the single label carries `aria-current` rather than being disabled. One primary and one secondary CTA. CTA intent lock: **"Read the spec"** is the only read-docs intent anywhere on the page; **"View on GitHub"** is the only repository intent. Reused verbatim in nav, hero, and footer. No "Get started", no "Learn more", no "Contact".
 
 ### Hero visual
 
-The right-hand visual is a **real component preview**: a miniature of the 3-pane explorer rendering actual `GET /v1/documents/{id}/tree` response shapes from `docs/api.md` §2. It is built from real components with real data shapes, not a `<div>` mock of a screenshot. It shows a Book/Title/Chapter/Article path with page numbers, because the structural tree is the product. No fake version footer, no fake sync status, no fake "last updated".
+The hero carries a product visual: the tree preview panel, described in the geometry bullets above. It is a **real component preview**, a miniature of the 3-pane explorer rendering actual `GET /v1/documents/{id}/tree` response shapes from `docs/api.md` §2, not a `<div>` mock of a screenshot. It sits beside the command artifact rather than competing with it, in the panel's own grid column, so both read at once and neither has to win. It shows a Book/Title/Chapter/Article path with page numbers, because the structural tree is the product. No fake version footer, no fake sync status, no fake "last updated".
+
+### Backends strip content model
+
+The strip is two kinds of thing, and the distinction is a product claim, not a design detail.
+
+- **Seven marks in all: three runtimes and four models.** Counted from `backends.backends` and `backends.models` in `copy.ts` (slugs `ollama`, `llamacpp`, `vllm`, `googlegemini`, `qwen`, `mistralai`, `deepseek`) and mapped one to one through `backend-marks.tsx`.
+- **ADR-004 fixes the generation interface to `ollama`, `llamacpp` and `vLLM`.** Those three are the runtimes the project targets, and they are the only runtimes the strip may list as supported.
+- **Gemma, Qwen, Mistral and DeepSeek appear as examples of open-weight models** those runtimes can serve on the builder's own machine. They are not providers the project claims to support.
+- **Everything else is deliberately absent.** OpenAI, Anthropic, Gemini and xAI because their weights are not available to run locally and ADR-004 rejects cloud backends; Groq because it is an inference service, not a model; Llama because Simple Icons has no mark for it and the llama silhouette already appears as the llama.cpp mark.
+- **The label admits both kinds of thing.** It reads "Local runtimes, and the open-weight models they serve" rather than pretending the strip is one list.
+- **A hairline rule separates the runtimes from the models** so the two kinds do not blur together.
 
 ---
 
@@ -232,22 +254,15 @@ From `docs/PRD.md` §2, §4, §6 and `docs/evaluation.md` §7. These are product
 
 From `design-taste-frontend` §9, §9.F, §9.G, plus §4.7. Mechanical pre-flight.
 
-- Zero em-dashes `—` and zero en-dashes `–` in any rendered string. Only the ASCII hyphen `-`.
+- Zero em-dash and zero en-dash characters in any rendered string. Only the ASCII hyphen `-`.
 - No AI-purple or neon gradient. No `text-shadow` glow on text. No outer glow on cards. One tinted inner highlight is permitted on glass panels only.
 - No pure `#000000`. No pure `#FFFFFF` for text surfaces (`ink-9` is `#f5f5f5`).
 - No scroll cue. No `Scroll`, no arrow, no animated wheel.
 - No decoration text strip at the hero bottom. No `TYPE / FORM / MOTION`.
-- No section-number eyebrows (`00 / INDEX`, `01 / CAPABILITIES`). The pipeline section's `01` through `07` are step numbers attached to step content, which is permitted. They are not eyebrow labels above headlines.
-- No generic step labels (`Stage 1`, `Phase 01`, `Step 1`). Steps are named with the verb: *Ingest, Parse, Index, Plan, Retrieve, Cite, Abstain*.
-- No decorative status dots. The single permitted dot is a real semantic state indicator in the hero preview when it genuinely represents a streaming state.
-- No pills or labels overlaid on images.
-- No photo-credit captions as decoration.
-- No locale, time, or weather strips.
-- No testimonials at all: there are none to show.
-- No fabricated precision (`99.99%`, `4.1x`).
-- No filler verbs: elevate, seamless, unleash, next-gen, revolutionize.
-- No "Acme", "Nexus", "SmartFlow".
-- No Inter as the body font.
+- No section-number eyebrows (`00 / INDEX`, `01 / CAPABILITIES`) and no generic step labels (`Stage 1`, `Phase 01`, `Step 1`). The pipeline section's `01` through `07` are step numbers attached to step content, which is permitted; its steps are named with the verb: *Ingest, Parse, Index, Plan, Retrieve, Cite, Abstain*.
+- No decorative status dots: the single permitted dot is a real semantic state indicator in the tree preview when it genuinely represents a streaming state. No pills or labels overlaid on images, no photo-credit captions as decoration, and no locale, time, or weather strips.
+- No testimonials at all, there are none to show, and no fabricated precision (`99.99%`, `4.1x`).
+- No filler verbs: elevate, seamless, unleash, next-gen, revolutionize. No "Acme", "Nexus", "SmartFlow". No Inter as the body font.
 - No hand-rolled SVG icon paths. Phosphor only, one family, one stroke weight.
 - No div-based fake screenshots.
 - No `border-t` plus `border-b` on every row of a list. Pick one divider style per list.
@@ -260,13 +275,10 @@ From `design-taste-frontend` §9, §9.F, §9.G, plus §4.7. Mechanical pre-fligh
 - `ink-5` is banned for readable strings. It is the only token in the palette that cannot carry text.
 - Visible focus on every interactive control: `outline: 2px solid var(--color-accent); outline-offset: 2px`. Never removed.
 - The sticky nav must not obscure keyboard focus. `scroll-margin-top` on every section anchor equals nav height plus 16px.
-- The marquee pauses on hover and on focus-within.
-- Every SVG icon is either `aria-hidden="true"` when decorative beside visible text, or carries an accessible name when it is the only content of a control.
-- The copy button announces state through a polite live region.
-- Semantic landmarks: one `h1`, plus `header`, `nav`, `main`, `footer`. Heading order never skips a level.
-- Light mode is not offered (see §3). `color-scheme: dark` is declared so form controls and scrollbars render correctly.
-- Target size: interactive controls at least 44px on the smallest breakpoint.
-- No content hidden behind a fixed element at any scroll position.
+- The marquee pauses on hover, on focus-within, and through a real pause button, because its track holds no focusable element.
+- Every SVG icon is either `aria-hidden="true"` when decorative beside visible text, or carries an accessible name when it is the only content of a control. Both hero canvases are `aria-hidden`, and the rail's visible number is `aria-hidden` with the label as the anchor's accessible name.
+- Semantic landmarks: one `h1`, plus `header`, `nav`, `main`, `footer`. Heading order never skips a level. Light mode is not offered (see §3); `color-scheme: dark` is declared so form controls and scrollbars render correctly.
+- Target size: interactive controls at least 44px on the smallest breakpoint, and no content hidden behind the hero rail at any scroll position: the rail's `w-16` is cleared by the content cell's `lg:pl-16`.
 
 ---
 
@@ -274,8 +286,8 @@ From `design-taste-frontend` §9, §9.F, §9.G, plus §4.7. Mechanical pre-fligh
 
 | Metric | Target | How |
 |---|---|---|
-| LCP | under 2.0s | Hero renders as static HTML. Fonts via `next/font` with `display: swap`. No hero bitmap to download: the hero visual is DOM, not an image. |
-| INP | under 200ms | Zero JavaScript above the fold except the copy button and the reveal observer. No GSAP, no scroll handlers, no third-party scripts. |
+| LCP | under 2.0s | Hero renders as static HTML. Fonts via `next/font` with `display: swap`. No hero bitmap to download: the hero is text, a command block and the tree preview panel, all DOM, not image. |
+| INP | under 200ms | Zero JavaScript above the fold except the copy button, the reveal observer, and the hero backdrop. The 2000-dot field draws once on mount and once per resize and never per frame; the backdrop's drift is transform-only and compositor-side; the only per-frame work is the crest layer, about 140 dots, capped at one redraw per `1000/24` ms. That cap is the budget the layer must stay inside: it may not move to a per-frame redraw or grow past a fraction of the 200ms interaction budget. No GSAP, no scroll handlers, no third-party scripts. |
 | CLS | 0 | Fonts loaded via `next/font` with size-adjust metrics. Marquee and code block have explicit reserved dimensions. Reveal animates opacity and transform only. |
 
 ---
@@ -293,9 +305,13 @@ apps/web/
   src/components/marketing/
     site-nav.tsx
     site-footer.tsx
-    hero.tsx
-    tree-preview.tsx           real component preview of the explorer
+    hero.tsx                   hero section, two-column grid from lg up, one column below
+    hero-rail.tsx             numbered section rail, absolute inside the relative hero section
+    hero-backdrop.tsx         hero background: drift wrapper plus crest canvas, consumes dot-wave.tsx
+    dot-wave.tsx              hero dot field, canvas, drawn once, rendered by hero-backdrop.tsx
+    tree-preview.tsx           explorer preview in its own grid cell, @container scope
     backend-marquee.tsx
+    backend-marks.tsx         official brand marks, monochrome via currentColor
     hierarchy-problem.tsx
     pipeline.tsx
     tool-signatures.tsx
@@ -324,8 +340,11 @@ The landing page is done when every line below is verifiable, not asserted.
 [ ] Zero #000 and zero #fff hex literals; all colour via theme tokens
 [ ] ink-5 appears nowhere in a readable-string context
 [ ] Every interactive element has a visible focus ring
-[ ] Reduced-motion block present and proven by toggling the media query
+[ ] Reduced-motion block present and proven by toggling the media query, and hero-backdrop.tsx gates both layers through useReducedMotion
 [ ] Every image and SVG has alt text or an explicit aria-hidden
+[ ] Both hero canvases are pointer-events-none, aria-hidden, absolutely positioned; dot-wave.tsx has no animation loop; hero-backdrop.tsx redraws only the crest layer and only every CREST_FRAME_MS = 1000/24 ms of wall clock; accent-2 appears only in comparison-arms.tsx and dot-wave.tsx
+[ ] hero-backdrop.tsx animates only opacity and transform, and the crest redraw cost stays inside one CREST_FRAME_MS = 1000/24 ms window measured in a real browser with zero long tasks
+[ ] The hero h1 is one element, so its accessible name is one sentence
 [ ] No string in copy.ts asserts superiority or reports an unmeasured metric
 [ ] Disclaimer string present in copy.ts and rendered on the page
 [ ] tsc --noEmit clean, next lint clean, next build clean

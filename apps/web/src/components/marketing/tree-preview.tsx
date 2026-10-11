@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { hero } from "@/lib/copy";
+import { problem } from "@/lib/copy";
 
 /**
  * TreePreview renders the tree pane of the document explorer (PRD F6) from the
@@ -149,7 +149,11 @@ const TREE = nestTree(TREE_RESPONSE);
 function NodeMeta({ node }: { node: NestedNode }): ReactNode {
   return (
     <span className="ml-auto flex shrink-0 items-baseline gap-3">
-      <span className="hidden truncate font-mono text-[11px] text-ink-7 lg:inline">
+      {/* Container query, not a viewport breakpoint. The panel is now a grid
+          column that can be 21rem on a 1440px viewport, where a viewport
+          breakpoint would still show the id and squeeze the node title into
+          an ellipsis. The id yields when the panel itself is too narrow. */}
+      <span className="hidden truncate font-mono text-[11px] text-ink-7 @md:inline">
         {node.id}
       </span>
       {node.page_start !== undefined ? (
@@ -196,7 +200,7 @@ function NodeList({ nodes }: { nodes: NestedNode[] }): ReactNode {
 
 export function TreePreview() {
   return (
-    <div data-testid="tree-preview" className="w-full max-w-md border border-ink-4/60 bg-ink-1">
+    <div data-testid="tree-preview" className="@container w-full max-w-md border border-ink-4/60 bg-ink-1">
       <div className="border-b border-ink-4/60 px-4 py-3">
         <span className="font-mono text-[11px] tracking-[0.18em] text-ink-7 uppercase">
           {LABELS.endpoint}
@@ -206,7 +210,7 @@ export function TreePreview() {
         <NodeList nodes={[TREE]} />
       </div>
       <div className="border-t border-ink-4/60 px-4 py-2 font-mono text-[11px] leading-snug text-ink-7">
-        {hero.previewCaption}
+        {problem.previewCaption}
       </div>
     </div>
   );
