@@ -1,0 +1,49 @@
+# apps/web
+
+Next.js App Router application for the Tuklas Agent marketing site. The route
+`/` is the landing page; the document explorer described in `docs/architecture.md`
+§7 (PRD feature F6) will be added under `/app/*`.
+
+## Design contract
+
+Every visual decision on this route traces to `docs/landing-page/DESIGN.md`. Read
+it before changing anything here. The short version:
+
+- **Theme** is declared in `src/app/globals.css` inside an `@theme` block. There
+  is no `tailwind.config.js`; Tailwind v4 reads its theme from CSS. Token names
+  are load-bearing. Renaming `--color-ink-4` silently breaks every consumer.
+- **Shape** is radius 0 and no shadows, matching the omp.sh reference. Surfaces
+  separate with 1px rules and ink-ramp steps.
+- **Accent** is `--color-accent` (magenta) page-wide. `--color-accent-2` (cyan)
+  is permitted in exactly one place: the dense-vector baseline arm in
+  `comparison-arms.tsx`. That is a documented exception, not an oversight.
+- **Copy** all lives in `src/lib/copy.ts`. No inline user-facing strings in JSX.
+  This keeps the copy audit a single-file grep, including the project-wide ban on
+  em-dashes and on unmeasured performance claims.
+- **Honesty** rules in `DESIGN.md` §8 are product requirements, not style
+  preferences. No superiority claim, no fabricated metric, no legal-advice
+  phrasing, no fake social proof. The benchmark has not been run.
+
+## Commands
+
+```bash
+npm run dev     # development server
+npm run build   # production build
+npm run start   # serve the production build
+npm run lint    # eslint
+npx tsc --noEmit
+```
+
+## Server Components
+
+Almost every file here is a Server Component. Only `reveal.tsx` and
+`copy-command.tsx` carry `'use client'`, because only they need an observer, a
+timer, or clipboard access. Do not add `'use client'` to a section component to
+work around a styling problem.
+
+## Icons
+
+`@phosphor-icons/react/ssr`, never the package root. The root barrel re-exports
+the CSR components, which build an `IconContext` with `createContext` at module
+scope; that throws during page-data collection because React Server Components
+resolve `react` to the server build, where `createContext` does not exist.
