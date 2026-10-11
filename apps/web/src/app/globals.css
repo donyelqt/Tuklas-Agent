@@ -25,27 +25,30 @@
   --color-selection: oklch(70% .24 340 / .32);
 
   /*
-   * Apple-first stacks.
+   * One typeface on every operating system.
    *
-   * SF Pro and SF Mono cannot be shipped as web fonts. Apple's Design
-   * Resources License section 2B forbids embedding them, using them to display
-   * website content, and making them available over a network, and the SF Pro
-   * installer restricts the font to Apple-platform interface mockups.
+   * Geist and JetBrains Mono lead. They are self-hosted, OFL licensed, and they
+   * render identically on macOS, Windows and Linux, so the page's typography
+   * does not change with the visitor's hardware. Geist is a neo-grotesk built
+   * against the same brief as San Francisco, and it is the closest freely
+   * licensed match available.
    *
-   * Naming the family is not embedding it. `-apple-system` and `SFMono-Regular`
-   * ask the visitor's own operating system for a font it already has installed,
-   * which is what apple.com itself does. Nothing is downloaded, so this adds no
-   * font payload and no layout shift on Apple devices.
+   * The Apple system families sit behind them as the fallback, which is the
+   * correct order for a different reason than preference: if the webfont ever
+   * fails to load, an Apple visitor degrades to real SF Pro rather than to a
+   * generic serif. Everyone else falls through to their platform's UI font.
    *
-   * Geist and JetBrains Mono stay loaded underneath, so every non-Apple visitor
-   * sees exactly the same type as before. "SF Pro Text" is named ahead of the
-   * generic "SF Pro" because the text optical size is correct for body copy;
-   * `-apple-system` resolves first on Apple platforms anyway, where the OS
-   * applies optical sizing itself.
+   * No Apple font file is committed or fetched. Apple's Design Resources License
+   * section 2B forbids embedding SF Pro and using it to display website content,
+   * and the SF Pro installer restricts it to Apple-platform interface mockups.
+   * Naming a family only asks the visitor's own operating system for a font it
+   * already has installed, which is legal and is what apple.com relies on. That
+   * is the whole reason SF Pro appears here at all, and it appears only as a
+   * fallback behind a webfont that always wins.
    */
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro",
-    var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: SFMono-Regular, "SF Mono", var(--font-jetbrains-mono), ui-monospace,
+  --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont,
+    "SF Pro Text", "SF Pro", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), SFMono-Regular, "SF Mono", ui-monospace,
     monospace;
 
   /* z-index scale (DESIGN.md section 5) */
