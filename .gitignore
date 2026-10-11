@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js build output
+apps/web/.next/
+apps/web/out/
+apps/web/.turbo/
+apps/web/.vercel/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Data and local artifacts (ADR-002: PDFs and indexes never leave the machine)
+data/documents/
+data/indexes/
+data/datasets/*/*.pdf
+*.sqlite
+*.sqlite3
+*.db
+
+# Reference material scraped for design analysis
+.tmp_refs/
+
+# Environment and secrets
+.env
+.env.local
+.env*.local
+
+# Editor and OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
