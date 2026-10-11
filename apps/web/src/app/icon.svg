@@ -5,7 +5,7 @@
     The mark inset on a rounded near-black field, so the icon reads as the same
     surface as the page rather than as a floating transparent glyph.
 
-    The field radius is 6, which is Tailwind's rounded-md at a 16px root. It is
+    The field radius is 8, which is Tailwind's rounded-lg at a 16px root. It is
     carried here as a literal because a favicon cannot reach the page's CSS.
 
     Geometry mirrors src/components/marketing/brand-mark.tsx, scaled to 0.78 about
@@ -33,7 +33,7 @@
       <stop offset="1" stop-color="#00dbe4"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="6" fill="#050507"/>
+  <rect width="64" height="64" rx="8" fill="#050507"/>
   <g fill="url(#t)">
     <rect x="11.72" y="17.18" width="40.56" height="8.58"/>
     <rect x="28.88" y="25.76" width="6.24" height="7.8"/>
