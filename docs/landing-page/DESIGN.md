@@ -148,7 +148,7 @@ The headline is split into two runs inside one `h1`: `hero.headlineLead` in `ink
 ## 5. Shape, spacing, surface
 
 - **Radius: 0.** No `rounded-*` utility anywhere except `rounded-full` on the marquee and on genuine pills (a live-status dot, the copy-confirmation chip). This is the omp.sh shape system and it is a hard lock.
-- **Shadows: none.** Surfaces separate with `--color-rule` borders and ink-ramp steps. **Z-index scale:** declared once as CSS variables, `base 0`, `nav 40`, `overlay 60`, `grain 70`. No ad-hoc `z-50`. The `grain` slot is reserved and unused: the page has no noise layer, so nothing sits at that layer and any grain added later must be `position: fixed; inset: 0; pointer-events: none`, never on a scrolling container.
+- **Shadows: none.** Surfaces separate with `--color-rule` borders and ink-ramp steps. **Z-index scale:** declared once as CSS variables, `base 0`, `rail 30`, `nav 40`, `overlay 60`, `grain 70`. No ad-hoc `z-50`. The `rail` slot exists so the section rail can never reach the header's layer, and the `grain` slot is reserved and unused: the page has no noise layer, so nothing sits at that layer and any grain added later must be `position: fixed; inset: 0; pointer-events: none`, never on a scrolling container.
 - **Spacing base:** `0.25rem` (Tailwind default). Section padding `py-20` mobile, `py-28` desktop. Content width `max-w-6xl` for text sections, `max-w-7xl` for the hero and comparison section.
 
 ### Brand mark
@@ -158,7 +158,7 @@ The headline is split into two runs inside one `h1`: `hero.headlineLead` in `ink
 - **Construction.** A 64-unit grid (`viewBox="0 0 64 64"`) drawn as four `rect` primitives, not one path, so each bar stays individually reviewable: a root bar at `x=6 y=13` sized `52x11`, a stem at `x=28 y=24` sized `8x10`, and two `17x17` leaves at `x=11` and `x=36`, both at `y=34`. It reads as a document tree reduced to its minimum: a root level, a descent, a branch, and a cited leaf, the right leaf being the provision the product returns. A first pass used five bars including a horizontal spread; at 20px that read as a coloured smudge rather than as a shape, because a 64-unit grid leaves each bar about two pixels wide. Four primitives leave three distinguishable masses at nav size: a bar, a stem, and two blocks.
 - **The name is doing the work, and it is not a llama.** `tuklas` is Tagalog for discovery, and the tool discovers provisions inside hierarchical legal documents, so "root to cited leaf" is the argument rather than decoration. A llama silhouette was rejected: the mark file records that two llama marks already appear on this page in the backends strip, and a third would read as a third vendor rather than as the product.
 - **Gradient:** three stops, `oklch(0.7 0.24 340)` at offset 0, `oklch(0.62 0.21 295)` at 0.5, `oklch(0.81 0.14 200)` at 1, in `userSpaceOnUse` from `(6,13)` to `(58,51)`. The endpoints are this page's `accent` and `accent-2` values verbatim.
-- **Accessibility and sizing:** `aria-hidden="true"` and `focusable="false"`, so the mark contributes nothing to any accessible name and the wordmark text carries the name at both call sites. Both call sites pass `size={20}`, so 20px rendered against the component's 22px default. The wordmark is the single permitted exception to the `copy.ts` rule (`site.shortName` in the nav, the same string written literally in the hero lockup). The gradient id is per-instance via `useId`, so the two copies cannot collide. The hero lockup's relation to the reference design language's tab row is recorded in §7.
+- **Accessibility and sizing:** `aria-hidden="true"` and `focusable="false"`, so the mark contributes nothing to any accessible name and the wordmark text carries the name at both call sites. Both call sites pass `size={20}`, so 20px rendered against the component's 22px default. `site.shortName` in the nav is the single permitted exception to the `copy.ts` rule; the hero lockup reads `hero.wordmark` from `copy.ts`, and puts the byline in `ink-7` behind it. The gradient id is per-instance via `useId`, so the two copies cannot collide. The hero lockup's relation to the reference design language's tab row is recorded in §7.
 
 ---
 
@@ -189,7 +189,7 @@ Eight content sections, eight distinct layout families, zero eyebrows.
 | # | Section | Layout family | Eyebrow |
 |---|---|---|---|
 | 1 | Hero | Two-column grid from `lg` up, one column below: brand lockup label, headline with an accent run, subhead, CTA row and command artifact in the left cell, the real tree preview in the right cell, over the animated backdrop | none |
-| - | Hero internals (not a section) | Backdrop, then the `absolute` numbered rail, then one grid container whose two cells are the content column and the tree preview panel; the panel cell is `hidden` below `lg` | none |
+| - | Hero internals (not a section) | Backdrop, then one grid container whose two cells are the content column and the tree preview panel; the panel cell is `hidden` below `lg`. The numbered rail is no longer here: it is fixed to the viewport and owned by `page.tsx` | none |
 | 2 | Backends strip | Single infinite marquee of logos | none |
 | 3 | The hierarchy problem | Two-column comparison, a flat chunk list against the structure the tree keeps, plus the closing note | none |
 | 4 | Pipeline | Numbered divide-list, 7 steps, bold lead-in plus one sentence | none |
@@ -202,20 +202,19 @@ Constraints on the set:
 
 - **Exactly one marquee on the page** (section 2), and no second kinetic strip. **No section uses three equal cards:** section 3 is a two-column comparison, section 4 is a numbered divide-list, section 7 is a divide-list. **No section repeats another section's layout family.** All eight differ.
 - **The logo strip is logos only.** No category label printed under any individual logo. The strip carries one section-level label naming both kinds of thing, as recorded in the backends strip content model below.
+- **Navigation surfaces.** The header carried Problem, Pipeline, Tools, Comparison and Guardrails as links, which duplicated the rail exactly. That list is deleted from the header, in the desktop row and in the mobile panel both. The header keeps the brand lockup and the two CTAs, and the mobile `<details>` disclosure survives because it carries those CTAs to narrow screens. The rail is therefore the page's single section-navigation surface. Consequence, recorded so it is not rediscovered as a bug: below `1024` the rail is `hidden` and no section navigation is rendered at all, so no claim of section navigation at every width may appear in this file.
 
 ### Hero geometry, non-negotiable
 
 - The section is `relative`, `overflow-hidden`, `flex flex-col`, `min-h-[100dvh]`, and carries no padding of its own: `pt-24 pb-16 lg:pb-24` sits on the grid container. That container is `mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 items-center gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_21rem] lg:gap-10 lg:px-8 lg:pb-24`: one column below `lg`, two at `lg` and up, the panel held at `21rem` and the leftover width handed to the content through `minmax(0,1fr)`.
-- The hero renders six things across three layers. The backdrop and the rail are layers; everything else is one grid. The content cell is `relative z-10 flex flex-col gap-8 lg:pl-16` and holds five blocks in order: the brand lockup, the `h1`, the subhead, the CTA row, and the command block. No kicker, no trust strip, no tagline under the buttons. The sixth thing, the tree preview panel, occupies its own grid cell.
-- The brand lockup is a label, not a widget: `flex min-h-11 items-center gap-3 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-9`, holding `brand-mark.tsx` at `size={20}` beside the wordmark. It replaced a row of buttons labelled "Clone" that did nothing when pressed, and it replaced the reference design language's tab row, which switches between real installers this project ships none of: one place fewer mark than the reference, because a tab row here would be a control that does nothing.
+- The hero renders six things across two layers. The backdrop is one layer; everything else is one grid. The content cell is `relative z-10 flex flex-col gap-8 lg:pl-16` and holds five blocks in order: the brand lockup, the `h1`, the subhead, the CTA row, and the command block. No kicker, no trust strip, no tagline under the buttons. The sixth thing, the tree preview panel, occupies its own grid cell.
+- The brand lockup is a label, not a widget: a `span` with `flex min-h-11 items-center gap-3 font-mono text-[11px] uppercase tracking-[0.18em]`, holding `brand-mark.tsx` at `size={20}`, the wordmark in `text-ink-9`, and the byline in `text-ink-7` a step back in the ramp. It replaced a row of buttons labelled "Clone" that did nothing when pressed, and it replaced the reference design language's tab row, which switches between real installers this project ships none of: one place fewer mark than the reference, because a tab row here would be a control that does nothing.
 - The headline is `max-w-[15ch] text-5xl font-semibold leading-[0.95] tracking-tighter md:text-6xl lg:max-w-none`, 2 lines at desktop. The subhead is capped at `max-w-[52ch]`.
 - **Why a grid, and the panel rule.** The panel was an absolutely positioned layer anchored to the viewport edge; measured, it overlapped the headline's box at 1280 and 1440, so a grid makes the collision impossible instead of tuning it away with breakpoints. The panel cell is `relative z-10 hidden lg:block`: it is the second column of `lg:grid-cols-[minmax(0,1fr)_21rem]`, so it can never collide with the headline and never clips its own caption. Below `lg` the hero already carries the headline, both CTAs and the command block, so the panel hides. The panel carries its own `@container` scope and reveals the node id column with `@md:inline`, so the id drops out when the panel itself is too narrow to carry it: the panel is `21rem` wide on a 1440px viewport, where a viewport breakpoint still showed the id and squeezed the node title into an ellipsis.
-- **The gutter rule.** The gutter is a left padding on the content cell, `lg:pl-16`, sized to the rail's own `w-16`. It replaced a `lg:pl-72` wrapper gutter plus an inner `max-w-3xl`, because the grid already reserves the panel's width and reserving another 288px of gutter beside it starved the headline column.
-- The left rail is `absolute top-1/2 left-0 z-40 hidden -translate-y-1/2 lg:block`, anchored to the `relative` hero section rather than the viewport, so it scrolls away with the hero instead of floating over every section below. It carries one anchor per section, with the visible two-digit number `aria-hidden` and the label as the accessible name. The backdrop fills the section and sits behind both the rail and the content.
+- **The gutter rule.** The hero keeps `lg:pl-16` on its content cell, sized to the rail's own `w-16`, which is why the hero's grid still works with a rail that is no longer inside it. It replaced a `lg:pl-72` wrapper gutter plus an inner `max-w-3xl`, because the grid already reserves the panel's width and reserving another 288px of gutter beside it starved the headline column.
+- The rail is `fixed top-1/2 left-0 z-30 hidden -translate-y-1/2 lg:block` and is rendered by `page.tsx`, so it persists for the whole page instead of scrolling away with the hero. It carries one anchor per section, with the visible two-digit number `aria-hidden` and the label as the accessible name. **Two facts make a viewport-fixed rail safe:** it sits one slot below the sticky header's `z-40`, so it can never paint over the wordmark or the CTAs, and the page content wrapper's single `lg:pl-16` clears its `w-16` for every section at once. That one padding is load-bearing and must not be split into per-section offsets, which are exactly what a future section forgets.
 - The command block is the hero's artifact: the slot the reference design language gives to its install command. It is a `git clone` command, **not** `curl | sh`, because nothing is released and no installer exists. An installer command would be a fake install command under §8 rule 6, and that honesty constraint is load-bearing here, not a stylistic preference. The platform note the reference prints beside its install command is deliberately absent: it labels installer choices this project does not ship.
 - The CTA row carries one primary and one secondary CTA. CTA intent lock: **"Read the spec"** is the only read-docs intent anywhere on the page; **"View on GitHub"** is the only repository intent. Reused verbatim in nav, hero, and footer. No "Get started", no "Learn more", no "Contact".
-
-### Hero visual
 
 The hero carries a product visual: the tree preview panel, described in the geometry bullets above. It is a **real component preview**, a miniature of the 3-pane explorer rendering actual `GET /v1/documents/{id}/tree` response shapes from `docs/api.md` §2, not a `<div>` mock of a screenshot. It sits beside the command artifact rather than competing with it, in the panel's own grid column, so both read at once and neither has to win. It shows a Book/Title/Chapter/Article path with page numbers, because the structural tree is the product. No fake version footer, no fake sync status, no fake "last updated".
 
@@ -275,7 +274,7 @@ From `design-taste-frontend` §9, §9.F, §9.G, plus §4.7. Mechanical pre-fligh
 - The marquee pauses on hover, on focus-within, and through a real pause button, because its track holds no focusable element.
 - Every SVG icon is either `aria-hidden="true"` when decorative beside visible text, or carries an accessible name when it is the only content of a control. Both hero canvases are `aria-hidden`, and the rail's visible number is `aria-hidden` with the label as the anchor's accessible name.
 - Semantic landmarks: one `h1`, plus `header`, `nav`, `main`, `footer`. Heading order never skips a level. Light mode is not offered (see §3); `color-scheme: dark` is declared so form controls and scrollbars render correctly.
-- Target size: interactive controls at least 44px on the smallest breakpoint, and no content hidden behind the hero rail at any scroll position: the rail's `w-16` is cleared by the content cell's `lg:pl-16`.
+- Target size: interactive controls at least 44px on the smallest breakpoint; the rail's anchors are `h-16 w-16`. No content is hidden behind the rail at any scroll position, because the page content wrapper's `lg:pl-16` clears its `w-16` for every section, and the rail's `z-30` keeps it below the sticky header, which in turn must not obscure keyboard focus: `scroll-margin-top` on every section anchor equals nav height plus 16px.
 
 ---
 
@@ -297,14 +296,14 @@ Everything below lives under `apps/web`. Paths are exact.
 apps/web/
   src/app/
     layout.tsx                 fonts, metadata, theme lock, skip link
-    page.tsx                   marketing route, composes the 8 sections
+    page.tsx                   marketing route, composes the 8 sections, owns the fixed rail and the `lg:pl-16` content wrapper
     globals.css                @theme tokens, base layer, reduced-motion block
   src/components/marketing/
-    site-nav.tsx
+    site-nav.tsx               brand lockup and the two CTAs only, no section links
     site-footer.tsx
     brand-mark.tsx            the project mark, four rects on a 64-unit grid, per-instance gradient id
     hero.tsx                   hero section, two-column grid from lg up, one column below
-    hero-rail.tsx             numbered section rail, absolute inside the relative hero section
+    hero-rail.tsx             numbered section rail, owns no positioning; page.tsx places it
     hero-backdrop.tsx         hero background: drift wrapper plus crest canvas, consumes dot-wave.tsx
     dot-wave.tsx              hero dot field, canvas, drawn once, rendered by hero-backdrop.tsx
     tree-preview.tsx           explorer preview in its own grid cell, @container scope
@@ -320,7 +319,7 @@ apps/web/
     reveal.tsx                 IntersectionObserver wrapper
   src/lib/
     copy.ts                    every visible string lives here, no inline strings in JSX
-    site.ts                    nav items, links, repo metadata
+    site.ts                    links, repo metadata
 ```
 
 `src/lib/copy.ts` is mandatory. Every user-visible string in the marketing route comes from that one file, with the wordmark as the single documented exception (see §5). This makes the copy self-audit mechanical and keeps the em-dash ban enforceable by a single grep over one file.
@@ -349,6 +348,8 @@ The landing page is done when every line below is verifiable, not asserted.
 [ ] tsc --noEmit clean, next lint clean, next build clean
 [ ] Lighthouse on the built route meets or beats section 11
 [ ] Verified in a real browser at 390px, 768px, 1440px, and 1920px
+[ ] site-nav.tsx renders no section links in either the desktop row or the mobile panel; the rail is the only section-navigation surface, and below 1024 no section navigation is rendered at all
+[ ] hero-rail.tsx is placed by page.tsx in a `fixed` wrapper at `z-30`, one slot below the sticky header's `z-40`, and the page content wrapper's `lg:pl-16` clears the rail's `w-16` for every section at 1024, 1440 and 1920 with no per-section offset doing the work
 [ ] The marquee is the only marquee
 [ ] No three-equal-card row anywhere
 [ ] All 8 sections use 8 different layout families

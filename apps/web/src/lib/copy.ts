@@ -1,11 +1,9 @@
+/**
+ * The header carries only the two calls to action. Section navigation lives in
+ * the left rail, `rail.items` below, so listing the same six links in both
+ * places would be duplication with two answers to the same question.
+ */
 export const nav = {
-  items: [
-    { label: "Problem", href: "#problem" },
-    { label: "Pipeline", href: "#pipeline" },
-    { label: "Tools", href: "#tools" },
-    { label: "Comparison", href: "#comparison" },
-    { label: "Guardrails", href: "#guardrails" },
-  ],
   primaryCta: { label: "Read the spec", href: "https://github.com/donyelqt/Tuklas-Agent/tree/main/docs" },
   secondaryCta: { label: "View on GitHub", href: "https://github.com/donyelqt/Tuklas-Agent" },
 };
@@ -26,6 +24,13 @@ export const hero = {
     label: "Clone",
     command: "git clone https://github.com/donyelqt/Tuklas-Agent.git",
   },
+  /**
+   * The lockup above the headline names the project and the person behind it.
+   * Both are literal strings here because the lockup is the single documented
+   * exception to the copy.ts rule, recorded in DESIGN.md section 5.
+   */
+  wordmark: "Tuklas",
+  byline: "by Doniele Antonio",
 };
 
 /**
@@ -248,5 +253,6 @@ export const footer = {
     { label: "Evaluation framework", href: "https://github.com/donyelqt/Tuklas-Agent/blob/main/docs/evaluation.md" },
     { label: "Repository", href: "https://github.com/donyelqt/Tuklas-Agent" },
   ],
-  legal: "2026 Tuklas Agent. Research use, not legal advice.",
+  legal:
+    "2026 Tuklas Agent. Research use, not legal advice. Built by Doniele Antonio.",
 };

@@ -15,10 +15,6 @@ const FOCUS =
   "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2";
 const EASE = "transition-[background-color,border-color,color,opacity] duration-150 ease-[cubic-bezier(.4,0,.2,1)]";
 
-function linkClasses(): string {
-  return `inline-flex min-h-11 items-center whitespace-nowrap px-2 text-sm ${FOCUS} ${EASE} active:translate-y-px`;
-}
-
 export function SiteNav() {
   return (
     <header className="sticky top-0 z-40 border-b border-ink-4/60 bg-ink-0">
@@ -33,16 +29,6 @@ export function SiteNav() {
           <BrandMark className="shrink-0" size={20} />
           {site.shortName}
         </a>
-
-        <ul className="hidden items-center gap-1 lg:flex">
-          {nav.items.map((item) => (
-            <li key={item.href}>
-              <a href={item.href} className={linkClasses()}>
-                {item.label}
-              </a>
-            </li>
-          ))}
-        </ul>
 
         <div className="ml-auto hidden items-center gap-3 lg:flex">
           <a
@@ -72,19 +58,7 @@ export function SiteNav() {
             </span>
           </summary>
           <div className="absolute right-0 top-full mt-2 w-56 border border-ink-4/60 bg-ink-1 p-3">
-            <ul className="flex flex-col">
-              {nav.items.map((item) => (
-                <li key={item.href}>
-                  <a
-                    href={item.href}
-                    className={`flex min-h-11 items-center px-2 text-sm text-ink-7 ${FOCUS} ${EASE} hover:bg-ink-2 hover:text-ink-9 active:translate-y-px`}
-                  >
-                    {item.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-3 flex flex-col gap-2 border-t border-ink-4/60 pt-3">
+            <div className="flex flex-col gap-2">
               <a
                 href={nav.secondaryCta.href}
                 className={`flex min-h-11 w-full items-center justify-center whitespace-nowrap border border-ink-4/70 px-5 text-sm font-medium tracking-tight text-ink-9 ${FOCUS} ${EASE} hover:bg-ink-2 active:translate-y-px`}
