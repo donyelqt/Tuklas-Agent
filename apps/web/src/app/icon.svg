@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!--
+    Tuklas Agent favicon.
+
+    Same four primitives and the same gradient as
+    src/components/marketing/brand-mark.tsx. Duplicated rather than shared because
+    a favicon is loaded outside the document and cannot reach the page's module
+    graph, its CSS custom properties, or its font stack.
+
+    The gradient stops are hex, not oklch. A favicon is rasterised by the
+    browser's SVG engine on an unknown baseline, and oklch support there is not
+    guaranteed. The hex values are the computed equivalents of the oklch stops
+    used on the page:
+
+      oklch(0.7 0.24 340) -> #f84fcc  the accent token
+      oklch(0.62 0.21 295) -> #9362f4  violet, exists only inside this mark
+      oklch(0.81 0.14 200) -> #00dbe4  the accent-2 token
+  -->
+  <defs>
+    <linearGradient id="t" x1="6" y1="13" x2="58" y2="51" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f84fcc"/>
+      <stop offset="0.5" stop-color="#9362f4"/>
+      <stop offset="1" stop-color="#00dbe4"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#t)">
+    <rect x="6" y="13" width="52" height="11"/>
+    <rect x="28" y="24" width="8" height="10"/>
+    <rect x="11" y="34" width="17" height="17"/>
+    <rect x="36" y="34" width="17" height="17"/>
+  </g>
+</svg>

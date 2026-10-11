@@ -57,8 +57,7 @@ Honest counter-argument, recorded so the trade-off is on file: Astro ships rough
 - `--tracking-tight: -0.025em` on display type.
 - `--prose-measure: 66ch` on body copy.
 - `--rule: oklch(100% 0 0 / .08)` and `--rule-strong: oklch(100% 0 0 / .14)` as the only two divider weights.
-- Base transition `150ms cubic-bezier(.4, 0, .2, 1)`.
-- Structural rhythm: short kicker, one-sentence H1, two-sentence sub, install command with a copy button, a "compatible" logo strip, a numbered feature list, a one-line footer. The whole omp.sh page is 44 lines of text. Restraint is the signature.
+- Base transition `150ms cubic-bezier(.4, 0, .2, 1)`. Structural rhythm: a short kicker, one-sentence H1, two-sentence sub, an install command with a copy button, a "compatible" logo strip, a numbered feature list, a one-line footer, and 44 lines of text in total. Restraint is the signature.
 
 ### Rejected
 
@@ -157,7 +156,8 @@ The headline is split into two runs inside one `h1`: `hero.headlineLead` in `ink
 
 - **Construction.** A 64-unit grid (`viewBox="0 0 64 64"`) drawn as four `rect` primitives, not one path, so each bar stays individually reviewable: a root bar at `x=6 y=13` sized `52x11`, a stem at `x=28 y=24` sized `8x10`, and two `17x17` leaves at `x=11` and `x=36`, both at `y=34`. It reads as a document tree reduced to its minimum: a root level, a descent, a branch, and a cited leaf, the right leaf being the provision the product returns. A first pass used five bars including a horizontal spread; at 20px that read as a coloured smudge rather than as a shape, because a 64-unit grid leaves each bar about two pixels wide. Four primitives leave three distinguishable masses at nav size: a bar, a stem, and two blocks.
 - **The name is doing the work, and it is not a llama.** `tuklas` is Tagalog for discovery, and the tool discovers provisions inside hierarchical legal documents, so "root to cited leaf" is the argument rather than decoration. A llama silhouette was rejected: the mark file records that two llama marks already appear on this page in the backends strip, and a third would read as a third vendor rather than as the product.
-- **Gradient:** three stops, `oklch(0.7 0.24 340)` at offset 0, `oklch(0.62 0.21 295)` at 0.5, `oklch(0.81 0.14 200)` at 1, in `userSpaceOnUse` from `(6,13)` to `(58,51)`. The endpoints are this page's `accent` and `accent-2` values verbatim.
+- **Gradient:** three stops, `oklch(0.7 0.24 340)` at offset 0, `oklch(0.62 0.21 295)` at 0.5, `oklch(0.81 0.14 200)` at 1, in `userSpaceOnUse` from `(8,12)` to `(56,52)`. The endpoints are this page's `accent` and `accent-2` values verbatim.
+- **Favicon asset set, and the duplication rule.** The favicon is this mark. Four assets sit in `src/app` next to `layout.tsx`: `icon.svg`, the scalable one browsers prefer; `favicon.ico`, a real multi-size icon at 16, 32 and 48 rendered from the same geometry, replacing the framework's default icon, which was the wrong brand entirely; `icon.png` at 512, transparent; and `apple-icon.png` at 180, opaque. The apple icon is opaque on purpose: iOS composites the icon onto the platform's own background, so an opaque field that matches the page background beats depending on the platform. **The geometry is defined once in `brand-mark.tsx` and mirrored in `icon.svg`, and that duplication is a constraint of how favicons load, not an oversight, so nobody "fixes" it by importing from the component:** a favicon is fetched outside the document and cannot reach the page's module graph, its CSS custom properties, or its font stack. For the same reason `icon.svg` uses hex gradient stops, `#f84fcc`, `#9362f4` and `#00dbe4`, instead of the page's oklch values: a favicon is rasterised by the browser's SVG engine on an unknown baseline where oklch support is not guaranteed. The hex values are the computed equivalents of the three oklch stops, and the file's own comment records that mapping.
 - **Accessibility and sizing:** `aria-hidden="true"` and `focusable="false"`, so the mark contributes nothing to any accessible name and the wordmark text carries the name at both call sites. Both call sites pass `size={20}`, so 20px rendered against the component's 22px default. `site.shortName` in the nav is the single permitted exception to the `copy.ts` rule; the hero lockup reads `hero.wordmark` from `copy.ts`, and puts the byline in `ink-7` behind it. The gradient id is per-instance via `useId`, so the two copies cannot collide. The hero lockup's relation to the reference design language's tab row is recorded in §7.
 
 ---
@@ -211,12 +211,9 @@ Constraints on the set:
 - The brand lockup is a label, not a widget: a `span` with `flex min-h-11 items-center gap-3 font-mono text-[11px] uppercase tracking-[0.18em]`, holding `brand-mark.tsx` at `size={20}`, the wordmark in `text-ink-9`, and the byline in `text-ink-7` a step back in the ramp. It replaced a row of buttons labelled "Clone" that did nothing when pressed, and it replaced the reference design language's tab row, which switches between real installers this project ships none of: one place fewer mark than the reference, because a tab row here would be a control that does nothing.
 - The headline is `max-w-[15ch] text-5xl font-semibold leading-[0.95] tracking-tighter md:text-6xl lg:max-w-none`, 2 lines at desktop. The subhead is capped at `max-w-[52ch]`.
 - **Why a grid, and the panel rule.** The panel was an absolutely positioned layer anchored to the viewport edge; measured, it overlapped the headline's box at 1280 and 1440, so a grid makes the collision impossible instead of tuning it away with breakpoints. The panel cell is `relative z-10 hidden lg:block`: it is the second column of `lg:grid-cols-[minmax(0,1fr)_21rem]`, so it can never collide with the headline and never clips its own caption. Below `lg` the hero already carries the headline, both CTAs and the command block, so the panel hides. The panel carries its own `@container` scope and reveals the node id column with `@md:inline`, so the id drops out when the panel itself is too narrow to carry it: the panel is `21rem` wide on a 1440px viewport, where a viewport breakpoint still showed the id and squeezed the node title into an ellipsis.
-- **The gutter rule.** The hero keeps `lg:pl-16` on its content cell, sized to the rail's own `w-16`, which is why the hero's grid still works with a rail that is no longer inside it. It replaced a `lg:pl-72` wrapper gutter plus an inner `max-w-3xl`, because the grid already reserves the panel's width and reserving another 288px of gutter beside it starved the headline column.
 - The rail is `fixed top-1/2 left-0 z-30 hidden -translate-y-1/2 lg:block` and is rendered by `page.tsx`, so it persists for the whole page instead of scrolling away with the hero. It carries one anchor per section, with the visible two-digit number `aria-hidden` and the label as the accessible name. **Two facts make a viewport-fixed rail safe:** it sits one slot below the sticky header's `z-40`, so it can never paint over the wordmark or the CTAs, and the page content wrapper's single `lg:pl-16` clears its `w-16` for every section at once. That one padding is load-bearing and must not be split into per-section offsets, which are exactly what a future section forgets.
-- The command block is the hero's artifact: the slot the reference design language gives to its install command. It is a `git clone` command, **not** `curl | sh`, because nothing is released and no installer exists. An installer command would be a fake install command under §8 rule 6, and that honesty constraint is load-bearing here, not a stylistic preference. The platform note the reference prints beside its install command is deliberately absent: it labels installer choices this project does not ship.
-- The CTA row carries one primary and one secondary CTA. CTA intent lock: **"Read the spec"** is the only read-docs intent anywhere on the page; **"View on GitHub"** is the only repository intent. Reused verbatim in nav, hero, and footer. No "Get started", no "Learn more", no "Contact".
-
-The hero carries a product visual: the tree preview panel, described in the geometry bullets above. It is a **real component preview**, a miniature of the 3-pane explorer rendering actual `GET /v1/documents/{id}/tree` response shapes from `docs/api.md` §2, not a `<div>` mock of a screenshot. It sits beside the command artifact rather than competing with it, in the panel's own grid column, so both read at once and neither has to win. It shows a Book/Title/Chapter/Article path with page numbers, because the structural tree is the product. No fake version footer, no fake sync status, no fake "last updated".
+- **The gutter rule.** The gutter is the same 64: the hero's content cell keeps `lg:pl-16`, so the hero's grid still works with a rail that no longer lives inside it. It replaced a `lg:pl-72` wrapper gutter plus an inner `max-w-3xl`, because the grid already reserves the panel's width and reserving another 288px of gutter beside it starved the headline column.
+- The command block is the hero's artifact: the slot the reference design language gives to its install command. It is a `git clone` command, **not** `curl | sh`, because nothing is released and no installer exists. An installer command would be a fake install command under §8 rule 6, and that honesty constraint is load-bearing here, not a stylistic preference. The platform note the reference prints beside its install command is deliberately absent: it labels installer choices this project does not ship. The CTA row beside it carries one primary and one secondary CTA under a CTA intent lock: **"Read the spec"** is the only read-docs intent anywhere on the page and **"View on GitHub"** is the only repository intent, reused verbatim in nav, hero, and footer. No "Get started", no "Learn more", no "Contact".
 
 ### Backends strip content model
 
@@ -259,18 +256,16 @@ From `design-taste-frontend` §9, §9.F, §9.G, plus §4.7. Mechanical pre-fligh
 - No decorative status dots: the single permitted dot is a real semantic state indicator in the tree preview when it genuinely represents a streaming state. No pills or labels overlaid on images, no photo-credit captions as decoration, and no locale, time, or weather strips.
 - No testimonials at all, there are none to show, and no fabricated precision (`99.99%`, `4.1x`).
 - No filler verbs: elevate, seamless, unleash, next-gen, revolutionize. No "Acme", "Nexus", "SmartFlow". No Inter as the body font.
-- No hand-rolled SVG icon paths. Phosphor only, one family, one stroke weight.
-- No div-based fake screenshots.
+- No hand-rolled SVG icon paths for UI icons. Phosphor only, one family, one stroke weight. The one exception is the project mark and the favicon set that mirrors it, which is four hand-drawn rects in section 5.
+- No div-based fake screenshots. The hero tree preview renders actual `GET /v1/documents/{id}/tree` response shapes from `docs/api.md` §2, as a Book/Title/Chapter/Article path with page numbers, because the structural tree is the product.
 - No `border-t` plus `border-b` on every row of a list. Pick one divider style per list.
 
 ---
 
 ## 10. Accessibility gate
 
-- WCAG 2.2 AA minimum. AAA for body copy where achievable.
-- `ink-5` is banned for readable strings. It is the only token in the palette that cannot carry text.
+- WCAG 2.2 AA minimum. AAA for body copy where achievable. `ink-5` is banned for readable strings; it is the only token in the palette that cannot carry text.
 - Visible focus on every interactive control: `outline: 2px solid var(--color-accent); outline-offset: 2px`. Never removed.
-- The sticky nav must not obscure keyboard focus. `scroll-margin-top` on every section anchor equals nav height plus 16px.
 - The marquee pauses on hover, on focus-within, and through a real pause button, because its track holds no focusable element.
 - Every SVG icon is either `aria-hidden="true"` when decorative beside visible text, or carries an accessible name when it is the only content of a control. Both hero canvases are `aria-hidden`, and the rail's visible number is `aria-hidden` with the label as the anchor's accessible name.
 - Semantic landmarks: one `h1`, plus `header`, `nav`, `main`, `footer`. Heading order never skips a level. Light mode is not offered (see §3); `color-scheme: dark` is declared so form controls and scrollbars render correctly.
@@ -298,6 +293,10 @@ apps/web/
     layout.tsx                 fonts, metadata, theme lock, skip link
     page.tsx                   marketing route, composes the 8 sections, owns the fixed rail and the `lg:pl-16` content wrapper
     globals.css                @theme tokens, base layer, reduced-motion block
+    icon.svg                    favicon, scalable, mirrors brand-mark.tsx's four rects and three gradient stops in hex, not imported (see section 5)
+    favicon.ico                 favicon at 16, 32 and 48, same source geometry
+    icon.png                    favicon at 512, transparent
+    apple-icon.png              apple touch icon at 180, opaque
   src/components/marketing/
     site-nav.tsx               brand lockup and the two CTAs only, no section links
     site-footer.tsx
@@ -342,6 +341,7 @@ The landing page is done when every line below is verifiable, not asserted.
 [ ] Both hero canvases are pointer-events-none, aria-hidden, absolutely positioned; dot-wave.tsx has no animation loop; hero-backdrop.tsx redraws only the crest layer and only every CREST_FRAME_MS = 1000/24 ms of wall clock; accent-2 appears as a class or token reference only in comparison-arms.tsx and dot-wave.tsx (hero-backdrop.tsx reads the CSS variable and counts as dot-wave's exception per section 3)
 [ ] hero-backdrop.tsx animates only opacity and transform, and the crest redraw cost stays inside one CREST_FRAME_MS = 1000/24 ms window measured in a real browser with zero long tasks
 [ ] brand-mark.tsx renders one aria-hidden, focusable="false" svg holding exactly four rects on viewBox "0 0 64 64" and no raw hex outside its three gradient stops; BrandMark is imported by exactly two files, site-nav.tsx and hero.tsx, both at size 20; the wordmark text sits beside the mark at both call sites, since the mark is aria-hidden and carries no name itself
+[ ] The four favicon assets exist in apps/web/src/app (icon.svg, favicon.ico, icon.png, apple-icon.png); favicon.ico carries real 16, 32 and 48 entries, icon.png is 512 with transparency, apple-icon.png is 180 and fully opaque; icon.svg holds the same four rects and the same three gradient stops as brand-mark.tsx, in hex rather than oklch, with the mapping recorded in the file's own comment
 [ ] The hero h1 is one element, so its accessible name is one sentence
 [ ] No string in copy.ts asserts superiority or reports an unmeasured metric
 [ ] Disclaimer string present in copy.ts and rendered on the page
