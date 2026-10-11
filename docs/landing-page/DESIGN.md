@@ -32,7 +32,7 @@ Honest counter-argument, recorded so the trade-off is on file: Astro ships rough
 
 - Next.js 16, App Router, React 19, TypeScript strict.
 - Tailwind CSS v4 via `@tailwindcss/postcss`. No `tailwind.config.js`. Theme declared with `@theme` in CSS.
-- Fonts self-hosted through `next/font/google`: **Geist** and **JetBrains Mono**. No `<link>` to Google Fonts.
+- Fonts self-hosted through `next/font/google`: **Geist** and **JetBrains Mono**, both still loaded, now sitting behind Apple-first `--font-sans` and `--font-mono` stacks (section 4). No `<link>` to Google Fonts.
 - Icons: `@phosphor-icons/react` only, one family, `weight="regular"` throughout, sized from one scale. No shadcn/ui on the marketing route: it is specified in `architecture.md` §7 for the explorer panes, and adding it here would add Radix and a second button system to a page that needs none.
 - **Animation: `motion` `^14.1.0`, imported as `motion/react`.** It drives the hero backdrop only. Everything else on the page stays plain CSS transitions and the one IntersectionObserver reveal. Framer Motion is the same library under its legacy name; the modern package is the one on npm and in `package.json`, so the legacy alias is not installed and must not be imported. No GSAP: there is no scroll-hijack and no pinning, so ScrollTrigger earns nothing here.
 
@@ -40,7 +40,7 @@ Honest counter-argument, recorded so the trade-off is on file: Astro ships rough
 
 ## 2. Design read and dials
 
-**Reading this as:** a developer-facing landing page for a local-first RAG research artifact, aimed at RAG engineers and legal researchers, in a dark terminal-native harness language borrowed from omp.sh, leaning toward Tailwind v4 tokens plus Geist and JetBrains Mono, hairline rules, sharp corners, and a single locked accent.
+**Reading this as:** a developer-facing landing page for a local-first RAG research artifact, aimed at RAG engineers and legal researchers, in a dark terminal-native harness language borrowed from omp.sh, leaning toward Tailwind v4 tokens plus the Apple-first stacks of section 4 over Geist and JetBrains Mono, hairline rules, sharp corners, and a single locked accent.
 
 | Dial | Value | Reason |
 |---|---|---|
@@ -53,7 +53,7 @@ Honest counter-argument, recorded so the trade-off is on file: Astro ships rough
 - The full `--color-ink-*` ramp, hue 280, near-neutral graphite.
 - `border-radius: 0` everywhere. All-sharp is omp.sh's shape system and it is the cheapest possible shape consistency lock.
 - `box-shadow: none` on surfaces. Elevation comes from 1px rules and ink-ramp steps only.
-- Geist for sans and display, JetBrains Mono for anything technical.
+- Geist for sans and display, JetBrains Mono for anything technical, inherited as the fallback half of the section 4 stacks rather than as the first family on any platform.
 - `--tracking-tight: -0.025em` on display type.
 - `--prose-measure: 66ch` on body copy.
 - `--rule: oklch(100% 0 0 / .08)` and `--rule-strong: oklch(100% 0 0 / .14)` as the only two divider weights.
@@ -62,7 +62,7 @@ Honest counter-argument, recorded so the trade-off is on file: Astro ships rough
 ### Rejected
 
 - **`#000000` page background.** omp.sh uses it. `--color-ink-0: #000000` is banned by `design-taste-frontend` §9.A and it visibly smears on OLED panels during scroll. Shifted to `#050507`, one step off pure black, which preserves the exact relationship to `--color-ink-1: #0a0a0c`.
-- **omp.sh's em-dash habit.** `design-taste-frontend` §9.G bans the character outright, page-wide, with no allowance. Zero em-dash and zero en-dash characters in any rendered string. Only the ASCII hyphen.
+- **omp.sh's em-dash habit.** `design-taste-frontend` §9.G bans the character outright, page-wide, with no allowance. Zero em-dash and zero en-dash characters in any rendered string. Only the ASCII hyphen. This is a render rule, and section 13 carries it as a grep over `apps/web/src`.
 
 ---
 
@@ -127,14 +127,20 @@ The page is dark, single theme, for its full length. No section inverts to a lig
 
 ## 4. Typography
 
-| Role | Family | Weight | Tracking | Notes |
+| Role | Family, in resolution order | Weight | Tracking | Notes |
 |---|---|---|---|---|
-| H1 hero | Geist | 600 | `tracking-tighter` for the hero headline only | 2 lines at desktop, step-sized. The tighter step applies to the hero alone: at the hero's `text-6xl` step the inherited `-0.025em` reads loose. |
-| Section H2 | Geist | 600 | `-0.025em` | max 8 words |
-| Body | Geist | 400 | normal | `66ch` measure, `1.625` leading |
-| Lead paragraph | Geist | 400 | normal | `ink-7`, larger than body |
-| Kicker, labels, code, metrics | JetBrains Mono | 400, 500 | `+0.02em` on uppercase labels | uppercase labels are `11px` with `0.18em` tracking |
-| Buttons | Geist | 500 | `-0.01em` | labels are 1 or 2 words |
+| H1 hero | Apple system font, then Geist | 600 | `tracking-tighter` for the hero headline only | 2 lines at desktop, step-sized. The tighter step applies to the hero alone: at the hero's `text-6xl` step the inherited `-0.025em` reads loose. |
+| Section H2 | Apple system font, then Geist | 600 | `-0.025em` | max 8 words |
+| Body | Apple system font, then Geist | 400 | normal | `66ch` measure, `1.625` leading |
+| Lead paragraph | Apple system font, then Geist | 400 | normal | `ink-7`, larger than body |
+| Kicker, labels, code, metrics | SF Mono, then JetBrains Mono | 400, 500 | `+0.02em` on uppercase labels | uppercase labels are `11px` with `0.18em` tracking |
+| Buttons | Apple system font, then Geist | 500 | `-0.01em` | labels are 1 or 2 words |
+
+**The family column is a stack, not a single face.** The two `@theme` tokens in `globals.css` are Apple-first: `--font-sans` resolves `-apple-system`, `BlinkMacSystemFont`, `"SF Pro Text"`, `"SF Pro"`, then `var(--font-geist-sans)`, then `ui-sans-serif, system-ui, sans-serif`; `--font-mono` resolves `SFMono-Regular`, `"SF Mono"`, then `var(--font-jetbrains-mono)`, then `ui-monospace, monospace`. `"SF Pro Text"` is named ahead of the generic `"SF Pro"` because its optical size suits body copy, and `-apple-system` resolves first on Apple platforms anyway, where the OS applies optical sizing itself.
+
+- **The Apple families are named, never shipped.** Apple's Design Resources License section 2B forbids embedding SF Pro or SF Mono, using them to display website content, and making them available over a network, and the SF Pro installer separately restricts the font to Apple-platform interface mockups. Referencing a family is not embedding it: `-apple-system` and `SFMono-Regular` ask the visitor's own operating system for a font already installed on their device, which is the mechanism apple.com itself relies on.
+- **The webfonts stay loaded, on purpose and not as leftovers.** A developer audience is mostly not on Apple, so removing Geist and JetBrains Mono would change what Windows and Linux visitors see and put a font download back in their path. The Apple entries cost zero bytes and zero layout shift, because nothing is downloaded and the OS font is present at first paint, while the fallback path keeps the existing self-hosted `display: swap` and fallback-metrics behaviour from section 11.
+- **This change is invisible off Apple, and that is the contract.** A maintainer on Windows or Linux sees no difference at all, because the stack falls through to the same webfonts as before. That is why a font change here cannot be confirmed by looking at the page locally; check the computed stack instead.
 
 No serif anywhere. No italic emphasis words injected into sans headlines. Mono is the only family used for anything that is literally code, a tool signature, a metric, or an identifier.
 
@@ -152,12 +158,9 @@ The headline is split into two runs inside one `h1`: `hero.headlineLead` in `ink
 
 ### Brand mark
 
-`brand-mark.tsx` is the project's own mark, used at exactly two call sites: the nav wordmark and the hero lockup.
-
 - **Construction, and the page geometry.** A 64-unit grid (`viewBox="0 0 64 64"`) drawn as four `rect` primitives, not one path, so each bar stays reviewable: a root bar at `x=6 y=13` sized `52x11`, a stem at `x=28 y=24` sized `8x10`, and two `17x17` leaves at `x=11` and `x=36`, both at `y=34`. That is the page geometry, used at the two call sites, and it is not the icon assets' geometry. It reads as a document tree reduced to its minimum: a root level, a descent, a branch, and a cited leaf, the right being the provision the product returns. A first pass used five bars; at 20px that read as a smudge, since a 64-unit grid leaves each bar two pixels wide. Four primitives leave three distinguishable masses at nav size: a bar, a stem, two blocks.
 - **The name is doing the work, and it is not a llama.** `tuklas` is Tagalog for discovery, and the tool discovers provisions inside hierarchical legal documents, so "root to cited leaf" is the argument, not decoration. A llama silhouette was rejected: two llama marks already appear in the backends strip, so a third would read as a third vendor. **Gradient:** three stops, `oklch(0.7 0.24 340)` at offset 0, `oklch(0.62 0.21 295)` at 0.5, `oklch(0.81 0.14 200)` at 1, in `userSpaceOnUse` from `(8,12)` to `(56,52)`.
-- **Favicon asset set.** Four assets sit in `src/app`: `icon.svg`, the scalable one browsers prefer; `favicon.ico`, a real multi-size icon; `icon.png` at 512; and `apple-icon.png` at 180, all from the same geometry, all replacing the framework's default icon. **All four are opaque** on an edge-to-edge field, `icon.svg` opening with `<rect width="64" height="64" rx="8" fill="#050507"/>`: that is `ink-0`, not pure `#000000`, because the project deliberately lifted the page off pure black (§2), and matching the page exactly is what makes the tile edge invisible.
-- **The field is rounded, radius 8 on the 64-unit grid, and 8 is not arbitrary:** it is Tailwind's `rounded-lg` at a 16px root, carried as a literal `rx` in `icon.svg` rather than as a class because a favicon cannot reach the page's CSS. It is an asset property, not a `rounded-*` utility, so the radius lock above stands.
+- **Favicon asset set.** Four assets sit in `src/app`: `icon.svg`, the scalable one browsers prefer; `favicon.ico`, a real multi-size icon; `icon.png` at 512; and `apple-icon.png` at 180, all from the same geometry, all replacing the framework's default icon. **All four are opaque** on an edge-to-edge field, `icon.svg` opening with `<rect width="64" height="64" rx="8" fill="#050507"/>`: that is `ink-0`, not pure `#000000`, because the project deliberately lifted the page off pure black (§2), and matching the page exactly is what makes the tile edge invisible. **The field is rounded, radius 8 on the 64-unit grid, and 8 is not arbitrary:** it is Tailwind's `rounded-lg` at a 16px root, carried as a literal `rx` in `icon.svg` rather than as a class because a favicon cannot reach the page's CSS. It is an asset property, not a `rounded-*` utility, so the radius lock above stands.
 - **`apple-icon.png` is deliberately NOT rounded, and the asymmetry is the point.** iOS applies its own squircle mask to touch icons, so a radius baked into that asset would double-round the corners: the three web icons carry the 8 and this one stays a full square. Do not make the four consistent: that reintroduces the artifact. It stays opaque because iOS composites it onto a background of its choosing.
 - **The icon geometry is the page geometry scaled to `0.78` about the grid centre `(32,32)` and centred in the field**, so the mark never touches the tile edge. From `icon.svg`: root `x=11.72 y=17.18` sized `40.56x8.58`, stem `x=28.88 y=25.76` sized `6.24x7.8`, leaves `13.26x13.26` at `x=15.62` and `x=35.12`, both at `y=33.56`, its gradient running `userSpaceOnUse` from `(11.72,17.18)` to `(52.28,46.86)`. That `0.78` drives every coordinate above.
 - **The duplication rule.** **The geometry is defined once in `brand-mark.tsx` and mirrored in `icon.svg`, and that duplication is a constraint of how favicons load, not an oversight:** a favicon is fetched outside the document and cannot reach the module graph, the page's custom properties, or its font stack. `icon.svg` therefore uses hex gradient stops, `#f84fcc`, `#9362f4` and `#00dbe4`, not the page's oklch values: a favicon is rasterised on an unknown baseline where oklch is not guaranteed. The file's own comment records the mapping.
@@ -214,15 +217,12 @@ Constraints on the set:
 - The brand lockup is a label, not a widget: a `span` with `flex min-h-11 items-center gap-3 font-mono text-[11px] uppercase tracking-[0.18em]`, holding `brand-mark.tsx` at `size={20}`, the wordmark in `text-ink-9`, and the byline in `text-ink-7` a step back in the ramp. It replaced a row of buttons labelled "Clone" that did nothing when pressed, and it replaced the reference design language's tab row, which switches between real installers this project ships none of: one place fewer mark than the reference, because a tab row here would be a control that does nothing.
 - The headline is `max-w-[15ch] text-5xl font-semibold leading-[0.95] tracking-tighter md:text-6xl lg:max-w-none`, 2 lines at desktop. The subhead is capped at `max-w-[52ch]`.
 - **Why a grid, and the panel rule.** The panel was an absolutely positioned layer anchored to the viewport edge; measured, it overlapped the headline's box at 1280 and 1440, so a grid makes the collision impossible instead of tuning it away with breakpoints. The panel cell is `relative z-10 hidden lg:block`: it is the second column of `lg:grid-cols-[minmax(0,1fr)_21rem]`, so it can never collide with the headline and never clips its own caption. Below `lg` the hero already carries the headline, both CTAs and the command block, so the panel hides. The panel carries its own `@container` scope and reveals the node id column with `@md:inline`, so the id drops out when the panel itself is too narrow to carry it: the panel is `21rem` wide on a 1440px viewport, where a viewport breakpoint still showed the id and squeezed the node title into an ellipsis.
-- The rail is `fixed top-1/2 left-0 z-30 hidden -translate-y-1/2 lg:block` and is rendered by `page.tsx`, so it persists for the whole page instead of scrolling away with the hero. It carries one anchor per section, with the visible two-digit number `aria-hidden` and the label as the accessible name. **Two facts make a viewport-fixed rail safe:** it sits one slot below the sticky header's `z-40`, so it can never paint over the wordmark or the CTAs, and the page content wrapper's single `lg:pl-16` clears its `w-16` for every section at once. That one padding is load-bearing and must not be split into per-section offsets, which are exactly what a future section forgets.
-- **The gutter rule.** The gutter is the same 64: the hero's content cell keeps `lg:pl-16`, so the hero's grid still works with a rail that no longer lives inside it. It replaced a `lg:pl-72` wrapper gutter plus an inner `max-w-3xl`, because the grid already reserves the panel's width and reserving another 288px of gutter beside it starved the headline column.
+- The rail is `fixed top-1/2 left-0 z-30 hidden -translate-y-1/2 lg:block` and is rendered by `page.tsx`, so it persists for the whole page instead of scrolling away with the hero. It carries one anchor per section, with the visible two-digit number `aria-hidden` and the label as the accessible name. **Two facts make a viewport-fixed rail safe:** it sits one slot below the sticky header's `z-40`, so it can never paint over the wordmark or the CTAs, and the page content wrapper's single `lg:pl-16` clears its `w-16` for every section at once. That one padding is load-bearing and must not be split into per-section offsets, which are exactly what a future section forgets. **The gutter rule:** the gutter is the same 64, the hero's content cell keeps `lg:pl-16`, so the hero's grid still works with a rail that no longer lives inside it. It replaced a `lg:pl-72` wrapper gutter plus an inner `max-w-3xl`, because the grid already reserves the panel's width and reserving another 288px of gutter beside it starved the headline column.
 - The command block is the hero's artifact: the slot the reference design language gives to its install command. It is a `git clone` command, **not** `curl | sh`, because nothing is released and no installer exists. An installer command would be a fake install command under §8 rule 6, and that honesty constraint is load-bearing here, not a stylistic preference. The platform note the reference prints beside its install command is deliberately absent: it labels installer choices this project does not ship. The CTA row beside it carries one primary and one secondary CTA under a CTA intent lock: **"Read the spec"** is the only read-docs intent anywhere on the page and **"View on GitHub"** is the only repository intent, reused verbatim in nav, hero, and footer. No "Get started", no "Learn more", no "Contact".
 
 ### Backends strip content model
 
-The strip is two kinds of thing, and the distinction is a product claim, not a design detail.
-
-- **Seven marks in all: three runtimes and four models.** Counted from `backends.backends` and `backends.models` in `copy.ts` (slugs `ollama`, `llamacpp`, `vllm`, `googlegemini`, `qwen`, `mistralai`, `deepseek`) and mapped one to one through `backend-marks.tsx`.
+- **Seven marks in all: three runtimes and four models.** The strip is two kinds of thing, and the distinction is a product claim, not a design detail. Counted from `backends.backends` and `backends.models` in `copy.ts` (slugs `ollama`, `llamacpp`, `vllm`, `googlegemini`, `qwen`, `mistralai`, `deepseek`) and mapped one to one through `backend-marks.tsx`.
 - **ADR-004 fixes the generation interface to `ollama`, `llamacpp` and `vLLM`.** Those three are the runtimes the project targets, and they are the only runtimes the strip may list as supported.
 - **Gemma, Qwen, Mistral and DeepSeek appear as examples of open-weight models** those runtimes can serve on the builder's own machine. They are not providers the project claims to support.
 - **Everything else is deliberately absent.** OpenAI, Anthropic, Gemini and xAI because their weights are not available to run locally and ADR-004 rejects cloud backends; Groq because it is an inference service, not a model; Llama because Simple Icons has no mark for it and the llama silhouette already appears as the llama.cpp mark.
@@ -280,9 +280,9 @@ From `design-taste-frontend` §9, §9.F, §9.G, plus §4.7. Mechanical pre-fligh
 
 | Metric | Target | How |
 |---|---|---|
-| LCP | under 2.0s | Hero renders as static HTML. Fonts via `next/font` with `display: swap`. No hero bitmap to download: the hero is text, a command block and the tree preview panel, all DOM, not image. |
+| LCP | under 2.0s | Hero renders as static HTML. Fonts via `next/font` with `display: swap`; the Apple entries that lead the stacks download nothing at all (section 4). No hero bitmap to download: the hero is text, a command block and the tree preview panel, all DOM, not image. |
 | INP | under 200ms | Zero JavaScript above the fold except the copy button, the reveal observer, and the hero backdrop. The 2000-dot field draws once on mount and once per resize and never per frame; the backdrop's drift is transform-only and compositor-side; the only per-frame work is the crest layer, about 140 dots, capped at one redraw per `1000/24` ms. That cap is the budget the layer must stay inside: it may not move to a per-frame redraw or grow past a fraction of the 200ms interaction budget. No GSAP, no scroll handlers, no third-party scripts. |
-| CLS | 0 | Fonts loaded via `next/font` with size-adjust metrics. Marquee and code block have explicit reserved dimensions. Reveal animates opacity and transform only. |
+| CLS | 0 | Fonts loaded via `next/font` with size-adjust metrics, so the webfont fallback keeps its reserved metrics; the Apple path is already present at first paint and shifts nothing. Marquee and code block have explicit reserved dimensions. Reveal animates opacity and transform only. |
 
 ---
 
@@ -338,6 +338,7 @@ The landing page is done when every line below is verifiable, not asserted.
 [ ] Zero shadow-lg, shadow-xl, shadow-2xl, or drop-shadow in marketing components
 [ ] Zero #000 and zero #fff hex literals; all colour via theme tokens
 [ ] ink-5 appears nowhere in a readable-string context
+[ ] globals.css @theme declares --font-sans as -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif and --font-mono as SFMono-Regular, "SF Mono", var(--font-jetbrains-mono), ui-monospace, monospace; layout.tsx still loads Geist and JetBrains Mono from next/font/google exposing --font-geist-sans and --font-jetbrains-mono; no SF Pro or SF Mono font file is committed anywhere under apps/web; and the visible change is confined to Apple devices, so a font edit is checked by reading the computed stack, not by looking at the page on Windows or Linux (section 4)
 [ ] Every interactive element has a visible focus ring
 [ ] Reduced-motion block present and proven by toggling the media query, and hero-backdrop.tsx gates both layers through useReducedMotion
 [ ] Every image and SVG has alt text or an explicit aria-hidden

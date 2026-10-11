@@ -24,9 +24,29 @@
   --color-rule-strong: oklch(100% 0 0 / .14);
   --color-selection: oklch(70% .24 340 / .32);
 
-  /* typography */
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  /*
+   * Apple-first stacks.
+   *
+   * SF Pro and SF Mono cannot be shipped as web fonts. Apple's Design
+   * Resources License section 2B forbids embedding them, using them to display
+   * website content, and making them available over a network, and the SF Pro
+   * installer restricts the font to Apple-platform interface mockups.
+   *
+   * Naming the family is not embedding it. `-apple-system` and `SFMono-Regular`
+   * ask the visitor's own operating system for a font it already has installed,
+   * which is what apple.com itself does. Nothing is downloaded, so this adds no
+   * font payload and no layout shift on Apple devices.
+   *
+   * Geist and JetBrains Mono stay loaded underneath, so every non-Apple visitor
+   * sees exactly the same type as before. "SF Pro Text" is named ahead of the
+   * generic "SF Pro" because the text optical size is correct for body copy;
+   * `-apple-system` resolves first on Apple platforms anyway, where the OS
+   * applies optical sizing itself.
+   */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro",
+    var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: SFMono-Regular, "SF Mono", var(--font-jetbrains-mono), ui-monospace,
+    monospace;
 
   /* z-index scale (DESIGN.md section 5) */
   --z-nav: 40;
