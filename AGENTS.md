@@ -130,7 +130,7 @@ Three things, and conflating them is the mistake here.
   tidying and breaks the favicon on older browsers, which no desktop test sees.
 - Two facts a re-render must reproduce, both recorded in `icon.svg`: the field is
   `#050507`, the page's `ink-0`, not pure black, so the tile edge disappears; and
-  the field radius is 6 on the 64-unit grid, which is Tailwind's `rounded-md` at
+  the field radius is 8 on the 64-unit grid, which is Tailwind's `rounded-lg` at
   a 16px root. The radius is carried as a literal in the SVG, never as a class,
   for the same reason the stops are hex.
 
