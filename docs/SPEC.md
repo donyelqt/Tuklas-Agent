@@ -313,9 +313,11 @@ be published honestly.
   `node_<slug>` convention in api.md §1. **Consequence of not deciding:** `Recall@5 = 0`
   silently, the run "completes," and nothing fails. The most dangerous failure mode
   because it is silent.~~ **RESOLVED (2026-10-19):** `node_{doc_slug}_{type}_{locator}` — full grammar, examples and the four seed-test invariants in `architecture.md` §3.
-- **D2 — Benchmark corpus.** PRD §10 Q1. No public statute is selected. **Consequence:**
-  nothing to ingest, `gold_nodes` reference articles that don't exist, 72Q dataset is
-  fictional.
+- **D2 — Benchmark corpus.** ~~PRD §10 Q1. No public statute is selected.~~
+  **RESOLVED (2026-10-19):** primary = Civil Code of the Philippines (R.A. 386, ICNL
+  text-layer PDF, 167 pp, sha256 recorded); secondary = U.S. Code Title 11 (official
+  GPO PDF, 334 pp). Evidence, checksums, and the rejected-candidates record in
+  `docs/CORPUS.md`; dataset `document` slugs: `civil-code-public`, `usc-title-11`.
 - **D3 — Arm B embedding model.** ~~ADR-004 pins the *generation* model across arms but
   names no embedding model for the dense baseline.~~ **RESOLVED (2026-10-19):**
   `BAAI/bge-small-en-v1.5` via `fastembed==0.9.0` — 384 dims, MIT, ONNX Runtime CPU
