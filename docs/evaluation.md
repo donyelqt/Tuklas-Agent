@@ -28,9 +28,9 @@ Metrics: retrieval (Recall@K, Precision@K, MRR@10) │ generation
 {
   "id": "q013",
   "question": "...",
-  "document": "civil-code-public",
+  "document": "civil-code-public",  // document slug (runner resolves slug → documents.id)
   "category": "direct-lookup | definition | multi-section | cross-reference | exception | multi-hop | comparison",
-  "gold_nodes": ["article_1318"],
+  "gold_nodes": ["node_civil-code-public_article_1318"],
   "expected_claims": ["consent", "object", "cause"],
   "answerable": true,
   "notes": "Why these golds; known distractors (1319/1320)"
@@ -38,6 +38,8 @@ Metrics: retrieval (Recall@K, Precision@K, MRR@10) │ generation
 ```
 
 `answerable: false` marks planted unanswerable questions — correctly abstaining counts as correct (scored separately). Corpus = public/legal-safe docs only.
+
+Golds carry the full D1 node id including the document slug; a question's golds must all start with `node_{question.document}_`, and golds prefer leaf provisions (containers are the only ids whose form can move if container numbering is revised).
 
 ## 3. Retrieval metrics (macro-averaged over test set)
 

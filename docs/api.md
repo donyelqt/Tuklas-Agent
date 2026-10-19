@@ -5,7 +5,7 @@ Base path `/v1`. JSON request/response; streaming over SSE. Uniform error shape 
 
 ## 1. Conventions
 
-- Ids: `doc_<hash8>`, `node_<slug>`, `q_<uuid8>`, `eval_<uuid8>`.
+- Ids: `doc_<hash8>`, `node_<slug>` (`<slug>` = `{doc_slug}_{type}_{locator}` — D1 format, architecture.md §3), `q_<uuid8>`, `eval_<uuid8>`.
 - Errors (ALL endpoints, including SSE terminal errors): `{ "error": { "code": "...", "message": "...", "details": {} } }`.
   | Code | Status | When |
   |------|--------|------|
@@ -13,7 +13,7 @@ Base path `/v1`. JSON request/response; streaming over SSE. Uniform error shape 
   | `OCR_REQUIRED` | 422 | >30% pages with <50 chars extracted (includes fully empty text layer) |
   | `PARSE_FAILED` | 422 | PyMuPDF cannot open/extract at all (corrupt, encrypted-unreadable) |
   | `NOT_FOUND` | 404 | unknown document/node/evaluation id |
-  | `CONFLICT` | 409 | identical `file_hash` re-upload (dup hash lives ONLY here) |
+  | `CONFLICT` | 409 | identical `file_hash` re-upload, or duplicate `slug` (hash and slug conflicts live ONLY here) |
   | `LLM_UNAVAILABLE` | 503 | backend down/timeout |
   | `EVAL_FAILED` | 500 | runner crash, invalid config |
 - Pagination: `GET /v1/documents?page=1&pageSize=20` (defaults 1/20, max `pageSize` 100, 1-indexed) → `{ data, pagination: { page, pageSize, totalItems, totalPages } }`.
@@ -21,7 +21,7 @@ Base path `/v1`. JSON request/response; streaming over SSE. Uniform error shape 
 ## 2. Documents
 
 ```text
-POST /v1/documents (multipart: file=*.pdf)
+POST /v1/documents (multipart: file=*.pdf, slug?: form field — registry slug; default: slugified file-name stem; duplicate → 409)
   → 201 { id, name, page_count, parse_confidence, tree_root }   # tree_root: {id,type,title,child_count}
   → 422 VALIDATION_ERROR | OCR_REQUIRED | PARSE_FAILED; 409 CONFLICT (dup hash); 404 n/a
 GET /v1/documents?page=&pageSize= → { data: [{id,name,page_count,created_at}], pagination }
