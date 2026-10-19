@@ -81,7 +81,9 @@ Two-pass scoring (pass 1: lex/struct/title; pass 2: ref/hier off lex-top-5), wei
 
 ## 7. Web (apps/web)
 
-Next.js + React + TypeScript + Tailwind + shadcn/ui. Three panes: tree / source / answer. `POST /v1/ask/stream` SSE (schemas in `api.md`). Persistent disclaimer banner (wording in PRD US-2). Local-first API default; web deploy later.
+ Next.js + React + TypeScript + Tailwind + shadcn/ui. Three panes: tree / source / answer. `POST /v1/ask/stream` SSE (schemas in `api.md`). Persistent disclaimer banner (wording in PRD US-2).
+
+ **Local-first / deploy boundary:** the landing page at `/` is a static export (`output: "export"` in `next.config.ts`) with no API calls; it deploys as a zero-runtime build on Vercel. The document explorer at `/app/*` is a separate runtime that calls the local API at `NEXT_PUBLIC_API_BASE_URL` (defaults to `http://127.0.0.1:8000`); if the API is unreachable, the explorer fails loud rather than fabricating results. `apps/web/src/lib/site.ts` reads the base URL from that environment variable. Vercel auto-detects the framework at `apps/web/`; no `vercel.json` is required for the marketing route.
 
 ## 8. Data model (DDL sketch — weights columns included)
 
