@@ -29,12 +29,14 @@ points at.
     don't exist, 72Q dataset is fictional.
   - *Acceptance:* corpus PDFs fetched into `data/documents/`; `data/datasets/v1/`
     structure initialized.
-- [ ] **D3 — Arm B embedding model.** Pin a CPU-runnable dense embedding model for the
-  vector baseline; record it in `docs/decisions/ADR-002`.
+- [x] **D3 — Arm B embedding model.** ~~Pin a CPU-runnable dense embedding model for the
+  vector baseline; record it in `docs/decisions/ADR-002`.~~ **DONE (2026-10-19):**
+  `BAAI/bge-small-en-v1.5` via `fastembed==0.9.0` (384 dims, MIT, ONNX Runtime CPU, HF
+  revision `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a`), recorded in ADR-002.
   - *Consequence if skipped:* Arm B cannot be built; the "arms differ only in retrieval"
     parity claim is unenforceable.
   - *Acceptance:* embedding model named in ADR-002; the package lands in the pinned
-    requirements manifest (Day 7).
+    requirements manifest (Day 7). ✔ model recorded; package pin carried to Day 7.
 - [ ] Confirm the 6 reconciliation edits from `PLAN.md` Day 0 are present on main
   (threshold 0.15, quarantine scope incl. `api/`, cosine grep, COPY.md backends label,
   DESIGN.md sources, dead design.ts ref) — committed in `97d862d`/`5e16463`.

@@ -317,9 +317,12 @@ be published honestly.
 - **D2 — Benchmark corpus.** PRD §10 Q1. No public statute is selected. **Consequence:**
   nothing to ingest, `gold_nodes` reference articles that don't exist, 72Q dataset is
   fictional.
-- **D3 — Arm B embedding model.** ADR-004 pins the *generation* model across arms but
-  names no embedding model for the dense baseline. **Consequence:** Arm B cannot be
-  built; the "arms differ only in retrieval" parity claim is unenforceable.
+- **D3 — Arm B embedding model.** ~~ADR-004 pins the *generation* model across arms but
+  names no embedding model for the dense baseline.~~ **RESOLVED (2026-10-19):**
+  `BAAI/bge-small-en-v1.5` via `fastembed==0.9.0` — 384 dims, MIT, ONNX Runtime CPU
+  (no torch), HF revision `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a` pinned; rationale
+  and runner-up comparison recorded in `docs/decisions/ADR-002` ("Arm B embedding
+  model").
 
 **Block:** nothing in Day 1–7 may begin until D1, D2, D3 are resolved.
 
