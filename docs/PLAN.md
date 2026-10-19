@@ -22,7 +22,7 @@ These are the spec-contradictions the audit found. All are corrected so builders
 These are genuinely open questions the spec itself leaves live. **Do not begin any slice without them.**
 
 - **D1 — Node id format.** ~~`gold_nodes` in the frozen dataset (e.g. `article_1318`) must resolve to real node ids produced by ingestion. No doc defines the id format (`architecture.md §8` DDL: `id TEXT PK` — no generator). **Consequence of not deciding:** `Recall@5 = 0` for every question, the run "completes," and nothing fails. The most dangerous failure mode because it is silent.~~ **RESOLVED (2026-10-19):** `node_{doc_slug}_{type}_{locator}` — grammar, examples and the four seed-test invariants in `architecture.md` §3.
-- **D2 — Benchmark corpus.** PRD §10 Q1. No public statute is selected. **Consequence:** nothing to ingest, gold_nodes reference articles that don't exist, 72Q dataset is fictional.
+- **D2 — Benchmark corpus.** ~~PRD §10 Q1. No public statute is selected.~~ **RESOLVED (2026-10-19):** primary = Civil Code of the Philippines (R.A. 386, ICNL text-layer PDF, 167 pp); secondary = U.S. Code Title 11 (official govinfo PDF, 334 pp). Evidence + checksums in `docs/CORPUS.md`. The original candidates (Civil Rights Act, California Civil Code) were verified and rejected — the "≥100pp" claim was false and no official CA PDF exists.
 - **D3 — Arm B embedding model.** ~~ADR-004 pins the *generation* model across arms but names no embedding model for the dense baseline.~~ **RESOLVED (2026-10-19): `BAAI/bge-small-en-v1.5` via `fastembed==0.9.0` (384 dims, MIT, ONNX Runtime CPU, HF revision pinned); recorded in ADR-002 "Arm B embedding model".**
 
 ## Build order (architecture.md §10, annotated with dependencies)
@@ -57,9 +57,9 @@ architecture.md §10 lists 6 vertical slices. In dependency order with the block
 ### 0. Pre-flight (Day 0, morning) — REQUIRED
 
 - [x] Resolve D1: pin the node id format and write one line in architecture.md §3 documenting it. → **`node_{doc_slug}_{type}_{locator}` (see §3)**
-- [ ] Resolve D2: pick 1–2 public statutes (candidates: U.S. Civil Rights Act; California Civil Code — both public domain, hierarchical, ≥100pp).
+- [x] Resolve D2: pick 1–2 public statutes (candidates: U.S. Civil Rights Act; California Civil Code — both public domain, hierarchical, ≥100pp). → **R.A. 386 (primary) + U.S. Code Title 11 (secondary); original candidates rejected on verified evidence — `docs/CORPUS.md`**
 - [x] Resolve D3: pick a CPU-runnable dense embedding model and record it in ADR-002. → **`BAAI/bge-small-en-v1.5` via `fastembed==0.9.0` (HF revision `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a`)**
-- [ ] Apply the 6 reconciliation edits above (done in this pass).
+- [x] Apply the 6 reconciliation edits above (done in this pass; re-verified on main 2026-10-19).
 
 **Block:** nothing in Day 1–7 may begin until all three are resolved.
 

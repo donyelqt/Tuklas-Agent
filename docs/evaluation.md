@@ -37,7 +37,7 @@ Metrics: retrieval (Recall@K, Precision@K, MRR@10) │ generation
 }
 ```
 
-`answerable: false` marks planted unanswerable questions — correctly abstaining counts as correct (scored separately). Corpus = public/legal-safe docs only.
+`answerable: false` marks planted unanswerable questions — correctly abstaining counts as correct (scored separately). Corpus = public/legal-safe docs only. **D2 resolved (2026-10-19):** primary = Civil Code of the Philippines (R.A. 386, slug `civil-code-public`), secondary = U.S. Code Title 11 (slug `usc-title-11`); artifacts + sha256 + evidence in `docs/CORPUS.md`.
 
 Golds carry the full D1 node id including the document slug; a question's golds must all start with `node_{question.document}_`, and golds prefer leaf provisions (containers are the only ids whose form can move if container numbering is revised).
 
