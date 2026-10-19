@@ -1,7 +1,7 @@
 # Tuklas Agent: Landing Page Copy Deck
 
 **Status:** Copy contract. Load-bearing for `apps/web/src/lib/copy.ts`.
-**Sources of truth:** `docs/PRD.md` (section 2, 5, 6, 7), `docs/evaluation.md` (section 1, 7), `docs/retrieval.md` (section 5), `docs/architecture.md` (section 1, 4), `docs/decisions/ADR-004-local-llm-interface.md`.
+ **Sources of truth:** `docs/PRD.md` (section 2, 5, 6, 7), `docs/evaluation.md` (section 1, 7), `docs/retrieval.md` (section 5), `docs/architecture.md` (section 1, 4), `docs/landing-page/DESIGN.md` (sections 2, 7), `docs/decisions/ADR-004-local-llm-interface.md`.
 **Rules applied:** no superiority claim, no fabricated metric, no legal-advice framing, no social proof, no fake install, no em-dash or en-dash anywhere, no inline strings in JSX.
 
 Every string below is transcribed verbatim into `apps/web/src/lib/copy.ts`. Nothing in that file exists outside this document.
@@ -64,20 +64,21 @@ No kicker, no version label, no trust strip. Three text elements plus the previe
 
 ---
 
-## Backends strip
+ ## Backends strip
 
-**Layout intent:** one infinite marquee of wordmark logos under a single label, logos only, no text under any logo.
+ **Layout intent:** one infinite marquee of wordmark logos under a single label, logos only, no text under any logo.
 
-Export: `backends`
+ Export: `backends`
 
-| Field | String |
-|---|---|
-| `label` | Local LLM backends the generation interface targets |
-| `items[0].name` / `items[0].slug` / `items[0].alt` | Ollama / ollama / Ollama |
-| `items[1].name` / `items[1].slug` / `items[1].alt` | llama.cpp / llamacpp / llama.cpp |
-| `items[2].name` / `items[2].slug` / `items[2].alt` | vLLM / vllm / VLLM |
+ The label admits two kinds of thing (three runtimes + four open-weight models, per DESIGN.md §7), not one:
 
-Slugs are the ADR-004 config values `ollama | llamacpp | vllm`.
+ | Field | String |
+ |---|---|
+ | `label` | Local runtimes, and the open-weight models they serve |
+ | `backends[0]` / `backends[1]` / `backends[2]` | Ollama / ollama | llama.cpp / llamacpp | vLLM / vllm |
+ | `models[0]` / `models[1]` / `models[2]` / `models[3]` | Gemma / googlegemini | Qwen / qwen | Mistral / mistralai | DeepSeek / deepseek |
+
+ ADR-004 fixes the generation interface to `ollama | llamacpp | vllm` and rejects cloud backends; the three runtimes are the only entries the strip may list as supported. The four models are examples of what those runtimes serve locally, not providers Tuklas claims to support.
 
 ---
 
@@ -245,11 +246,10 @@ Export: `runLocally`
 | `commands[3].label` / `.command` | Web / `npm --prefix apps/web run dev` |
 | `caption` | Intended local setup, not an installer. The API entrypoint is specified in docs/architecture.md and does not exist yet. |
 
-`repoTree`, one template literal, from `docs/architecture.md` section 1:
+ `repoTree`, one template literal, from `docs/architecture.md` section 1. (`src/lib/` holds `copy.ts` and `site.ts` — not `design.ts`; the marquee is `backend-marks.tsx`, mapping slugs from `copy.ts`.)
 
 ```text
 apps/web/                      Next.js App Router, marketing at /, explorer at /app/*
-apps/api/                      FastAPI service under the /v1 prefix
   api/  ingestion/  retrieval/  agent/  generation/  evaluation/  models/
 data/
   documents/  indexes/  datasets/

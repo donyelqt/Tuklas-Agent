@@ -59,7 +59,7 @@ follow_reference(reference_id: str) -> FollowResult
 get_source(node_id: str) -> Source                # single node text + pages + path
 select_evidence(hits: list[NodeHit], sub_questions: list[str]) -> EvidenceSet
   # retrieval-owned: dedup → drop <50 chars → drop page-span-less →
-  # rank by score → keep top 8 → per-sub-question support check (threshold 0.20)
+  # rank by score → keep top 8 → per-sub-question support check (threshold 0.15)
 ```
 
 `NodeHit { node_id, title, snippet ≤400 chars, score, components{lex,ident,title,ref,hier}, page_start }`. Every tool logs `(tool, args, latency_ms, result_ids)`.

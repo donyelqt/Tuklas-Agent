@@ -34,8 +34,8 @@ Deny-import list for the primary path (exact dotted paths, CI-scanned — see CO
 
 ```text
 DENY_PRIMARY = {sentence_transformers, faiss, chromadb, qdrant_client, pgvector}
-applies to: apps/api/{ingestion,retrieval,agent,generation}/
-+ grep rule: `cosine_similarity|cosine (` must not appear in apps/api/retrieval/
+ applies to: apps/api/{ingestion,retrieval,agent,generation,api}/
++ grep rule: `cosine_similarity|cosine\s*\(` must not appear in `apps/api/retrieval/`
 ```
 
 | Module | Owns | May import | MUST NOT import |

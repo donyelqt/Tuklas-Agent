@@ -11,7 +11,7 @@ Tightening is silent; loosening requires human approval in the commit message.
 - No unimplemented stubs: `raise NotImplementedError`, `...`, `pass`-only handlers, empty `catch {}`.
 - No skipped or deleted tests without a reason in the commit message.
 - No secrets in source (API keys, tokens, absolute private paths).
-- Vectorless quarantine (research-credibility gate): `apps/api/{ingestion,retrieval,agent,generation}/` must not import `sentence_transformers | faiss | chromadb | qdrant_client | pgvector`, and `cosine_similarity` must not appear in `apps/api/retrieval/`. `experiments/vector/` must be imported only by `apps/api/evaluation/`. Checked by `scripts/check_no_vectors.py` (Day 3 deliverable, before any retrieval code merges).
+- Vectorless quarantine (research-credibility gate): `apps/api/{ingestion,retrieval,agent,generation,api}/` must not import `sentence_transformers | faiss | chromadb | qdrant_client | pgvector`, and `cosine_similarity` must not appear in `apps/api/retrieval/`. `experiments/vector/` must be imported only by `apps/api/evaluation/`. Checked by `scripts/check_no_vectors.py` (Day 3 deliverable, before any retrieval code merges).
 - Agent thinness: `apps/api/agent/` must not import `sqlite3 | sqlalchemy | apps.api.models` — all node access via the 7 tools. Same script, same gate.
 - No legal-advice language in prompts/UI ("you should", "I advise", "your case", "you must") — research tool framing only.
 - This file does not get weakened to make a change pass.
