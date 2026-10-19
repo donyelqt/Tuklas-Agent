@@ -42,7 +42,7 @@ points at.
   - *Consequence if skipped:* Arm B cannot be built; the "arms differ only in retrieval"
     parity claim is unenforceable.
   - *Acceptance:* embedding model named in ADR-002; the package lands in the pinned
-    requirements manifest (Day 7). ✔ model recorded; package pin carried to Day 7.
+    pinned manifest (Day 7, poetry.lock). ✔ model recorded; package pin carried to Day 7.
 - [ ] Confirm the 6 reconciliation edits from `PLAN.md` Day 0 are present on main
   (threshold 0.15, quarantine scope incl. `api/`, cosine grep, COPY.md backends label,
   DESIGN.md sources, dead design.ts ref) — committed in `97d862d`/`5e16463`.
@@ -201,10 +201,10 @@ slices 1–5.
 
 ## Day 7 — Requirements, CI, reproducibility
 
-**Targets:** repo root (`pyproject.toml`/`requirements.txt`, `.github/workflows/ci.yml`,
+**Targets:** repo root (`pyproject.toml` + `poetry.lock` (Poetry), `.github/workflows/ci.yml`,
 `scripts/check_eval_config.py`). **Depends on:** all slices green.
 
-- [ ] `requirements.txt` pinned: PyMuPDF, rank-bm25 (or FTS5-only), rapidfuzz, langgraph,
+- [ ] `pyproject.toml` + `poetry.lock` pinned (Poetry): PyMuPDF, rank-bm25 (or FTS5-only), rapidfuzz, langgraph,
   pydantic, fastapi, uvicorn, diff-cover, and the D3 embedding package.
 - [ ] `scripts/check_no_vectors.py` + `scripts/check_eval_config.py` finalized
   (Day 1 + Day 7 deliverables per CONSTRAINTS.md).
