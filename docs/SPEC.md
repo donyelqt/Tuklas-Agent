@@ -87,7 +87,7 @@ any reordering there is a review failure, caught by the truncation contract test
 ## 3. Data model (DDL sketch, architecture.md §8 — weights columns included)
 
 ```sql
-documents(id TEXT PK, name TEXT, file_path TEXT, file_hash TEXT UNIQUE,
+documents(id TEXT PK, slug TEXT UNIQUE, name TEXT, file_path TEXT, file_hash TEXT UNIQUE,
           page_count INT, parse_confidence REAL, created_at TEXT);
 nodes(id TEXT PK, document_id TEXT REFERENCES documents(id), parent_id TEXT,
       type TEXT, title TEXT, text TEXT,
@@ -106,8 +106,7 @@ evaluation_runs(id TEXT PK, dataset TEXT, config TEXT /* JSON: code_version, wei
 Indexes: `nodes(document_id, parent_id)`, `nodes(document_id, type)`, FTS5 on `(title, text)`.
 
 **Id formats (api.md §1):** `doc_<hash8>`, `node_<slug>`, `q_<uuid8>`, `eval_<uuid8>`.
-The `node_<slug>` format is the contract that must resolve between `gold_nodes` in the
-frozen dataset and the tree node ids produced by ingestion — open decision **D1** (§10).
+The `node_<slug>` format is defined by decision D1 (resolved 2026-10-19): `<slug>` = `{doc_slug}_{type}_{locator}` per `architecture.md` §3 — the contract that makes `gold_nodes` in the frozen dataset resolve to real node ids.
 
 ---
 
@@ -309,11 +308,11 @@ be published honestly.
 
 ## 10. Open decisions (block Day 1)
 
-- **D1 — Node id format.** `gold_nodes` in the frozen dataset (e.g. `article_1318`) must
+- **D1 — Node id format.** ~~`gold_nodes` in the frozen dataset (e.g. `article_1318`) must
   resolve to real node ids produced by ingestion. No doc defines the id format beyond the
   `node_<slug>` convention in api.md §1. **Consequence of not deciding:** `Recall@5 = 0`
   silently, the run "completes," and nothing fails. The most dangerous failure mode
-  because it is silent.
+  because it is silent.~~ **RESOLVED (2026-10-19):** `node_{doc_slug}_{type}_{locator}` — full grammar, examples and the four seed-test invariants in `architecture.md` §3.
 - **D2 — Benchmark corpus.** PRD §10 Q1. No public statute is selected. **Consequence:**
   nothing to ingest, `gold_nodes` reference articles that don't exist, 72Q dataset is
   fictional.

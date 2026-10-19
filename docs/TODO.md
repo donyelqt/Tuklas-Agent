@@ -15,9 +15,10 @@ points at.
 
 ## Day 0 — Pre-flight (BLOCKED on D1 + D2 + D3)
 
-- [ ] **D1 — Node id format.** Pin the format that resolves `gold_nodes` in the frozen
+- [x] **D1 — Node id format.** ~~Pin the format that resolves `gold_nodes` in the frozen
   dataset to tree node ids produced by ingestion; write one line in
-  `architecture.md` §3 documenting it.
+  `architecture.md` §3 documenting it.~~
+  **DONE (2026-10-19):** format `node_{doc_slug}_{type}_{locator}` recorded in `architecture.md` §3; acceptance = the four invariants (existence + slug-prefix match + uniqueness + rebuild determinism), restated in PLAN risk table.
   - *Consequence if skipped:* `Recall@5 = 0` silently — the run "completes" but every gold
     node mismatches. The most dangerous failure mode because it is silent.
   - *Acceptance:* id format documented + a seed-data test asserting every `gold_node` in
@@ -219,10 +220,10 @@ From the eval-readiness audit — a run violating any of these **completes but c
 published honestly** (`SPEC.md` §9b):
 
 1. [ ] Corpus ingested (D2 resolved) → questions + nodes exist.
-2. [ ] Every `gold_node` resolves to a real ingested node id (D1).
+2. [ ] Every `gold_node` resolves to a real ingested node id (D1) — no missing or prefix-mismatched gold (`node_{question.document}_`).
 3. [ ] Judge blinded; prompt versioned; disagreement computable (≤ 15%).
 4. [ ] `evaluation_runs`/`retrieval_runs` rows persisted per question per arm.
 5. [ ] Model parity check green (same model + backend + temperature(0) + seed across arms).
 6. [ ] Quarantine scan green (`check_no_vectors.py` exit 0).
 7. [ ] Requirements manifest installs the full toolchain (incl. the RapidFuzz scorer).
-8. [ ] Node id format match re-verified on the frozen dataset (seed-data test green).
+8. [ ] Node id format match re-verified on the frozen dataset (seed-data test green) — uniqueness or determinism broken would fail it.
