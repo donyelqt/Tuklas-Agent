@@ -13,7 +13,7 @@
 ## 2. Index structures
 
 - **Tree store (SQLite):** `nodes` + `references` per `architecture.md §8`. Indexes: `(document_id, parent_id)`, `(document_id, type)`, FTS5 on `(title, text)`.
-- **BM25 index:** per-document, over leaf-node bodies + section-intro nodes. Rebuilt on ingest; persisted under `data/indexes/{document_id}/bm25.json`.
+- **BM25 index:** per-document, over leaf-node bodies + section-intro nodes. Rebuilt on ingest; persisted under `data/indexes/{document_id}/bm25.json`. The query-time lex path scores through this persisted per-document rank-bm25 model (`bm25.json`), so lex is a pure function of (this document's corpus, query); SQLite FTS5 serves only as the candidate MATCH prefilter (its bm25() stats are table-global and are never the score source).
 - **Identifier index:** normalized article/section labels → node ids. Normalizer §4.
 - **Reference graph:** `references` edges from regex + RapidFuzz title fallback; unresolved targets stored with `target_node_id NULL`.
 
@@ -40,7 +40,7 @@ score(n, q) = w_lex*lex + w_ident*ident + w_title*title + w_ref*ref + w_hier*hie
 
 ## 4. Identifier normalization (required)
 
-Lowercase → strip punctuation → canonical map: `article|art\.?|arts\.? → art`, `section|sec\.? → sec`, `chapter|ch\.? → ch`, `title → title`, `book → book`; digits preserved; ranges expanded (`1318–1320` → 1318,1319,1320); plurals handled. `Art. 1318`, `Article 1318`, `§1318` → `art 1318`. Query and node labels both normalized before matching.
+Lowercase → strip punctuation → canonical map: `article|art\.?|arts\.? → art`, `section|sec\.? → sec`, `chapter|ch\.? → ch`, `subchapters?|subch\.? → subch`, `title → title`, `book → book`; digits preserved; ranges expanded (`1318–1320` → 1318,1319,1320); plurals handled. `Art. 1318`, `Article 1318`, `§1318` → `art 1318` and `sec 1318` (a bare § sign bridges to both section label families, so §-printed and word-printed provisions resolve to the same ident component). `subch` is a 0.5 container-level label like `ch`. Query and node labels both normalized before matching.
 
 ## 5. Tool contracts (agent's ONLY tree access — no direct reads)
 
@@ -62,11 +62,11 @@ select_evidence(hits: list[NodeHit], sub_questions: list[str]) -> EvidenceSet
   # rank by score → keep top 8 → per-sub-question support check (threshold 0.15)
 ```
 
-`NodeHit { node_id, title, snippet ≤400 chars, score, components{lex,ident,title,ref,hier}, page_start }`. Every tool logs `(tool, args, latency_ms, result_ids)`.
+`NodeHit { node_id, title, snippet ≤400 chars, score, components{lex,ident,title,ref,hier}, page_start, fallback }`. Every tool logs `(tool, args, latency_ms, result_ids)`.
 
 ## 6. Flat-fallback behavior (per-component, binding)
 
-Fallback detected by `parse_confidence < 0.5` (stored on document). Then: `ident/title/hier = 0` (no headings, no parents); `lex` runs over page-node texts; `ref` runs only on resolved edges (usually none → 0). Trace carries `fallback: true` so generation can hedge on granularity.
+Fallback detected by `parse_confidence < 0.5` (stored on document). Then: `ident/title/hier = 0` (no headings, no parents); `lex` runs over page-node texts; `ref` runs only on resolved edges (usually none → 0). The `fallback` flag is computed in `score_nodes` from `parse_confidence` and carried on every `ScoredNode` (so `search_nodes` results surface it); the Day 3 trace reads it from retrieval rather than recomputing it.
 
 ## 7. Failure modes
 
@@ -80,5 +80,5 @@ Fallback detected by `parse_confidence < 0.5` (stored on document). Then: `ident
 
 ## 8. Verification (before any claim counts)
 
-- [ ] Golden: 10-question smoke set — every gold_node in top-5 (the reported primary K; top-8 evidence window is a superset, so top-5 pass implies top-8 containment).
+- [x] Golden: 10-question smoke set — every gold_node in top-5 (the reported primary K; top-8 evidence window is a superset, so top-5 pass implies top-8 containment).
 - [ ] Weights + normalization snapshot in every `retrieval_runs` row (schema has the columns).
