@@ -32,9 +32,9 @@ points at.
   `docs/CORPUS.md`. Dataset slugs: `civil-code-public`, `usc-title-11`.
   - *Consequence if skipped:* nothing to ingest, `gold_nodes` reference articles that
     don't exist, 72Q dataset is fictional.
-  - *Acceptance:* corpus PDFs fetched into `data/documents/`; `data/datasets/v1/`
-    structure initialized. ✔ verified locally: 167/334 pages, text layer extracted,
-    `Article 1318` seed example located verbatim.
+  - *Acceptance:* corpus PDFs fetched into `data/documents/` (local, gitignored per
+    ADR-002); `data/datasets/v1/` structure initialized. ✔ verified locally: 167/334
+    pages, text layer extracted, `Article 1318` seed example located verbatim.
 - [x] **D3 — Arm B embedding model.** ~~Pin a CPU-runnable dense embedding model for the
   vector baseline; record it in `docs/decisions/ADR-002`.~~ **DONE (2026-10-19):**
   `BAAI/bge-small-en-v1.5` via `fastembed==0.9.0` (384 dims, MIT, ONNX Runtime CPU, HF
@@ -57,16 +57,16 @@ points at.
 **Targets:** `apps/api/ingestion/`, `apps/api/api/` (route handlers), `data/` layout,
 `scripts/check_no_vectors.py`. **Depends on:** D1, D2.
 
-- [ ] `POST /v1/documents` returns 201 / 422 / 409 per `api.md` §2 with the frozen error
+- [x] `POST /v1/documents` returns 201 / 422 / 409 per `api.md` §2 with the frozen error
   shape (`VALIDATION_ERROR | OCR_REQUIRED | PARSE_FAILED`, dup-hash `CONFLICT`).
-- [ ] PyMuPDF pipeline: PDF → pages → text + page_start/end. Page < 50 chars = empty;
+- [x] PyMuPDF pipeline: PDF → pages → text + page_start/end. Page < 50 chars = empty;
   doc > 30% empty → 422 `OCR_REQUIRED`; encrypted/unreadable → 422 `PARSE_FAILED`;
   SHA-256 dedup → 409.
-- [ ] Structure parser (regex + RapidFuzz heading match) → `nodes` + `references` tables
+- [x] Structure parser (regex + RapidFuzz heading match) → `nodes` + `references` tables
   per `SPEC.md` §3 DDL, indexes included.
-- [ ] `parse_confidence ∈ [0,1]`; `< 0.5` → flat fallback (document → page nodes, depth
+- [x] `parse_confidence ∈ [0,1]`; `< 0.5` → flat fallback (document → page nodes, depth
   0/1), flag stored on document + returned by `GET /documents/{id}` + badged in UI.
-- [ ] `scripts/check_no_vectors.py` written and green — the gate that lets slice 2
+- [x] `scripts/check_no_vectors.py` written and green — the gate that lets slice 2
   proceed (quarantine scope + agent-thinness + cosine grep, recursive scan).
   - *Acceptance (PLAN.md Day 1):* `pytest -k ingest` on the 2 chosen statutes asserts
     `page_count` correct, `root.type` correct, `child_count > 0`, 100% leaves carry
