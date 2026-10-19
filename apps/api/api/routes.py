@@ -12,6 +12,7 @@ import tempfile
 
 from apps.api.ingestion import errors, service
 from apps.api.models import schemas
+from apps.api.retrieval import index as retrieval_index
 from fastapi import APIRouter, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 
@@ -47,7 +48,12 @@ async def upload_document(
         with os.fdopen(fd, "wb") as tmp:
             while chunk := await file.read(1024 * 1024):
                 tmp.write(chunk)
-        return service.ingest_pdf(tmp_path, slug=slug, db_path=db_path)
+        uploaded = service.ingest_pdf(tmp_path, slug=slug, db_path=db_path)
+        # architecture.md §2: retrieval must never be imported by ingestion/,
+        # so the product wiring point is here — build per-document indexes on
+        # every successful upload (idempotent).
+        retrieval_index.build_indexes(db_path, uploaded.id)
+        return uploaded
     except errors.ApiError as err:
         return _error_response(err)
     finally:
