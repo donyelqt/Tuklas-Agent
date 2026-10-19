@@ -32,6 +32,9 @@ data/datasets/*/*.pdf
 # Reference material scraped for design analysis
 .tmp_refs/
 
+# Local session exports (never part of the repo)
+omp-session-*.html
+
 # Environment and secrets
 .env
 .env.local
