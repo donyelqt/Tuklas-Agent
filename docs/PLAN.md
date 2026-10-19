@@ -50,7 +50,7 @@ architecture.md §10 lists 6 vertical slices. In dependency order with the block
 [Day 6]  slice 6: evaluation framework (both arms + metrics + judges)
          needs slices 1–5 + D3 (embedding model) + D2 (dataset)
          ↓
-[Day 7]  requirements manifest + CI (check_eval_config.py, all gates)
+[Day 7]  pinned dependency manifest (Poetry) + CI (check_eval_config.py, all gates)
          needs every slice green
 ```
 
@@ -168,10 +168,10 @@ architecture.md §10 lists 6 vertical slices. In dependency order with the block
 
 ### Day 7 — Requirements, CI, reproducibility
 
-**Targets:** repo root (`pyproject.toml` / `requirements.txt`, `.github/workflows/ci.yml`)
+**Targets:** repo root (`pyproject.toml` + `poetry.lock`, `.github/workflows/ci.yml`)
 
 **Concrete deliverables:**
-- `requirements.txt`: PyMuPDF, rank-bm25 (or FTS5-only), rapidfuzz, langgraph, pydantic, fastapi, uvicorn (pinned).
+- `pyproject.toml` (Poetry, PEP 621 metadata + `poetry.lock`): PyMuPDF, rank-bm25 (or FTS5-only), rapidfuzz, langgraph, pydantic, fastapi, uvicorn (pinned; install with `poetry install`).
 - `scripts/check_no_vectors.py` + `scripts/check_eval_config.py` finalized.
 - `.github/workflows/ci.yml`: mypy on `apps/api` → zero errors; ruff on `apps/api` → zero errors; tsc + eslint on `apps/web` → zero errors; gitleaks → zero findings; both check scripts → exit 0; pytest → green; diff-cover ≥ 80% on changed lines.
 - **Ratchet:** first benchmark run on dev-24 sets `Recall@5`, `MRR@10`, p95 latency in CONSTRAINTS.md's "Measured, not yet enforced" table. Update that table; do not ship unmeasured numbers.
@@ -192,7 +192,7 @@ From the eval-readiness audit — a run that violates any of these **completes b
 4. **No `evaluation_runs`/`retrieval_runs` rows** → nothing to GET, nothing to audit.
 5. **No model parity check** → invalid run (different models across arms) passes CI.
 6. **No quarantine scan** → "vectorless" claim unverifiable; Arm A could secretly use embeddings.
-7. **No requirements manifest** → scorer (RapidFuzz) can't be installed; the 85-threshold is aspirational.
+7. **No pinned dependency manifest (poetry.lock)** → scorer (RapidFuzz) can't be installed; the 85-threshold is aspirational.
 8. **Node id format mismatch** (D1 again — it is the most dangerous item) → all Recall/MRR structurally zero.
 
 ## The three most expensive risks to not catch here
