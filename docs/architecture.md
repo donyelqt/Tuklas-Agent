@@ -54,6 +54,26 @@ DENY_PRIMARY = {sentence_transformers, faiss, chromadb, qdrant_client, pgvector}
 Pipeline: `PDF → PyMuPDF pages → text+metadata → structure parser (regex + RapidFuzz heading match) → tree → SQLite nodes + references`.
 
 - Node fields: `id, document_id, parent_id, type, title, text, page_start, page_end, depth, position`. `references(id, source_node_id, target_node_id NULL-able, reference_text)`.
+**Node ids (D1 — resolved).** A node id is `node_{doc_slug}_{type}_{locator}` — three to five underscore-separated tokens, tokens 2 and 3 always the document slug and the type. `doc_slug` is the owning document's registry slug (`documents.slug`): lowercase `[a-z0-9]` with internal single hyphens and **no underscores**, required unique per document, assigned at `POST /v1/documents` from the optional `slug` form field and defaulted by slugifying the file-name stem (empty result → 422 `VALIDATION_ERROR`; duplicate slug → 409 `CONFLICT`), so two statutes in one database can never collide on `nodes.id`. `type` is the node's `nodes.type` value verbatim, lowercase, from {document, book, title, part, division, chapter, section, article, subsection, page}. `locator` is the node's printed statutory number canonicalized **losslessly** — lowercase, keep `[a-z0-9]`, collapse each run of any other character to a single `-`, trim leading/trailing `-`; no roman→arabic conversion, no range expansion (both are §4 label-matching rules, never id rules) — or `u{k}` (k = 1-based ordinal among same-type nodes carrying no printed number, in document order) when the heading carries none; the single `document` node carries no locator. Page nodes are `node_{doc_slug}_page_{n}`, where n is the 1-based physical PDF page index and is the same integer stored in `page_start`/`page_end` (printed folio numbers are never used — front matter and roman pages are neither unique nor contiguous). If two nodes in one document share `(doc_slug, type, locator)`, document order resolves it: the first keeps the bare id, each later one appends `_d{k}` (its occurrence index, k ≥ 2); `_` is reserved for that, and a locator never contains `_`. Ids are a pure function of `(doc_slug, parser output)` — no RNG, rowid, counter, timestamp or content hash — so re-ingesting the same PDF at the same `code_version` reproduces the id set exactly. Ids are opaque handles: the §4 normalizer runs on `title` labels only, never on ids, and `ident`'s article-vs-chapter level is read from `nodes.type`, not parsed out of the id.
+
+```
+node_civil-code-public_document        # the one document root; carries no locator
+node_civil-code-public_book_iv         # printed "BOOK IV" — roman kept; "4"≡"iv" is a §4 label rule
+node_civil-code-public_article_1318    # printed "Art. 1318" — Art./Article/§ equivalence at label level only
+node_civil-code-public_article_2000a   # printed "Art. 2000a"
+node_civil-code-public_article_2000-a  # printed "Art. 2000(a)" — two distinct nodes, never merged
+node_civil-code-public_chapter_1       # first "CHAPTER 1" in document order (bare)
+node_civil-code-public_chapter_1_d2    # the next "CHAPTER 1", under another Title
+node_civil-code-public_title_u1        # unnumbered "PRELIMINARY TITLE"
+node_civil-code-public_page_1743       # flat fallback; page_start = page_end = 1743
+```
+
+Invariants (the strengthened seed test):
+1. ingest: `COUNT(*) = COUNT(DISTINCT id)`; every id's token 2 equals its `document_id`'s `documents.slug`; token 3 equals `nodes.type`
+2. seed data: every `gold_node` ∈ `nodes.id` AND starts with `node_{question.document}_`
+3. every `question.document` resolves to exactly one ingested document (missing slug → loud 422, never an empty gold set)
+4. rebuilding the tree twice from the same fixture yields identical id sets
+
 - `parse_confidence` ∈ [0,1] = fraction of pages with ≥1 heading match. **Flat-fallback predicate:** `parse_confidence < 0.5` → emit flat tree (document → page nodes, depth 0/1). (10–30% empty pages with otherwise good headings still parses structurally; >30% empty is always 422 `OCR_REQUIRED` per the next bullet — the two regions never overlap.) Flag stored on document, returned by `GET /documents/{id}`, badged in UI. Never a confidently wrong deep tree.
 - Dedup: SHA-256 `file_hash`; identical bytes → 409.
 - MVP limits: text-layer PDFs only, ≤ 500 pages, ≤ 100 MB. Empty-page = <50 chars; >30% empty pages → 422 `OCR_REQUIRED`. Encrypted → 422.
@@ -88,7 +108,7 @@ Two-pass scoring (pass 1: lex/struct/title; pass 2: ref/hier off lex-top-5), wei
 ## 8. Data model (DDL sketch — weights columns included)
 
 ```sql
-documents(id TEXT PK, name TEXT, file_path TEXT, file_hash TEXT UNIQUE,
+documents(id TEXT PK, slug TEXT UNIQUE, name TEXT, file_path TEXT, file_hash TEXT UNIQUE,
           page_count INT, parse_confidence REAL, created_at TEXT);
 nodes(id TEXT PK, document_id TEXT REFERENCES documents(id), parent_id TEXT,
       type TEXT, title TEXT, text TEXT,

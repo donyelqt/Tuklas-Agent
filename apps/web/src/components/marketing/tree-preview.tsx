@@ -13,7 +13,7 @@ import { problem } from "@/lib/copy";
  * event handlers. Rendering it twice produces identical markup.
  */
 
-type NodeType = "Book" | "Title" | "Chapter" | "Section" | "Article";
+type NodeType = "book" | "title" | "chapter" | "section" | "article";
 
 /** Node entry of `GET /v1/documents/{id}/tree?depth=3` (docs/api.md section 2). */
 interface TreeNode {
@@ -59,15 +59,15 @@ const LABELS = {
 
 const TREE_RESPONSE: TreeResponse = {
   root: {
-    id: "node_book_iv",
-    type: "Book",
+    id: "node_civil-code-public_book_iv",
+    type: "book",
     title: "Book IV",
     child_count: 1,
   },
   children: [
     {
-      id: "node_title_ii",
-      type: "Title",
+      id: "node_civil-code-public_title_ii",
+      type: "title",
       title: "Title II",
       depth: 1,
       position: 1,
@@ -75,8 +75,8 @@ const TREE_RESPONSE: TreeResponse = {
       child_count: 1,
     },
     {
-      id: "node_chapter_1",
-      type: "Chapter",
+      id: "node_civil-code-public_chapter_1",
+      type: "chapter",
       title: "Chapter 1",
       depth: 2,
       position: 1,
@@ -84,8 +84,8 @@ const TREE_RESPONSE: TreeResponse = {
       child_count: 3,
     },
     {
-      id: "node_article_1318",
-      type: "Article",
+      id: "node_civil-code-public_article_1318",
+      type: "article",
       title: "Article 1318",
       depth: 3,
       position: 1,
@@ -94,8 +94,8 @@ const TREE_RESPONSE: TreeResponse = {
       citation: "[1]",
     },
     {
-      id: "node_article_1319",
-      type: "Article",
+      id: "node_civil-code-public_article_1319",
+      type: "article",
       title: "Article 1319",
       depth: 3,
       position: 2,
@@ -103,8 +103,8 @@ const TREE_RESPONSE: TreeResponse = {
       child_count: 0,
     },
     {
-      id: "node_article_1320",
-      type: "Article",
+      id: "node_civil-code-public_article_1320",
+      type: "article",
       title: "Article 1320",
       depth: 3,
       position: 3,
