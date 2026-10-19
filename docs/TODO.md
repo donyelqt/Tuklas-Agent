@@ -43,7 +43,7 @@ points at.
     parity claim is unenforceable.
   - *Acceptance:* embedding model named in ADR-002; the package lands in the pinned
     pinned manifest (Day 7, poetry.lock). ✔ model recorded; package pin carried to Day 7.
-- [ ] Confirm the 6 reconciliation edits from `PLAN.md` Day 0 are present on main
+- [x] Confirm the 6 reconciliation edits from `PLAN.md` Day 0 are present on main
   (threshold 0.15, quarantine scope incl. `api/`, cosine grep, COPY.md backends label,
   DESIGN.md sources, dead design.ts ref) — committed in `97d862d`/`5e16463`.
   - *Acceptance:* spot-check each of the 6 against its file; any regression re-fixed here.
@@ -78,22 +78,22 @@ points at.
 
 **Targets:** `apps/api/retrieval/`. **Depends on:** Day 1 + `check_no_vectors.py` green.
 
-- [ ] SQLite tree store: `nodes` + `references`, indexes `(document_id, parent_id)`,
+- [x] SQLite tree store: `nodes` + `references`, indexes `(document_id, parent_id)`,
   `(document_id, type)`, FTS5 on `(title, text)`.
-- [ ] Per-document BM25 index → `data/indexes/{doc_id}/bm25.json`.
-- [ ] Identifier index: normalized labels → node ids (normalizer per `retrieval.md` §4;
+- [x] Per-document BM25 index → `data/indexes/{doc_id}/bm25.json`.
+- [x] Identifier index: normalized labels → node ids (normalizer per `retrieval.md` §4;
   ranges expanded, canonical map, both sides normalized).
-- [ ] Two-pass scoring: `lex`/`ident`/`title` (pass 1, freezes lex-top-5/top-3) →
+- [x] Two-pass scoring: `lex`/`ident`/`title` (pass 1, freezes lex-top-5/top-3) →
   `ref`/`hier` (pass 2, computed against the frozen sets). Weights 1.0 defaults, range
   [0,2]; disjoint inputs enforced.
-- [ ] 7 tool functions per `retrieval.md` §5 with binding caps: `search_nodes` (default
+- [x] 7 tool functions per `retrieval.md` §5 with binding caps: `search_nodes` (default
   10, hard max 20), `inspect_node` (≤8000 chars), `list_children` (max 50 rows, 200-char
   summaries), `get_parent`, `expand_context` (radius ≤ 2, ≤5 nodes, ≤2000 chars/node),
   `follow_reference` (typed `resolved|unresolved|error`; unresolved → move on, never
   invent), `get_source`. `select_evidence` retrieval-owned, called direct by the gate.
-- [ ] `select_evidence()`: dedup → drop <50 chars → drop page-span-less → rank by score →
+- [x] `select_evidence()`: dedup → drop <50 chars → drop page-span-less → rank by score →
   keep top 8 → per-sub-question support check at **0.15**.
-- [ ] Context Builder: `build_context(EvidenceSet) -> PromptContext`, 12k char budget,
+- [x] Context Builder: `build_context(EvidenceSet) -> PromptContext`, 12k char budget,
   score-desc order (ties: shallower depth, then position), gate-set nodes never dropped,
   `context_truncated` flag on proportional truncation.
   - *Acceptance (PLAN.md Day 2 + CONSTRAINTS.md):* `test_context_builder_budget` passes

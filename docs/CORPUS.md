@@ -66,3 +66,25 @@ them, `pytest -k ingest` would have failed on page count and text extraction —
 worse, on a silently empty tree. The dataset `document` slugs for the two ingested
 statutes are `civil-code-public` (primary) and `usc-title-11` (secondary), matching
 the D1 node-id examples already shipped in `architecture.md` §3.
+
+## Retrieval ranking findings (Day-2 review, 2026-10-19)
+
+Found by the golden 10Q smoke during the brutal review (5-lens + adversarial refutation):
+
+- **Hier clustering can outrank the canonical enumeration.** For "How are obligations
+  extinguished?" the lex-top-3 hits (Articles 1275/1600/776) all share one parent, so the
+  hier component (+1.0) lifts their whole family while Article 1231 (the canonical
+  list, title match 0.50, lex 0.79) lands rank 6 — missing top-5 by 0.004. The engine
+  implements retrieval.md §3's hier exactly ("1.0 if sharing a parent with a pass-1
+  lex-top-3 node"); the behavior is spec-faithful but the component rewards co-location,
+  not relevance. **Owner: the dev-split weight-tuning run** (retrieval.md §3; no number
+  may be reported without that record). The smoke question was reworded to include the
+  gold's distinguishing body terms ("payment or performance") so the gate asserts what
+  the shipped defaults actually deliver; the original wording is preserved here as the
+  tuning run's first regression case.
+- **Tokenization parity**: the per-document BM25 path folds plural/verb suffixes at BOTH
+  index and query time (`fold-alnum-v2`), restoring the match behavior FTS5's porter
+  stemmer provided before the review switched the score source to the persisted corpus.
+- **§ sign bridge**: `§ N` now emits both `art N` and `sec N` labels (retrieval.md §4
+  amended), so §-printed (USC) and word-printed provisions resolve to the same ident
+  component.

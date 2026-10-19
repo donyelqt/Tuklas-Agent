@@ -97,7 +97,10 @@ _UNNUMBERED_RE = re.compile(
     re.IGNORECASE,
 )
 _GENERIC_NUMBER_RE = re.compile(r"([IVXLC\d]+(?:\([a-z0-9]+\))?)\b")
-_MAX_HEADING_LEN = 120
+# Ceiling for the unnumbered/fuzz path only; numbered heading candidates are
+# exempt because the printed number at line start is what identifies them and
+# real extracted lines carry arbitrarily long title text on one line.
+_MAX_HEADING_LEN = 200
 
 
 def _fuzz_family(token: str) -> _Family | None:
@@ -133,7 +136,7 @@ class _Heading:
 
 def _match_heading(line: str, page_idx: int, line_idx: int) -> _Heading | None:
     stripped = line.strip()
-    if not stripped or len(stripped) > _MAX_HEADING_LEN:
+    if not stripped:
         return None
 
     # Numbered families (regex first — exact forms win over fuzz).
@@ -147,6 +150,8 @@ def _match_heading(line: str, page_idx: int, line_idx: int) -> _Heading | None:
         return _Heading(page_idx, line_idx, section_family, m.group(1), stripped)
 
     # Unnumbered heading words: keyword ends the line (e.g. "PRELIMINARY TITLE").
+    if len(stripped) > _MAX_HEADING_LEN:
+        return None
     m = _UNNUMBERED_RE.match(stripped)
     if m:
         keyword = m.group(1).lower()
@@ -154,6 +159,10 @@ def _match_heading(line: str, page_idx: int, line_idx: int) -> _Heading | None:
         return _Heading(page_idx, line_idx, family, None, stripped)
 
     # RapidFuzz near-miss: first token ≈ a family keyword.
+    # Gate applies here (not above) so a numbered candidate is never rejected
+    # for length; the printed number identifies it no matter how long the title.
+    if len(stripped) > _MAX_HEADING_LEN:
+        return None
     tokens = stripped.split()
     fuzz_hit = _fuzz_family(tokens[0])
     if fuzz_hit is None:
