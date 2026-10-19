@@ -299,7 +299,7 @@ be published honestly.
 5. No model parity check → invalid run (different models across arms) passes CI.
 6. No quarantine scan → "vectorless" claim unverifiable; Arm A could secretly use
    embeddings.
-7. No requirements manifest → scorer (RapidFuzz) can't be installed; the 85-threshold is
+7. No pinned dependency manifest (poetry.lock) → scorer (RapidFuzz) can't be installed; the 85-threshold is
    aspirational.
 8. Node id format mismatch (D1 again — most dangerous item) → all Recall/MRR structurally
    zero.
