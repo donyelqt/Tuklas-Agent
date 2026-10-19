@@ -31,6 +31,27 @@ No Postgres, no vector DB in v1.
 - Rejected: baseline runs in-process under `experiments/vector/`; swap if it can't
   hold 100-question scale (it can).
 
+## Arm B embedding model (D3, decided 2026-10-19)
+
+The dense baseline (Arm B) embeds with **`BAAI/bge-small-en-v1.5`** via
+**`fastembed==0.9.0`** — 384 dims, MIT license, HF revision
+`5c38ec7c405ec4b44b94cc5a9bb96e735b38267a` pinned for reproducibility.
+
+- CPU-only: fastembed's dependency chain is ONNX Runtime (`onnxruntime`, never
+  `onnxruntime-gpu`) — no torch anywhere in the shared requirements.
+- Quality (verified, MTEB Retrieval nDCG@10): 51.68 vs 49.04 (`intfloat/e5-small-v2`,
+  not shipped by fastembed, would force a torch path) and 41.95
+  (`sentence-transformers/all-MiniLM-L6-v2`); within 0.30 of the best 384-dim CPU
+  candidate (`Snowflake/snowflake-arctic-embed-s`, 51.98, runner-up).
+- Zero-configuration default model of fastembed; query instruction policy recorded as
+  "none" (BGE v1.5 runs without instructions with slight degradation; e5 requires a
+  prefix discipline the eval config would have to enforce).
+- Parity: Arm B records model + revision + seed in the eval run config
+  (`check_eval_config.py`), so arms differ only in retrieval (ADR-003/ADR-004 parity
+  boundary unchanged).
+- Reproducibility: `fastembed==0.9.0` (PyPI) + HF revision SHA; re-running the baseline
+  must produce identical vectors.
+
 ## Consequences
 - Zero infra to boot: `uvicorn` + file. Demo-friendly.
 - Migration path documented: schema is plain SQL; a Postgres move is mechanical.
