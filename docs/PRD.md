@@ -157,7 +157,7 @@ Billing, SaaS accounts, enterprise RBAC, collaborative editing, case management,
 
 ## 10. Open Questions
 
-1. 🔵 Benchmark corpus: which public statute(s) + who writes the 50–100 gold questions?
+1. ~~🔵 Benchmark corpus: which public statute(s) + who writes the 50–100 gold questions?~~ **RESOLVED (2026-10-19):** primary = Civil Code of the Philippines (R.A. 386), secondary = U.S. Code Title 11 — evidence, checksums, and rejected candidates in `docs/CORPUS.md`. Gold-question authorship remains a build-time task (Day 6 dataset slice).
 2. 🔵 Scoring weights start uniform — who owns the dev-split tuning run before test numbers count?
 3. 🔵 Default local model + min hardware for MVP demo?
 4. 🔵 SSE v1 schema frozen in `api.md` — web client builds against it now, or one iteration allowed?

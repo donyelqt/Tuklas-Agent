@@ -23,13 +23,18 @@ points at.
     node mismatches. The most dangerous failure mode because it is silent.
   - *Acceptance:* id format documented + a seed-data test asserting every `gold_node` in
     the dataset exists as a node id in the ingested tree.
-- [ ] **D2 — Benchmark corpus.** Pick 1–2 public statutes (PLAN.md candidates: U.S. Civil
-  Rights Act; California Civil Code — public domain, hierarchical, ≥100pp). Record the
-  choice in `PRD.md` §10 / `evaluation.md`.
+- [x] **D2 — Benchmark corpus.** ~~Pick 1–2 public statutes (PLAN.md candidates: U.S. Civil
+  Rights Act; California Civil Code — public domain, hierarchical, ≥100pp).~~
+  **DONE (2026-10-19):** primary = Civil Code of the Philippines (R.A. 386, ICNL
+  text-layer PDF, 167 pp); secondary = U.S. Code Title 11 (official GPO PDF, 334 pp).
+  Both PDFs fetched into `data/documents/` (sha256 in `docs/CORPUS.md`),
+  `data/datasets/v1/` initialized; evidence + rejected-candidates record in
+  `docs/CORPUS.md`. Dataset slugs: `civil-code-public`, `usc-title-11`.
   - *Consequence if skipped:* nothing to ingest, `gold_nodes` reference articles that
     don't exist, 72Q dataset is fictional.
   - *Acceptance:* corpus PDFs fetched into `data/documents/`; `data/datasets/v1/`
-    structure initialized.
+    structure initialized. ✔ verified locally: 167/334 pages, text layer extracted,
+    `Article 1318` seed example located verbatim.
 - [x] **D3 — Arm B embedding model.** ~~Pin a CPU-runnable dense embedding model for the
   vector baseline; record it in `docs/decisions/ADR-002`.~~ **DONE (2026-10-19):**
   `BAAI/bge-small-en-v1.5` via `fastembed==0.9.0` (384 dims, MIT, ONNX Runtime CPU, HF
