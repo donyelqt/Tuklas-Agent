@@ -161,6 +161,10 @@ class GenerationService:
             "backend": result.backend,
             "temperature": result.temperature,
             "seed": result.seed,
+            # The prompt is part of the run: an answer cannot be compared
+            # across two prompt versions (ADR-004, "Prompts versioned with
+            # the interface").
+            "prompt_version": PROMPT_VERSION,
             # The provider's OWN token counts, not a character-count estimate:
             # a model was called, so its usage is known exactly.
             "prompt_tokens": result.prompt_tokens,

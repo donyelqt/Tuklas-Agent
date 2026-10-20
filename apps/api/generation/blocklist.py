@@ -32,9 +32,25 @@ def _pattern(phrase: str) -> re.Pattern[str]:
     The words are joined by ``\\s+`` so a phrase split across a line break
     still trips, and anchored with word boundaries so a longer word that
     merely contains the phrase does not.
+
+    The trailing boundary permits a plural ``s``: "your case" and "your
+    cases" are the same advice, and a boundary that requires a word/non-word
+    transition would let "your cases" through - a hole in a safety floor.
+    The optional ``s`` is followed by its own boundary, so "your casesick"
+    still does not trip: "cases" + "ick" leaves a word character before the
+    boundary, and the engine backtracks to "case", whose boundary also fails.
+
+    A contraction written WITHOUT its apostrophe ("shouldnt", "mustnt") is
+    the same advice, so the final word may carry an optional trailing ``n``
+    contraction: "shouldn't", "shouldnt" and "should" all trip, while
+    "shoulding" does not (the ``n`` is followed by a word character, so the
+    boundary fails and the engine falls back to the bare word, which still
+    matches "should").
     """
     words = [re.escape(word) for word in phrase.split()]
-    return re.compile(r"\b" + r"\s+".join(words) + r"\b", re.IGNORECASE)
+    return re.compile(
+        r"\b" + r"\s+".join(words) + r"(?:n'?t|n)?s?\b", re.IGNORECASE
+    )
 
 
 #: (canonical phrase, matcher) pairs, ordered by the canonical phrase so the

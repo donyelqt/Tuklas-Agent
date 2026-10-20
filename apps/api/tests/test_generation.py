@@ -47,6 +47,7 @@ import re
 import socket
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
@@ -523,6 +524,36 @@ def test_generation_blocklist_trips_on_the_four_phrases() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_generation_blocklist_catches_the_plural_and_the_contraction() -> None:
+    """The oracle must not have a hole where the advice slips through.
+
+    "your case" and "your cases" are the same advice, and "you shouldn't" and
+    "you shouldnt" are the same advice. A whole-word boundary that requires a
+    word/non-word transition let both through, and an advice-bearing answer
+    would have shipped with citations intact.
+    """
+    from apps.api.generation.blocklist import contains_advice
+
+    for text in (
+        "In your cases, the seller must give notice before rescission.",
+        "Your cases are governed by the Code.",
+        "You shouldnt file suit.",
+        "You shouldn't file suit.",
+        "In your case's absence, the rule differs.",
+    ):
+        assert contains_advice(text), f"the oracle missed {text!r}"
+
+    # The matcher must still not trip on a longer word that merely contains
+    # the phrase, and not on ordinary legal prose.
+    for text in (
+        "your casesick analysis",
+        "shoulding a party",
+        "The contract shall be performed.",
+        "Article 1318 requires consent of the parties.",
+    ):
+        assert not contains_advice(text), f"the oracle tripped on {text!r}"
+
+
 def test_generation_blocklist_is_the_single_oracle() -> None:
     """One place knows the phrases, and the service refuses on that oracle.
 
@@ -914,6 +945,90 @@ def test_generation_stream_yields_the_providers_deltas() -> None:
     # The deltas travel with the answer, individually.
     assert result["stream"] == ["The ", "answer ", "is ", "here."]
     assert "".join(result["stream"]) == result["answer_markdown"]
+
+
+@pytest.fixture(scope="module")
+def civil_code(tmp_path_factory: pytest.TempPathFactory) -> Any:
+    """The real Civil Code, ingested once, for the tests that need a store.
+
+    The house pattern (apps/api/tests/test_retrieval.py, test_agent.py): ingest
+    the corpus into a tmp database, build the per-document indexes, and point
+    the runtime lex path at this module's index root.
+    """
+    import os as _os
+
+    from apps.api.ingestion.service import ingest_pdf
+    from apps.api.retrieval.index import build_indexes
+
+    repo_root = Path(__file__).resolve().parents[3]
+    corpus = repo_root / "data" / "documents" / "civil-code-ra386-icnl.pdf"
+    if not _os.path.exists(corpus):
+        pytest.skip("corpus file missing: civil-code-ra386-icnl.pdf")
+    db_path = str(tmp_path_factory.mktemp("generation") / "civil-code.db")
+    index_root = tmp_path_factory.mktemp("generation-indexes")
+    doc = ingest_pdf(str(corpus), slug="civil-code-public", db_path=db_path)
+    build_indexes(db_path, doc.id, index_root=index_root)
+
+    import apps.api.retrieval.scoring as _scoring
+
+    original_root = _scoring.INDEX_ROOT
+    _scoring.INDEX_ROOT = index_root
+    yield SimpleNamespace(db=db_path, doc_id=doc.id)
+    _scoring.INDEX_ROOT = original_root
+
+
+def test_generation_ask_trace_records_the_run(civil_code: SimpleNamespace) -> None:
+    """ADR-004: the run is recorded, so a run can be named and compared.
+
+    "Model id + backend + temperature + seed recorded in every ask trace and
+    eval run." The trace is the `queries` row: without it, two asks that
+    differ only in the model produce indistinguishable records, and a run
+    cannot be compared.
+    """
+    import sqlite3
+
+    from apps.api.agent.ask import run_ask
+
+    response = run_ask(
+        civil_code.doc_id,
+        "What are the requisites of contracts?",
+        db_path=civil_code.db,
+    )
+    conn = sqlite3.connect(civil_code.db)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute("SELECT * FROM queries").fetchall()
+    finally:
+        conn.close()
+    assert rows, "the ask must leave a trace"
+    row = rows[-1]
+    assert row["document_id"] == civil_code.doc_id
+    assert row["question"] == "What are the requisites of contracts?"
+    # The run record. The model-free generator runs no model, so the run
+    # parameters are absent - but the columns exist and the row is complete
+    # in the observable facts.
+    for column in (
+        "model",
+        "backend",
+        "temperature",
+        "seed",
+        "prompt_version",
+        "iterations",
+        "evidence_ids",
+        "tokens_in",
+        "tokens_out",
+        "tokens_source",
+        "latency_ms",
+        "insufficient",
+    ):
+        assert column in row.keys(), f"the trace must carry {column}"
+    assert row["iterations"] == response["iterations"]
+    assert row["insufficient"] == (1 if response["insufficient"] else 0)
+    assert row["latency_ms"] >= 0
+    # The evidence ids are recorded, so the run names what it answered from.
+    import json
+
+    assert json.loads(row["evidence_ids"]) == list(response["evidence_ids"])
 
 
 def test_generation_never_degrades_to_a_fake_answer() -> None:
