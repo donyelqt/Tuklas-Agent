@@ -159,6 +159,57 @@ points at.
     topology changes what the agent READS, not what it CITES. Recorded because a
     reader could otherwise assume an expanded neighbour can be cited.
 
+  - *Measured finding — the specified gate cannot refuse an out-of-domain
+    question (2026-10-20).* This is the most consequential finding of the slice
+    and it blocks the Day-6 dataset, so it is recorded here in full.
+    PRD US-2 and `evaluation.md` §4 make refusal binding: on an
+    `answerable: false` question, "correct refusal = 1, **any cited answer = 0**".
+    Measured on the Civil Code, the gate as specified passes EVERY plausible
+    unanswerable question:
+    | question | gate | citations |
+    |---|---|---|
+    | Who is the current President of the Philippines? | PASS | 8 |
+    | What is the registration fee for a fishing license? | PASS | 8 |
+    | How many days do I have to file an appeal to the Court of Appeals? | PASS | 8 |
+    | What is the penalty for driving without a driver's license? | PASS | 8 |
+    | When did the Civil Code take effect? | PASS | 8 |
+    Root cause, measured (not inferred): `lex` is BM25 **min-max normalized per
+    query** (`retrieval.md` §3), so the best-matching node always scores
+    `lex = 1.0` whenever the query matches anything at all — the strength of the
+    match is erased. The gate's rule (`score >= 0.15 AND (lex > 0 OR ident-hit)`)
+    is therefore satisfied by a *single token* appearing anywhere in the
+    document. "Who is the current President of the Philippines?" matches 2300 of
+    2412 nodes; "What are the requisites of contracts?" matches 2302. The
+    discriminating signal does not exist in the lexical layer.
+    Ruled out by measurement, so the next reader does not repeat the search:
+    - **absolute BM25** instead of min-max: unanswerable scores are HIGHER
+      (36.4 for the appeal question vs 15.3 for the requisites question);
+    - **match breadth**: ~2300/2412 for both answerable and unanswerable;
+    - **term coverage** (max content tokens of the query present in one kept
+      node): answerable 0.67–1.00, unanswerable 0.33–1.00 — overlapping;
+    - **raw token isolation**: `model.get_scores(["zzzznotaword"])` correctly
+      returns 0 for every document, so `rank_bm25` is not the culprit — the
+      normalization is.
+    The agent is NOT at fault: the gate reads retrieval's own verdict and
+    applies the specified threshold. The specified threshold is what cannot
+    discriminate. Consequences and the decision:
+    - The Day-6 dataset's `answerable: false` rows must be planted so the
+      question is out-of-domain for the *corpus* in a way the lexical layer can
+      see — e.g. naming a subject with no occurrence in the corpus at all
+      ("fishing license") — or the abstention score will be 0 for every arm and
+      the comparison will report a refusal failure that is really a dataset
+      failure.
+    - A refusal signal that survives a min-max-normalized lexical layer is
+      needed if out-of-domain refusal is a product requirement. That is a
+      retrieval-layer change (an absolute-score component, or a coverage
+      requirement), which is Day-2/§3 territory and needs a recorded tuning run
+      before it can change the frozen contract.
+    - **Not changed here.** `retrieval.md` §3 is frozen and the weights/lex
+    definition are authoritative; inventing a new signal inside the Day-3 slice
+    would silently change the retrieval contract and invalidate the Day-2
+    golden set. Recorded for the Day-6 dataset design and the retrieval tuning
+      run instead.
+
   - *Measured finding — the broaden-retry is unreachable on this corpus (2026-10-20).*
     `retrieval.md` §3 says the retry fires when the lex layer is all-zero, and §7
     makes it the one recovery path before `insufficient_evidence`. On the Civil
@@ -249,6 +300,13 @@ slices 1–5.
   per-question rows + aggregates + system stats per `api.md` §4.
 - [ ] Frozen 72Q dataset at `data/datasets/v1/{dev,test}.json` (24 dev + 48 test, 7
   categories, ≥3 dev + ≥6 test per category, ≥5 `answerable: false`, seed 42).
+  - *Constraint from the Day-3 measured finding:* an `answerable: false` row must
+    be out-of-domain in a way the lexical layer can see. The gate as specified
+    passes any question that matches a single corpus token, so a planted
+    unanswerable question that shares ordinary vocabulary with the corpus will
+    be answered with citations, and `evaluation.md` §4 scores that as
+    abstention = 0 for BOTH arms. Design the rows against that constraint, or
+    the refusal metric measures the dataset rather than the system.
 - [ ] Arm A (Tuklas): full agent loop, slices 1–5.
 - [ ] Arm B (Vector): dense retrieval under `experiments/vector/` only, embedding model
   from D3. Exposes the same retrieval result shape so "arms differ only in retrieval"
