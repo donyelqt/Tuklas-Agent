@@ -17,11 +17,7 @@ from types import SimpleNamespace
 import pytest
 from apps.api.api.app import create_app
 from apps.api.ingestion.service import ingest_pdf
-from apps.api.retrieval.context import build_context
-from apps.api.retrieval.index import build_indexes
-from apps.api.retrieval.normalizer import expand_range, extract_labels, normalize_label
-from apps.api.retrieval.scoring import WEIGHT_DEFAULTS, ScoredNode, score_nodes
-from apps.api.retrieval.tools import (
+from apps.api.retrieval.api import (
     expand_context,
     follow_reference,
     get_parent,
@@ -31,6 +27,10 @@ from apps.api.retrieval.tools import (
     search_nodes,
     select_evidence,
 )
+from apps.api.retrieval.context import build_context
+from apps.api.retrieval.index import build_indexes
+from apps.api.retrieval.normalizer import expand_range, extract_labels, normalize_label
+from apps.api.retrieval.scoring import WEIGHT_DEFAULTS, ScoredNode, score_nodes
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CORPUS = REPO_ROOT / "data" / "documents" / "civil-code-ra386-icnl.pdf"
