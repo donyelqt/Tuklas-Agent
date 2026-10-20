@@ -184,6 +184,13 @@ def agent_search_nodes(state: AgentState, args: dict[str, Any]) -> AgentState:
     # contribute evidence nodes, and select_evidence dedups by node_id keeping
     # the FIRST occurrence - so a score-0 copy could shadow the same node's
     # genuinely-scored copy from a later, relevant search.
+    # The hits are recorded PER SUB-QUESTION. A hit's lex score is relative
+    # to the query that retrieved it, so pooling hits from different
+    # sub-questions would let one sub-question's nodes satisfy another
+    # sub-question's gate check (a node retrieved for A carries lex > 0
+    # relative to A, and the supporter rule accepts lex > 0 for ANY
+    # sub-question).
+    state.setdefault("_hits_by_question", {}).setdefault(query, []).extend(matched)
     state.setdefault("_hits", []).extend(matched)
     state.setdefault("_searched", []).append(query)
     # retrieval.md sec 6: the fallback flag is computed by score_nodes and

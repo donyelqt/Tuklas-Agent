@@ -61,6 +61,13 @@ CANNED_ABSTENTION = (
 #: architecture.md sec 4 budget.
 MAX_TOOL_ITERATIONS = 12
 
+#: architecture.md sec 4: the gate threshold. select_evidence applies the same
+#: number to the support check; the agent only reads the verdict.
+GATE_THRESHOLD = 0.15
+
+#: retrieval.md sec 5: the evidence window is 8 nodes.
+_EVIDENCE_KEEP_TOP = 8
+
 #: PLAN.md Day 3: the planner emits 1-4 sub-questions.
 MAX_SUB_QUESTIONS = 4
 
@@ -282,15 +289,71 @@ def _searched_sub_questions(state: AgentState) -> list[str]:
 
 
 def _select_evidence_node(state: AgentState) -> AgentState:
-    """Retrieval-owned evidence gate (retrieval.md sec 5)."""
+    """Retrieval-owned evidence gate (retrieval.md sec 5).
+
+    ``select_evidence`` is called PER SUB-QUESTION, with that sub-question's
+    own hits, and the verdicts are merged.
+
+    The reason is that a hit's lex score is relative to the query that
+    retrieved it. Pooling the hits of every sub-question into one list and
+    asking about them together lets one sub-question's nodes satisfy another
+    sub-question's support check: a node retrieved for sub-question A carries
+    ``lex > 0`` relative to A, and the supporter rule accepts ``lex > 0`` for
+    ANY sub-question. Measured: with "What is succession?" and "What is the
+    registration of chattel mortgages?" - whose top-10 hits are disjoint -
+    3 of the second sub-question's supporters came from the FIRST
+    sub-question's hits. Asking per sub-question keeps each verdict about the
+    nodes that were actually retrieved for it.
+    """
     asked = _searched_sub_questions(state)
-    evidence = select_evidence(state.get("_hits", []), asked, **_db_kwarg(state))
+    by_question = state.get("_hits_by_question", {})
+    per_question: dict[str, list[str]] = {}
+    kept: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    threshold = GATE_THRESHOLD
+    for sub_question in asked:
+        hits = by_question.get(sub_question)
+        if hits is None:
+            # No hits were retrieved for this sub-question (the budget cut the
+            # search short). It has no supporters, so the gate fails for it.
+            per_question[sub_question] = []
+            continue
+        result = select_evidence(hits, [sub_question], **_db_kwarg(state))
+        per_question[sub_question] = list(
+            result.get("gate", {}).get("per_question", {}).get(sub_question, [])
+        )
+        for item in result.get("kept", []):
+            node_id = str(item.get("node_id"))
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+            kept.append(item)
+    kept.sort(key=lambda item: (-float(item.get("score", 0.0)), str(item.get("node_id"))))
+    # The top-8 evidence window (retrieval.md sec 5) applies to the MERGED
+    # set too: the agent assembles one context, and that context must not
+    # carry more nodes than the window allows. The gate's supporters are
+    # never dropped by this cut - only non-supporting nodes are.
+    kept = kept[:_EVIDENCE_KEEP_TOP]
+    gate_ids: list[str] = []
+    for node_ids in per_question.values():
+        for node_id in node_ids:
+            if node_id not in gate_ids:
+                gate_ids.append(node_id)
+    evidence = {
+        "kept": kept,
+        "insufficient": any(not supporters for supporters in per_question.values()),
+        "gate": {
+            "threshold": threshold,
+            "node_ids": gate_ids,
+            "per_question": per_question,
+        },
+    }
     state["evidence"] = evidence
     state["trace"].append(
         {
             "node": "select_evidence",
             "asked_sub_questions": asked,
-            "kept": len(evidence.get("kept", [])),
+            "kept": len(kept),
             "insufficient": bool(evidence.get("insufficient")),
         }
     )

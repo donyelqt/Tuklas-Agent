@@ -51,6 +51,7 @@ class AgentState(TypedDict, total=False):
 
     # --- internal (underscore-prefixed) ------------------------------------
     _hits: list[Any]
+    _hits_by_question: dict[str, list[Any]]
     _hit_batches: list[list[str]]
     _inspected: list[str]
     _broadened_query: str
