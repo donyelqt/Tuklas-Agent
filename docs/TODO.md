@@ -161,6 +161,21 @@ points at.
     canned abstention as if it were a real result. The route layer validates
     `page`/`pageSize`/`depth` the same way; the agent now hands it a typed 422.
 
+  - *An irrelevant branch's hits no longer reach the evidence pool (2026-10-20).*
+    `search_nodes` returns the document's top-k nodes whether or not the query
+    matched them — a non-matching query comes back with every score at 0.0.
+    The wrapper fed ALL of them to `select_evidence` while marking the branch
+    irrelevant, which breaks architecture.md §4 ("irrelevant branches contribute
+    zero evidence nodes") twice over: the score-0 nodes could occupy kept
+    slots, and `select_evidence` dedups by `node_id` keeping the FIRST
+    occurrence, so a score-0 copy could shadow the same node's genuinely-scored
+    copy from a later, relevant search. Measured on "article 1318" (19 of the
+    20 top nodes overlap with the irrelevant branch): before, the kept set held
+    `article_1318` (score 1.000) plus three score-0 nodes — a heading, a
+    section and a book — that a reader would have been shown as evidence;
+    after, it holds `article_1318` alone. Only the MATCHED hits feed the pool
+    now.
+
   - *SSE streaming (2026-10-20):* the first implementation ran the whole graph
     and replayed the accumulated trace as events. The event SEQUENCE was
     correct, so a sequence assertion could not see it — but nothing was
