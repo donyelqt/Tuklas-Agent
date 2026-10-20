@@ -23,6 +23,7 @@ A zero-tool-call run is legal: plan -> evidence(empty) -> done(insufficient).
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Iterator
 from typing import Any, cast
@@ -41,8 +42,20 @@ from apps.api.ingestion import errors
 #: Characters per streamed token event.
 TOKEN_CHUNK_CHARS = 80
 
-#: The AskResponse keys (api.md sec 3). Frozen, plus the additive
-#: ``tokens_source`` label.
+_LOG = logging.getLogger(__name__)
+
+#: The AskResponse keys (api.md sec 3).
+#:
+#: ``tokens_source`` is OPTIONAL and is only present when the token counts
+#: are not provider-reported. api.md sec 5 allows additive changes under
+#: /v1 only for OPTIONAL fields - a required new key is a strict-schema
+#: break, and a client generated from the 7-key shape would fail
+#: validation on the extra key under additionalProperties: false.
+#:
+#: So the key is absent when there is nothing to disambiguate (the provider
+#: reported the counts, or the shape is consumed by a caller that predates
+#: the label) and present - carrying "estimated" - exactly when a consumer
+#: could otherwise mistake a character-count heuristic for measured usage.
 ASK_RESPONSE_KEYS = frozenset(
     {
         "answer_markdown",
@@ -52,6 +65,19 @@ ASK_RESPONSE_KEYS = frozenset(
         "latency_ms",
         "tokens",
         "tokens_source",
+        "insufficient",
+    }
+)
+
+#: The keys every AskResponse carries, whatever the token source.
+ASK_RESPONSE_REQUIRED_KEYS = frozenset(
+    {
+        "answer_markdown",
+        "citations",
+        "evidence_ids",
+        "iterations",
+        "latency_ms",
+        "tokens",
         "insufficient",
     }
 )
@@ -87,7 +113,11 @@ def _kept_node_ids(evidence: dict[str, Any]) -> list[str]:
     ]
 
 
-def _build_response(state: AgentState, latency_ms: int) -> dict[str, Any]:
+def _build_response(
+    state: AgentState,
+    latency_ms: int,
+    tokens_source: str | None = TOKENS_SOURCE_ESTIMATED,
+) -> dict[str, Any]:
     """Assemble the AskResponse from the final graph state."""
     evidence: dict[str, Any] = state.get("evidence", {})
     insufficient = bool(state.get("insufficient"))
@@ -102,18 +132,23 @@ def _build_response(state: AgentState, latency_ms: int) -> dict[str, Any]:
     context: dict[str, Any] = state.get("context", {})
     parts = context.get("parts", []) if isinstance(context, dict) else []
     in_chars = sum(len(str(part.get("text", ""))) for part in parts if isinstance(part, dict))
-    return {
+    response: dict[str, Any] = {
         "answer_markdown": answer,
         "citations": citations,
         "evidence_ids": evidence_ids,
         "iterations": int(state.get("tool_iterations", 0)),
         "latency_ms": latency_ms,
         "tokens": {"in": _approx_tokens(in_chars), "out": _approx_tokens(len(answer))},
-        # Tells the consumer whether the token counts are measured or
-        # estimated. "estimated" until the LLM backend reports real usage.
-        "tokens_source": TOKENS_SOURCE_ESTIMATED,
         "insufficient": insufficient,
     }
+    # The label is present exactly when it is needed: the Day-3 generator
+    # calls no model, so the counts are a character-count heuristic and a
+    # consumer could otherwise publish them as measured usage. It is an
+    # OPTIONAL field (api.md sec 5), so a client built against the 7-key
+    # shape still validates.
+    if tokens_source is not None:
+        response["tokens_source"] = tokens_source
+    return response
 
 
 def _error_event(err: errors.ApiError) -> dict[str, Any]:
@@ -153,8 +188,14 @@ def run_ask(
         # would answer the same request two different ways.
         raise errors.validation_error(str(err)) from err
     except Exception as exc:  # pragma: no cover - defensive
+        # The app-level handler's convention (apps/api/api/app.py): a 500
+        # carries an EMPTY details object. str(exc) would leak the internal
+        # message - a filesystem path, a SQLite error, a JSON parse position -
+        # to the client, and api.md sec 1 says "no traceback leaks". The
+        # exception is logged, not returned.
+        _LOG.exception("agent loop failed")
         raise errors.ApiError(
-            "INTERNAL_ERROR", "agent loop failed", 500, {"error": str(exc)}
+            "INTERNAL_ERROR", "internal server error", 500, {}
         ) from exc
     latency_ms = int((time.perf_counter() - start) * 1000)
     return _build_response(cast(AgentState, final), latency_ms)
@@ -251,13 +292,16 @@ def iter_sse_events(
             },
         }
         return
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
+        # Same rule as the sync path: the details stay empty and the
+        # exception is logged rather than returned.
+        _LOG.exception("agent loop failed")
         yield {
             "event": "error",
             "error": {
                 "code": "INTERNAL_ERROR",
-                "message": "agent loop failed",
-                "details": {"error": str(exc)},
+                "message": "internal server error",
+                "details": {},
             },
         }
         return

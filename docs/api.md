@@ -16,6 +16,7 @@ Base path `/v1`. JSON request/response; streaming over SSE. Uniform error shape 
   | `CONFLICT` | 409 | identical `file_hash` re-upload, or duplicate `slug` (hash and slug conflicts live ONLY here) |
   | `LLM_UNAVAILABLE` | 503 | backend down/timeout |
   | `EVAL_FAILED` | 500 | runner crash, invalid config |
+  | `INTERNAL_ERROR` | 500 | unhandled server fault. `details` is always EMPTY: the internal exception is logged, never returned (api.md §1: "no traceback leaks"). The app-level handler in `apps/api/api/app.py` emits this code too, so the table lists it rather than leaving a code clients have no arm for. |
 - Pagination: `GET /v1/documents?page=1&pageSize=20` (defaults 1/20, max `pageSize` 100, 1-indexed) → `{ data, pagination: { page, pageSize, totalItems, totalPages } }`.
 
 ## 2. Documents
@@ -39,15 +40,17 @@ POST /v1/ask { document_id: string, question: string, max_iterations?: int =12 (
   → 200 AskResponse:
       { answer_markdown: string, citations: [{n, node_id, label, page_start, page_end}],
         evidence_ids: string[], iterations: int, latency_ms: int, tokens: {in,out},
-        tokens_source: "estimated"|"provider", insufficient: bool }
+        tokens_source?: "estimated"|"provider", insufficient: bool }
       # insufficient=false on success; abstention returns the SAME shape with
       # answer_markdown=canned text, citations=[], evidence_ids=[], insufficient=true
-      # tokens_source says how tokens was produced. "estimated" = a
-      # character-count heuristic (chars//4) over the evidence and the
-      # rendered answer, NOT a provider token count — the Day-3 generator
-      # calls no model, so no prompt was ever sent. "provider" = the LLM
-      # backend reported the counts (Day 4). A consumer must not publish
-      # "estimated" numbers as measured token usage.
+      # tokens_source says how tokens was produced, and is OPTIONAL: §5
+      # allows additive changes under /v1 only for optional fields, so a
+      # required new key would break a client built from the 7-key shape.
+      # "estimated" = a character-count heuristic (chars//4) over the
+      # evidence and the rendered answer, NOT a provider token count — the
+      # Day-3 generator calls no model, so no prompt was ever sent.
+      # "provider" = the LLM backend reported the counts (Day 4). A consumer
+      # must not publish "estimated" numbers as measured token usage.
   → 404 | 422 | 503 LLM_UNAVAILABLE
 POST /v1/ask/stream (same body, SSE) — frozen v1 event sequence:
   plan{sub_questions} → tool_call{tool,args} → tool_result{tool,result_ids,relevant} →
@@ -113,5 +116,5 @@ GET /v1/evaluations/{id} → { status, config: EvalConfig, per_question: [Questi
 
 - [ ] Pydantic v2 request/response models committed with implementation (field types, optionality, bounds: `top_k 1..20`, `max_iterations 1..12`, `pageSize 1..100`).
 - [x] Contract test `test_ask_stream_order` (incl. zero-tool-call + error-terminal cases). **Done (2026-10-20, Day-3):** `apps/api/tests/test_agent.py` — `test_ask_stream_order` asserts the WHOLE event sequence, not membership: `plan → (tool_call, tool_result)* → evidence → token* → done`. The earlier form (first is plan, last is done, evidence between them, tool_call adjacent to its tool_result) still accepted `evidence` in the middle of the tool stream and `token` before `evidence`; verified by injecting that reorder and watching the test fail. Two companion cases: `test_ask_stream_order_zero_tool_call` (`plan → evidence(empty) → done`) and `test_ask_stream_order_error_is_terminal` (one terminal `error` carrying the §1 body, no `done` after it).
-- [ ] Error-body shape asserted on all failure paths (upload 422s, dup-hash 409, unknown ids 404, LLM-down 503).
-- [ ] Changes additive-only under `/v1` (new optional fields); renames/removals → `/v2` + ADR. Enforced by breaking-change test (snapshot response schemas).
+- [x] Error-body shape asserted on all failure paths (upload 422s, dup-hash 409, unknown ids 404, LLM-down 503). **Partly done (2026-10-20, Day-3):** the ask path's failure paths are asserted — 404 for an unknown document, 422 for a bad `max_iterations` and for a bad body, and the terminal SSE `error` carrying the §1 body. The upload paths (422s, dup-hash 409) are Day-1 surface and are covered by `tests/test_ingest.py`; the LLM-down 503 arrives with Day 4's `LLMInterface`. `test_api_v1_snapshot.py` asserts the error body is exactly `{code, message, details}` for every code the agent can emit.
+- [x] Changes additive-only under `/v1` (new optional fields); renames/removals → `/v2` + ADR. Enforced by breaking-change test (snapshot response schemas). **Done (2026-10-20, Day-3):** `apps/api/tests/test_api_v1_snapshot.py` — the test was named in CONSTRAINTS.md and api.md §5 but did not exist, so the rule was asserted and not enforced. It pins the frozen AskResponse shape and the frozen error table, and it enforces the additive-only rule mechanically: no frozen key may be removed or renamed, the code and api.md must agree on the key set, and a key added after the freeze must be declared OPTIONAL (a required new key is a strict-schema break for a client built from the 7-key shape). `tokens_source` is therefore optional — it is present exactly when it is needed, and absent otherwise.
