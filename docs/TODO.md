@@ -324,16 +324,22 @@ points at.
   backend, and a two-backend parity check is a stronger test of the seam than
   one).
 
-- [ ] *Measured (2026-10-20, Day-4):* the generation layer answers the 5 gold
+- [x] *Measured (2026-10-20, Day-4):* the generation layer answers the 5 gold
   questions against the REAL local model (`qwen2.5:3b`, ollama, temperature 0,
-  seed 42) through the full stack - retrieval, agent loop, generation. Result:
-  every factual sentence carries a `[n]` marker (21 marked claims, 0 unmarked),
-  every marker names a citation in the evidence set, and every claim is
-  verbatim from the node it cites (checked word by word against the node text:
-  e.g. "personal property is recorded in the Chattel Mortgage Register" cites
-  article 2140, which says exactly that). No advice phrasing in any answer.
-  The provider's own token counts are reported (`tokens_source: "provider"`),
-  not the Day-3 character-count estimate.
+  seed 42) through the full stack - retrieval, agent loop, generation.
+  **Reproducible:** `python scripts/measure_generation.py` - the harness is
+  committed, so this is a re-runnable record rather than a remembered number.
+  (It needs the corpus, which is gitignored per ADR-002, and a running local
+  LLM; it skips with a clear message when the corpus is absent.)
+  Result: **0 unmarked claims, 0 unresolved markers, 0 advice phrasing**
+  across the five. Every factual sentence carries a `[n]` marker, and every
+  marker names a citation in the answer's citation list. The harness also
+  reports a conservative "unsupported" signal - a content word of the sentence
+  is in none of the cited nodes - which is paraphrase-sensitive, not a verdict:
+  reading the sentence against the cited node shows the substance is verbatim
+  (article 19: "Every person must, in the exercise of his rights ... act with
+  justice", cited [1]). The token counts reported are the provider's own, not
+  the Day-3 character-count estimate.
   One prompt change came out of the measurement: the citation instruction now
   shows the one-marker-per-sentence shape with an example, and the prompt
   version moved `prompt-v1` -> `prompt-v2` (the prompt is part of the recorded
@@ -395,13 +401,12 @@ points at.
   - *Acceptance (PLAN.md Day 4):* 5 gold questions pass an arm-blinded LLM judge with
     100% of factual claims cited; builder spot-checks all 5. Advice blocklist unit test
     green.
-  - *Measured (2026-10-20, Day-4):* the 5 gold questions through the FULL stack
-    against the real local model: 21 marked claims, 0 unmarked, every citation
-    verified word by word against the node it cites, no advice phrasing. The
-    token counts are the provider's own. The blinding caveat: the claim-by-claim
-    check is a mechanical word-overlap against the cited node, not an LLM judge —
-    the judge is Day 6's `evaluation_runs` work, and `evaluation.md` §4 requires
-    the versioned judge prompt then.
+  - *Acceptance status:* the CITATION half is measured and reproducible (the
+    harness above). The **LLM-judge half is NOT done**: the blinded,
+    versioned judge prompt is Day 6's `evaluation_runs` work, and
+    `evaluation.md` §4 requires it then. The harness's claim check is
+    mechanical word-overlap against the cited node, not a judge. So the
+    acceptance line stays open until the judge runs.
 
 ---
 
