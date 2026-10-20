@@ -137,7 +137,7 @@ architecture.md §10 lists 6 vertical slices. In dependency order with the block
 
 **Concrete deliverables:**
 - Three panes: tree / source / answer at `/app/*`.
-- `POST /v1/ask/stream` SSE client consuming the frozen event sequence: `plan → tool_call → tool_result → (repeat) → evidence → token* → done | error`. **Payload schemas must be in api.md** (gap #18 from the audit — spec them before this slice).
+- `POST /v1/ask/stream` SSE client consuming the frozen event sequence: `plan → tool_call → tool_result → (repeat) → evidence → token* → done | error`. Payload schemas are pinned in `api.md` §3 (gap #18 from the audit — **closed by the Day-3 slice**; the abstention string is pinned there too).
 - Citation click → `GET /v1/nodes/{id}/source` → source pane renders `text + page + hierarchy_path`.
 - **Persistent disclaimer banner** in the answer pane — worded exactly as in `copy.ts` line 221. Must persist across answer interactions, not scroll with sections.
 

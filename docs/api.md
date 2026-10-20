@@ -52,6 +52,29 @@ GET /v1/nodes/{id} → NodeFull + hierarchy_path + outgoing refs | 404
 GET /v1/nodes/{id}/source → { text, page_start, page_end, hierarchy_path } | 404
 ```
 
+The canned abstention string is pinned — the wording is part of the contract, so
+a client can match on it:
+
+    The retrieved evidence is insufficient to answer this question from the documents.
+
+SSE payload schemas (frozen; PLAN.md Day 5 gap #18 — the web client builds
+against exactly these):
+
+```text
+plan         { sub_questions: string[] }
+tool_call    { tool: string, args: object }
+tool_result  { tool: string, result_ids: string[], relevant: boolean }
+evidence     { evidence_ids: string[], insufficient: boolean }
+token        { text: string }
+done         { ask_response: AskResponse }
+error        { error: { code: string, message: string, details: object } }
+```
+
+Every `tool_call` is immediately followed by its `tool_result`, in the order the
+tools ran. `token` events appear only when the gate passed; an abstention
+streams `plan → … → evidence → done` with no `token` event. The `error` event
+is terminal: it is the last event of the stream.
+
 ## 4. Evaluation (typed)
 
 ```text

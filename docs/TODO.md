@@ -108,21 +108,46 @@ points at.
 **Targets:** `apps/api/agent/`. **Depends on:** Day 2. **Must NOT import** `sqlite3`,
 `sqlalchemy`, `apps.api.models` (CONSTRAINTS.md, same script).
 
-- [ ] LangGraph graph: `START → query_plan → search → inspect → (relevant? expand/follow :
+- [x] LangGraph graph: `START → query_plan → search → inspect → (relevant? expand/follow :
   mark irrelevant + backtrack) → select_evidence → sufficiency_gate → (more? search again
-  : build_context) → generate → END`.
-- [ ] **7 thin wrappers** only (arg validation + call `retrieval.api` + trace logging).
-- [ ] Max 12 tool iterations **including** the broaden-retry; retry does not reset.
-- [ ] Sufficiency gate (binding): per-sub-question `score ≥ 0.15 AND (lex > 0 OR
+  : build_context) → generate → END`. Built in `apps/api/agent/graph.py`
+  (langgraph 0.2.76, `StateGraph` + `START`/`END`); 9 nodes — the 8 in the topology
+  plus `broaden_search`, the retry branch.
+- [x] **7 thin wrappers** only (arg validation + call `retrieval.api` + trace logging) —
+  `apps/api/agent/tools.py`, one function per tool plus `TOOL_TABLE`; the graph reaches
+  the tree through that table and nowhere else.
+- [x] Max 12 tool iterations **including** the broaden-retry; retry does not reset.
+  Every wrapper call ticks the counter; the retry spends from it.
+- [x] Sufficiency gate (binding): per-sub-question `score ≥ 0.15 AND (lex > 0 OR
   identifier-hit)`; every planned sub-question needs ≥1 supporting node (planner emitting
   0 is invalid → gate fails closed → retry plan once, then insufficient). One
   broaden-retry (stopword-strip + identifier-only, stoplist per `retrieval.md` §3),
   then `insufficient_evidence` exit with the unified abstention shape.
-- [ ] Backtrack: `relevant: bool` on every `tool_result`; irrelevant branches contribute
+  - *Implementation note:* the threshold check stays retrieval-owned — `select_evidence`
+    returns `gate.per_question` (the supporter lists) and the agent decides pass/fail
+    from it. The agent never re-scores a hit. Insufficiency is decided by that verdict,
+    NOT by "are there kept nodes": a query with no lexical match can still leave
+    score-0 nodes in the kept set, and answering from those would fabricate.
+- [x] Backtrack: `relevant: bool` on every `tool_result`; irrelevant branches contribute
   zero evidence, logged with branch id; visited-set prevents re-inspect loops.
+  - *Implementation note:* a branch is relevant iff the node it returned could itself
+    contribute evidence (≥50 chars of text AND a page span — the same two rules
+    `select_evidence` applies). A heading-only node is a dead branch, not evidence.
   - *Acceptance (PLAN.md Day 3):* multi-hop fixture trace shows ≥ 1 abandoned branch
     (relevant=false, zero evidence) + ≥ 2 inspect/expand before the answer.
     `mypy apps/api` zero errors.
+  - *Verified (2026-10-20):* 18 agent tests green; full suite 51 passed; ruff clean;
+    mypy clean on 28 files; `check_no_vectors.py` OK (28 files scanned). Runtime smoke:
+    a two-part question streams 2 searches, 6 inspects (1 abandoned), 2 expands, then
+    `evidence` + `done`; gibberish → canned abstention with `citations: []` and
+    `evidence_ids: []`; empty question → the legal zero-tool-call run
+    (`plan → evidence(empty) → done`).
+
+  - *Deferred to Day 4:* the `follow_reference` wrapper exists and honours the
+    `resolved|unresolved|error` contract, but the `references_` table is empty —
+    ingestion does not parse reference edges yet (Day 1 scope). The graph therefore
+    expands rather than follows, and no reference branch is reachable until that
+    parsing lands. Recording it here rather than pretending the branch is exercised.
 
 ---
 
@@ -150,8 +175,10 @@ points at.
 **Targets:** `apps/web/src/app/app/` (new route), new components. **Depends on:** Day 4.
 
 - [ ] Three panes: tree / source / answer at `/app/*`.
-- [ ] SSE event payload schemas spec'd in `api.md` **before** this slice (PLAN.md gap #18)
-  and client built against the frozen sequence: `plan → tool_call → tool_result →
+- [x] SSE event payload schemas spec'd in `api.md` §3 **before** this slice (PLAN.md gap
+  #18 — closed by the Day-3 slice: the schemas and the pinned abstention string are in
+  api.md, with the Day-3 contract test pinning the order).
+- [ ] Client built against the frozen sequence: `plan → tool_call → tool_result →
   (repeat) → evidence → token* → done | error`.
 - [ ] Citation click → `GET /v1/nodes/{id}/source` → source pane renders
   `text + page + hierarchy_path`.

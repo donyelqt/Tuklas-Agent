@@ -186,10 +186,24 @@ sufficiency_gate → (more? search again : build_context) → generate → END`.
   set. Else one broaden-retry (stopword-strip + identifier-only query, stoplist per
   retrieval.md §3, consumes iteration budget), then `insufficient_evidence` exit with the
   unified abstention shape (api.md §3).
+  - *Who applies the threshold:* retrieval owns it. `select_evidence` returns
+    `gate.per_question` (the supporter list per sub-question); the agent reads that
+    verdict and decides pass/fail only. The agent never re-scores a hit — two
+    implementations of `score ≥ 0.15 AND (lex > 0 OR identifier-hit)` would be two
+    thresholds to drift apart.
+  - *What insufficiency means:* the gate verdict, NOT "are there kept nodes". A query
+    with no lexical match can still leave score-0 nodes in the kept set; answering from
+    those would fabricate. The abstention therefore keys on the gate verdict.
 - **Backtrack:** `tool_result` carries `relevant: bool`; irrelevant branches contribute
   zero evidence nodes, logged with branch id. Visited-set prevents re-inspect loops.
+  - *What makes a branch relevant:* the node it returned could itself contribute
+    evidence — ≥50 chars of text AND a page span, the same two rules
+    `select_evidence` applies. A heading-only node is a dead branch, not evidence.
 - Zero sub-questions from planner → invalid plan; gate fails closed → retry plan once,
-  then insufficient.
+  then insufficient. An invalid plan does NOT get a broaden-retry: a broaden fixes a
+  retrieval miss, not an invalid plan.
+- The abstention string is pinned in api.md §3; the SSE payload schemas are pinned
+  there too (PLAN.md Day 5 gap #18, closed by the Day-3 slice).
 
 ---
 
