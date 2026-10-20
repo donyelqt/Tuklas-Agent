@@ -186,10 +186,49 @@ sufficiency_gate → (more? search again : build_context) → generate → END`.
   set. Else one broaden-retry (stopword-strip + identifier-only query, stoplist per
   retrieval.md §3, consumes iteration budget), then `insufficient_evidence` exit with the
   unified abstention shape (api.md §3).
+  - *Who applies the threshold:* retrieval owns it. `select_evidence` returns
+    `gate.per_question` (the supporter list per sub-question); the agent reads that
+    verdict and decides pass/fail only. The agent never re-scores a hit — two
+    implementations of `score ≥ 0.15 AND (lex > 0 OR identifier-hit)` would be two
+    thresholds to drift apart.
+  - *What insufficiency means:* the gate verdict, NOT "are there kept nodes". A query
+    with no lexical match can still leave score-0 nodes in the kept set; answering from
+    those would fabricate. The abstention therefore keys on the gate verdict.
+  - *Measured limitation (2026-10-20, Day-3):* the gate as specified does not refuse
+    an out-of-domain question. `lex` is min-max normalized per query, so the
+    best-matching node always scores `lex = 1.0` whenever the query matches
+    anything at all — the strength of the match is erased, and the rule
+    `score >= 0.15 AND (lex > 0 OR identifier-hit)` is satisfied by a single
+    token appearing anywhere in the corpus. Measured: five plausible
+    unanswerable questions ("Who is the current President of the Philippines?",
+    and four others) all pass the gate with 8 citations each. The agent applies
+    the specified rule faithfully; the rule is what cannot discriminate. Absolute
+    BM25, match breadth, and term coverage were measured and none of them
+    separates answerable from unanswerable either. The consequence is recorded
+    against the Day-6 dataset in TODO.md (an `answerable: false` row must be
+    out-of-domain in a way the lexical layer can see, or the abstention score is
+    0 for every arm). Changing the lex definition is a `retrieval.md` §3 change
+    and needs a recorded tuning run; it is not made from the Day-3 slice.
 - **Backtrack:** `tool_result` carries `relevant: bool`; irrelevant branches contribute
   zero evidence nodes, logged with branch id. Visited-set prevents re-inspect loops.
+  - *What makes a branch relevant:* the node it returned could itself contribute
+    evidence — ≥50 chars of text AND a page span, the same two rules
+    `select_evidence` applies. A heading-only node is a dead branch, not evidence.
 - Zero sub-questions from planner → invalid plan; gate fails closed → retry plan once,
-  then insufficient.
+  then insufficient. An invalid plan does NOT get a broaden-retry: a broaden fixes a
+  retrieval miss, not an invalid plan.
+- The abstention string is pinned in api.md §3; the SSE payload schemas are pinned
+  there too (PLAN.md Day 5 gap #18, closed by the Day-3 slice).
+- *Reachability of the broaden-retry (measured 2026-10-20, Day-3):* the retry is
+  specified against an all-zero lex layer. Because BM25's lex component is
+  min-max normalized, a query matching exactly one node scores that node
+  `lex = 1.0` and clears the 0.15 threshold alone; the gate therefore fails only
+  on a query that matches nothing, which is built only from non-stopwords — and
+  the stoplist cannot reduce such a query. The retry is implemented, and it
+  skips itself when the strip cannot change the query (an identical search is
+  provably useless and would spend budget to learn nothing). Whether it can ever
+  fire is a property of the corpus and the scoring model, not of the agent;
+  measured on the Civil Code, no rescue case was found. See TODO.md Day 3.
 
 ---
 
@@ -199,9 +238,9 @@ sufficiency_gate → (more? search again : build_context) → generate → END`.
   renders it without reordering or truncation (Context Builder's job; contract test
   catches violations).
 - System constraints: answer only from evidence; every factual sentence carries `[n]`;
-  refusal path when the gate fails (zero kept evidence nodes or best kept score < 0.15,
-  PRD US-2) → canned abstention + `citations: []` + `insufficient: true`. Never a
-  fabricated number.
+  refusal path when the GATE FAILS (the gate verdict, not "are there kept
+  nodes" - see the sufficiency-gate section above; PRD US-2) → canned abstention
+  + `citations: []` + `insufficient: true`. Never a fabricated number.
 - Citation assembly: `citations[] = [{n, node_id, label, page_start, page_end}]`.
 - Post-generation blocklist rejects advice phrasing: "you should", "I advise",
   "your case", "you must" (single oracle, shared with architecture.md §6 and PRD US-2).
@@ -226,9 +265,17 @@ POST /v1/search { document_id, query, top_k?: int =10 (1..20) }
 POST /v1/ask { document_id, question, max_iterations?: int =12 (1..12) }
   → 200 AskResponse:
       { answer_markdown, citations: [{n,node_id,label,page_start,page_end}],
-        evidence_ids, iterations, latency_ms, tokens: {in,out}, insufficient }
+        evidence_ids, iterations, latency_ms, tokens: {in,out},
+        tokens_source?: "estimated"|"provider", insufficient }
       # insufficient=false on success; abstention returns the SAME shape with
       # answer_markdown=canned text, citations=[], evidence_ids=[], insufficient=true
+      # tokens_source is OPTIONAL (§5 allows additive changes only for
+      # optional fields) and says how tokens was produced: "estimated" = a
+      # character-count heuristic (chars//4) over the evidence and the rendered
+      # answer, NOT a provider token count (the Day-3 generator calls no
+      # model); "provider" = the LLM backend reported the counts (Day 4). A
+      # consumer must not publish "estimated" numbers as measured usage.
+      # (This is the same shape api.md sec 3 pins; the two must not drift.)
   → 404 | 422 | 503 LLM_UNAVAILABLE
 POST /v1/ask/stream (same body, SSE) — frozen v1 event sequence:
   plan{sub_questions} → tool_call{tool,args} → tool_result{tool,result_ids,relevant} →

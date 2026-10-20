@@ -53,3 +53,6 @@ npm-debug.log*
 yarn-error.log*
 # Scratch directories used while sourcing brand assets
 .tmp_logos/
+
+# Local scratch: throwaway probe scripts
+.tmp_probe/
