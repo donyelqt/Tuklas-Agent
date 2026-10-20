@@ -1007,6 +1007,7 @@ def test_generation_ask_trace_records_the_run(civil_code: SimpleNamespace) -> No
     # The run record. The model-free generator runs no model, so the run
     # parameters are absent - but the columns exist and the row is complete
     # in the observable facts.
+    columns = set(row.keys())
     for column in (
         "model",
         "backend",
@@ -1021,7 +1022,7 @@ def test_generation_ask_trace_records_the_run(civil_code: SimpleNamespace) -> No
         "latency_ms",
         "insufficient",
     ):
-        assert column in row.keys(), f"the trace must carry {column}"
+        assert column in columns, f"the trace must carry {column}"
     assert row["iterations"] == response["iterations"]
     assert row["insufficient"] == (1 if response["insufficient"] else 0)
     assert row["latency_ms"] >= 0
