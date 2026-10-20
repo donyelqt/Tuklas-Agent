@@ -41,6 +41,7 @@ from typing import Any, Protocol, runtime_checkable
 from apps.api.agent.state import AgentState, initial_state
 from apps.api.agent.stoplist import broaden as _broaden
 from apps.api.agent.tools import TOOL_TABLE, budget_left
+from apps.api.ingestion import errors
 from apps.api.retrieval.api import select_evidence
 from apps.api.retrieval.context import build_context
 from langgraph.graph import END, START, StateGraph
@@ -94,6 +95,25 @@ class StubGenerator:
         if not lines:
             return CANNED_ABSTENTION, []
         return "\n".join(lines), citations
+
+
+def _validate_max_iterations(max_iterations: int) -> int:
+    """api.md sec 3: ``max_iterations?: int =12 (1..12)``.
+
+    The range is part of the frozen request contract, so an out-of-range
+    value is a bad body (422), not a silently clamped one. Validating here
+    means the route layer gets the 422 for free from the typed error.
+    """
+    if isinstance(max_iterations, bool) or not isinstance(max_iterations, int):
+        raise errors.validation_error(
+            "max_iterations must be an integer", max_iterations=str(max_iterations)
+        )
+    if max_iterations < 1 or max_iterations > MAX_TOOL_ITERATIONS:
+        raise errors.validation_error(
+            "max_iterations must be between 1 and 12",
+            max_iterations=str(max_iterations),
+        )
+    return max_iterations
 
 
 def _split_query(question: str) -> list[str]:
@@ -507,6 +527,7 @@ def run_agent(
     # An empty question is an invalid plan (retrieval.md sec 7): the gate
     # fails closed to the abstention. The HTTP layer owns the 422 for a bad
     # body; the agent never raises for one.
+    max_iterations = _validate_max_iterations(max_iterations)
     state = initial_state(question, document_id, max_iterations=max_iterations)
     state["_db_path"] = db_path
     compiled = build_graph(generator)

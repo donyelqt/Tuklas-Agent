@@ -318,6 +318,28 @@ def test_agent_gate_fails_closed_for_an_unsearched_subquestion(
     assert full["insufficient"] is False
 
 
+def test_agent_max_iterations_out_of_range_is_422(
+    civil_code: SimpleNamespace,
+) -> None:
+    # api.md sec 3 freezes max_iterations to 1..12. An out-of-range value is a
+    # bad body (422), not a silently clamped one - clamping 13 to 1 would run
+    # a different request than the client asked for.
+    from apps.api.ingestion import errors
+
+    for cap in (0, -1, 13, 100):
+        with pytest.raises(errors.ApiError) as excinfo:
+            run_agent(civil_code.doc_id, "test", max_iterations=cap, db_path=civil_code.db)
+        assert excinfo.value.code == "VALIDATION_ERROR"
+        assert excinfo.value.status == 422
+
+    # The boundaries are accepted.
+    for cap in (1, 12):
+        state = run_agent(
+            civil_code.doc_id, "test", max_iterations=cap, db_path=civil_code.db
+        )
+        assert state["tool_iterations"] <= cap
+
+
 def test_agent_visited_set_prevents_reinspect(civil_code: SimpleNamespace) -> None:
     # Both sub-questions rank the same nodes; the visited-set must stop the
     # second sub-question from re-inspecting them (architecture.md sec 4:
