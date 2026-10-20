@@ -53,3 +53,13 @@ def not_found(message: str, **details: str) -> ApiError:
 def conflict(message: str, **details: str) -> ApiError:
     """409 — identical file_hash re-upload, or duplicate slug (hash and slug live ONLY here)."""
     return ApiError("CONFLICT", message, 409, dict(details))
+
+
+def llm_unavailable(message: str, **details: str) -> ApiError:
+    """503 — the local LLM backend is down or timed out (api.md §1, ADR-004).
+
+    LLM-down degrades to this 503, never to a fake answer (ADR-004
+    "Consequences"). The details carry the reason, not an internal traceback:
+    api.md §1 says no traceback leaks.
+    """
+    return ApiError("LLM_UNAVAILABLE", message, 503, dict(details))

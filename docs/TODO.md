@@ -302,6 +302,28 @@ points at.
 
 ## Day 4 — Slice 4: Generation (LLMInterface + citations + refusal)
 
+- [ ] *Measured finding (2026-10-20, Day-4):* a question that NAMES a
+  provision and carries other words loses the named provision from the
+  evidence window. "What does article 1318 require?" retrieves article_1318 at
+  rank 9 (ident=1.00, lex=0.00) behind articles 1395/1402 (lex=1.00 on the
+  word "require"), and the top-8 cut drops article_1318 entirely — so the
+  model answers about the word-match ("The article 1318 requires the
+  contracting party ... to ratify") and cites article_1395, a DIFFERENT
+  provision. Measured across forms: "article 1318" alone -> the named article
+  is rank 0; "What is article 1318?" -> rank 5, in the window; "What does
+  article 1318 require?" -> rank 9, OUT of the window; "What does article 2124
+  provide?" -> not retrieved at all.
+  This is a RETRIEVAL-layer ranking defect, not a generation one: the
+  identifier signal cannot compete with the lexical signal in the
+  score-ordered top-8 cut. It directly undermines PRD US-2 ("every legal
+  claim has a citation so I can verify it") — the citation is valid, but it
+  points at the source of words the model was given, while the answer's
+  SUBJECT is a provision that was never in the evidence.
+  Not changed from the Day-4 slice: `retrieval.md` §3 is frozen, the window is
+  retrieval-owned, and a fix changes the retrieval contract (it needs a
+  recorded tuning run, like every other weight or normalisation change).
+  Recorded against the Day-4 slice and raised for the retrieval tuning run.
+
 **Targets:** `apps/api/generation/`. **Depends on:** Days 2 + 3.
 
 - [ ] `LLMInterface.generate()` + `.generate_stream()` (ADR-004): ollama default,
