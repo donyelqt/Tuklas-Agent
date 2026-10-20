@@ -41,7 +41,7 @@ citation lines, so the whole loop is exercisable without a model.
 from __future__ import annotations
 
 import re
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 from apps.api.agent.state import AgentState, initial_state
 from apps.api.agent.stoplist import broaden as _broaden
@@ -418,6 +418,12 @@ def _broaden_search_node(state: AgentState) -> AgentState:
 
     The retry spends from the iteration budget (each search is a budgeted tool
     call) and never resets the counter.
+
+    The topology's "search again" returns to the search-and-INSPECT cycle, not
+    straight to the evidence selection: a hit that was never inspected has not
+    been read, and the trace must show the read. So this node searches, and
+    the graph routes the result through the inspect node before the evidence
+    is selected.
     """
     queries = state.get("_broadened_queries", [])
     batches = list(state.get("_hit_batches", []))
@@ -517,7 +523,11 @@ def build_graph(generator: Generator | None = None) -> CompiledStateGraph:
         _route_after_gate,
         {"build_context": "build_context", "broaden_search": "broaden_search"},
     )
-    graph.add_edge("broaden_search", "select_evidence")
+    # The "search again" branch of the topology returns to the search-and-
+    # inspect cycle: a broadened hit that was never inspected has not been
+    # read. inspect -> expand_or_backtrack -> select_evidence is the same
+    # path the first search takes.
+    graph.add_edge("broaden_search", "inspect")
     graph.add_edge("build_context", "generate")
     graph.add_edge("generate", END)
 
@@ -544,8 +554,9 @@ def run_agent(
     state = initial_state(question, document_id, max_iterations=max_iterations)
     state["_db_path"] = db_path
     compiled = build_graph(generator)
-    final = compiled.invoke(state)
-    return final  # type: ignore[return-value]
+    # LangGraph's invoke returns a plain mapping; the state IS an AgentState.
+    final = cast(AgentState, compiled.invoke(state))
+    return final
 
 
 __all__ = [

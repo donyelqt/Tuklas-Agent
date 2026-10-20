@@ -104,8 +104,13 @@ def _record(
     relevant: bool,
     latency_ms: float,
     error: str | None = None,
+    fallback: bool | None = None,
 ) -> None:
-    """Append the tool_result + trace entry for one wrapper call."""
+    """Append the tool_result + trace entry for one wrapper call.
+
+    ``fallback`` is the flat-fallback flag read from retrieval (retrieval.md
+    sec 6); it is recorded only where it applies (search_nodes).
+    """
     state["tool_iterations"] = int(state.get("tool_iterations", 0)) + 1
     branch_id = f"{tool}#{state['tool_iterations']}"
     entry: dict[str, Any] = {
@@ -118,6 +123,8 @@ def _record(
     }
     if error is not None:
         entry["error"] = error
+    if fallback is not None:
+        entry["fallback"] = fallback
     state["tool_results"].append(
         {
             "tool": tool,
@@ -171,9 +178,20 @@ def agent_search_nodes(state: AgentState, args: dict[str, Any]) -> AgentState:
     latency = (time.perf_counter() - start) * 1000.0
     matched = [hit for hit in hits if _hit_matched(hit)]
     hit_ids = [str(hit.node_id) for hit in matched]
-    # The scored hits feed select_evidence (retrieval-owned) later.
-    state.setdefault("_hits", []).extend(hits)
+    # Only the MATCHED hits feed select_evidence. The hits of an irrelevant
+    # branch (a query that matched nothing) are the document's top-k nodes at
+    # score 0.0; feeding them downstream would let an irrelevant branch
+    # contribute evidence nodes, and select_evidence dedups by node_id keeping
+    # the FIRST occurrence - so a score-0 copy could shadow the same node's
+    # genuinely-scored copy from a later, relevant search.
+    state.setdefault("_hits", []).extend(matched)
     state.setdefault("_searched", []).append(query)
+    # retrieval.md sec 6: the fallback flag is computed by score_nodes and
+    # carried on every ScoredNode; the Day-3 trace reads it from retrieval
+    # rather than recomputing it. A flat-fallback document (parse_confidence
+    # < 0.5) is answered from a page-only tree with ident/title/hier = 0, and
+    # the trace must say so.
+    fallback = any(bool(getattr(hit, "fallback", False)) for hit in hits)
     _record(
         state,
         "search_nodes",
@@ -181,6 +199,7 @@ def agent_search_nodes(state: AgentState, args: dict[str, Any]) -> AgentState:
         hit_ids,
         bool(hit_ids),
         latency,
+        fallback=fallback,
     )
     return state
 

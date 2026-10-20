@@ -239,12 +239,12 @@ Export: `runLocally`
 |---|---|
 | `headline` | Run it from a clone |
 | `lead` | The intended local setup for a builder. Nothing here is a download or a release. |
-| `status` | Build state: the specification, the evaluation contract, and the Next.js shell are in the repository. The API service, the retrieval engine, and the agent loop are specified but not implemented, and the comparison has not been run. |
+| `status` | Build state: the specification, the evaluation contract, and the Next.js shell are in the repository. The API service, the retrieval engine, and the agent loop are implemented and tested; the evaluation harness and the controlled comparison are not, so no metric on this page reports a measured value. |
 | `commands[0].label` / `.command` | Clone / `git clone https://github.com/donyelqt/Tuklas-Agent.git` |
-| `commands[1].label` / `.command` | Install / `uv sync` |
-| `commands[2].label` / `.command` | API / `uvicorn apps.api.main:app --reload` |
+| `commands[1].label` / `.command` | Install / `poetry install` |
+| `commands[2].label` / `.command` | API / `poetry run uvicorn apps.api.api.app:app --reload` |
 | `commands[3].label` / `.command` | Web / `npm --prefix apps/web run dev` |
-| `caption` | Intended local setup, not an installer. The API entrypoint is specified in docs/architecture.md and does not exist yet. |
+| `caption` | Intended local setup, not an installer. The API entrypoint is the app factory in apps/api/api/app.py; the evaluation harness and the controlled comparison are not built yet. |
 
  `repoTree`, one template literal, from `docs/architecture.md` section 1. (`src/lib/` holds `copy.ts` and `site.ts` — not `design.ts`; the marquee is `backend-marks.tsx`, mapping slugs from `copy.ts`.)
 
@@ -324,7 +324,7 @@ Strings flagged during drafting and rewritten, with the reason.
 | `comparison.expectedPattern` | Tuklas wins on cross-reference and multi-hop questions | The expected pattern is competitive on cross-reference and multi-hop questions, weaker on paraphrase-heavy definitions, and a uniform sweep across every category is treated as a leakage smell rather than a win. | An expectation stated as a result, and it dropped the weaker-case half of the honest reading. |
 | `comparison.status` | Results coming soon | No evaluation run has happened yet, so no metric on this page reports a measured value. | A launch teaser implies a schedule the repository does not support. |
 | `guardrails.headline` | Bank-grade security and enterprise-grade safety | Guardrails that are checked, not promised | Unverifiable marketing adjectives. |
-| `runLocally.status` | Get started in under five minutes | Build state: the specification, the evaluation contract, and the Next.js shell are in the repository. The API service, the retrieval engine, and the agent loop are specified but not implemented, and the comparison has not been run. | A timing promise about code that does not exist. Honesty rule 6. |
+| `runLocally.status` | Get started in under five minutes | Build state: the specification, the evaluation contract, and the Next.js shell are in the repository. The API service, the retrieval engine, and the agent loop are implemented and tested; the evaluation harness and the controlled comparison are not, so no metric on this page reports a measured value. | A timing promise about code that does not exist. Honesty rule 6. |
 | `footer.note` | Trusted by legal researchers worldwide | Tuklas Agent is a local-first research artifact for private law document discovery. Built to be read, ablated, and reproduced. | Fake social proof, banned by honesty rule 5. There are no users. |
 
 Strings deliberately kept out: any latency or token figure, any Recall or MRR value, any "competitive" result statement, any user count, any download link, and the advice phrases "you should", "I advise", "your case", "you must".

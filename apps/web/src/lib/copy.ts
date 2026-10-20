@@ -225,11 +225,11 @@ export const runLocally = {
   headline: "Run it from a clone",
   lead: "The intended local setup for a builder. Nothing here is a download or a release.",
   status:
-    "Build state: the specification, the evaluation contract, and the Next.js shell are in the repository. The API service, the retrieval engine, and the agent loop are specified but not implemented, and the comparison has not been run.",
+    "Build state: the specification, the evaluation contract, and the Next.js shell are in the repository. The API service, the retrieval engine, and the agent loop are implemented and tested; the evaluation harness and the controlled comparison are not, so no metric on this page reports a measured value.",
   commands: [
     { label: "Clone", command: "git clone https://github.com/donyelqt/Tuklas-Agent.git" },
-    { label: "Install", command: "uv sync" },
-    { label: "API", command: "uvicorn apps.api.main:app --reload" },
+    { label: "Install", command: "poetry install" },
+    { label: "API", command: "poetry run uvicorn apps.api.api.app:app --reload" },
     { label: "Web", command: "npm --prefix apps/web run dev" },
   ],
   repoTree: `apps/web/                      Next.js App Router, marketing at /, explorer at /app/*
@@ -242,7 +242,7 @@ experiments/
   vectorless/  results/
 docs/                          specification and contracts
 scripts/`,
-  caption: "Intended local setup, not an installer. The API entrypoint is specified in docs/architecture.md and does not exist yet.",
+  caption: "Intended local setup, not an installer. The API entrypoint is the app factory in apps/api/api/app.py; the evaluation harness and the controlled comparison are not built yet.",
 };
 
 export const footer = {
