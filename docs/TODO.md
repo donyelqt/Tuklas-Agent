@@ -136,12 +136,31 @@ points at.
   - *Acceptance (PLAN.md Day 3):* multi-hop fixture trace shows ≥ 1 abandoned branch
     (relevant=false, zero evidence) + ≥ 2 inspect/expand before the answer.
     `mypy apps/api` zero errors.
-  - *Verified (2026-10-20):* 26 agent tests green; full suite 58 passed; ruff clean;
+  - *Verified (2026-10-20):* 29 agent tests green; full suite 62 passed; ruff clean;
     mypy clean on 28 files; `check_no_vectors.py` OK (28 files scanned). Runtime smoke:
     a two-part question streams 2 searches, 6 inspects (1 abandoned), 2 expands, then
     `evidence` + `done`; gibberish → canned abstention with `citations: []` and
     `evidence_ids: []`; empty question → the legal zero-tool-call run
-    (`plan → evidence(empty) → done`).
+    (`plan → evidence(empty) → done`); an unknown document raises `NOT_FOUND` 404 and
+    the SSE path yields one terminal `error` event carrying the api.md §1 body.
+  - *Gate fails closed for an unsearched sub-question (2026-10-20).* `select_evidence`
+    evaluates each sub-question against the WHOLE kept set, so a sub-question that was
+    never searched still collected supporters from the nodes another sub-question
+    found — and the gate passed for a question the agent never looked up. Measured
+    with a budget of 1 (which truncates the search loop after the first
+    sub-question): both sub-questions reported 8 supporters and the gate passed.
+    The agent now puts only the SEARCHED sub-questions to the gate; an unsearched
+    one counts as missing and the run abstains. The retrieval contract is
+    untouched — the agent simply stops asking about a question it did not look up.
+    After: budget 1 → gate fails closed, `insufficient: true`, 0 citations; budget ≥ 2
+    → gate passes and answers.
+
+  - *Request validation (2026-10-20):* `max_iterations` outside api.md §3's 1..12 is
+    a 422 (`VALIDATION_ERROR`), not a silent clamp — 13 used to clamp to a
+    1-iteration run and 0/-1 produced a zero-iteration run that answered with the
+    canned abstention as if it were a real result. The route layer validates
+    `page`/`pageSize`/`depth` the same way; the agent now hands it a typed 422.
+
   - *SSE streaming (2026-10-20):* the first implementation ran the whole graph
     and replayed the accumulated trace as events. The event SEQUENCE was
     correct, so a sequence assertion could not see it — but nothing was
