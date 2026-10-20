@@ -31,6 +31,27 @@ CORPUS = REPO_ROOT / "data" / "documents" / "civil-code-ra386-icnl.pdf"
 SLUG = "civil-code-public"
 
 
+@pytest.fixture(autouse=True)
+def _model_free_generator(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The agent tests are about the AGENT, not about a model.
+
+    The ask surface defaults to the real local LLM (ADR-004), so without this
+    every test would call a model - slow, and dependent on whether one is
+    running. The model-free stub is the deterministic stand-in; the tests
+    that DO need a model are in test_generation.py, and the live one is
+    opt-in.
+    """
+    from apps.api.agent import ask as ask_module
+    from apps.api.agent import graph as graph_module
+    from apps.api.agent.graph import StubGenerator
+
+    # Both the ask surface and the graph resolve their own default, so both
+    # are patched: a test that calls run_agent directly would otherwise
+    # reach the real model through the graph's default.
+    monkeypatch.setattr(ask_module, "_default_generator", StubGenerator)
+    monkeypatch.setattr(graph_module, "_default_generator", StubGenerator)
+
+
 @pytest.fixture(scope="module")
 def civil_code(
     tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest
@@ -1084,10 +1105,17 @@ def test_agent_imports_only_the_sanctioned_retrieval_surface() -> None:
 
 
 def test_agent_ask_response_shape(civil_code: SimpleNamespace) -> None:
+    # The stub is passed EXPLICITLY: the ask surface defaults to the real
+    # local LLM, and this test is about the SHAPE of the response, not about
+    # what a model said. The token counts of a model-free answer are the
+    # character-count estimate, and the payload must say so.
+    from apps.api.agent.graph import StubGenerator
+
     response = run_ask(
         civil_code.doc_id,
         "What are the requisites of contracts?",
         db_path=civil_code.db,
+        generator=StubGenerator(),
     )
     assert set(response.keys()) == {
         "answer_markdown",

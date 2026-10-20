@@ -60,6 +60,15 @@ class AgentState(TypedDict, total=False):
     _gate_missing: list[str]
     _broadened_queries: list[str]
     _broadened_for: list[str]
+    _gen_tokens_source: str | None
+    _gen_model: str
+    _gen_backend: str
+    _gen_temperature: float
+    _gen_seed: int
+    _gen_prompt_version: str
+    _gen_prompt_tokens: int
+    _gen_completion_tokens: int
+    _gen_stream: list[str]
     _db_path: str | None
     _searched: list[str]
     _visited: list[str]
