@@ -350,7 +350,23 @@ def agent_follow_reference(state: AgentState, args: dict[str, Any]) -> AgentStat
     """follow_reference — an unresolved edge stays unresolved (retrieval.md sec 7)."""
     reference_id = str(args["reference_id"])
     start = time.perf_counter()
-    followed = follow_reference(reference_id=reference_id, **_db_kwarg(state))
+    try:
+        followed = follow_reference(reference_id=reference_id, **_db_kwarg(state))
+    except errors.ApiError as err:
+        # A failed reference lookup is a DEAD BRANCH, not an abort: the other
+        # six wrappers record it as irrelevant and move on, and the agent must
+        # do the same. retrieval.md sec 7: an unresolved edge is typed, never
+        # invented - and the same holds for a lookup that fails.
+        _record(
+            state,
+            "follow_reference",
+            {"reference_id": reference_id},
+            [],
+            False,
+            (time.perf_counter() - start) * 1000.0,
+            error=err.code,
+        )
+        return state
     latency = (time.perf_counter() - start) * 1000.0
     node = followed.get("node") if isinstance(followed, dict) else None
     ids = (

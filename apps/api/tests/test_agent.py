@@ -870,6 +870,62 @@ def test_agent_ask_path_reports_a_bad_body_as_422_not_500(
     assert excinfo.value.code == "VALIDATION_ERROR"
 
 
+def test_agent_evidence_insufficient_agrees_with_the_gate(
+    civil_code: SimpleNamespace,
+) -> None:
+    """The trace must not contradict itself.
+
+    The insufficiency verdict is over EVERY PLANNED sub-question - the same
+    set the gate uses. Computed over the searched ones only, a truncated
+    search reported insufficient=false while the gate failed and the run
+    abstained, so the trace read "insufficient: false" immediately followed
+    by "insufficient_evidence".
+    """
+    state = run_agent(
+        civil_code.doc_id,
+        "What is succession? What is the registration of chattel mortgages?",
+        max_iterations=1,
+        db_path=civil_code.db,
+    )
+    # The budget truncated the search loop, so the gate fails.
+    assert state["_gate_passed"] is False
+    assert state["insufficient"] is True
+    # And the evidence payload says the same thing.
+    assert state["evidence"]["insufficient"] is True, (
+        "the evidence payload's insufficiency must agree with the gate verdict"
+    )
+
+
+def test_agent_follow_reference_failure_is_a_dead_branch(
+    civil_code: SimpleNamespace,
+) -> None:
+    """A failed reference lookup is a dead branch, not an abort.
+
+    The other six wrappers record a typed failure as irrelevant and move on.
+    follow_reference did not, so a failing lookup escaped the wrapper and
+    aborted the whole ask. retrieval.md sec 7: an unresolved edge is typed,
+    never invented - and the same holds for a lookup that fails.
+    """
+    from apps.api.agent.state import initial_state
+    from apps.api.agent.tools import TOOL_TABLE
+
+    state = initial_state("q", civil_code.doc_id)
+    state["_db_path"] = civil_code.db
+    before = state["tool_iterations"]
+    state = TOOL_TABLE["follow_reference"](
+        state, {"reference_id": "ref_does_not_exist"}
+    )
+    # The failure was recorded, not raised.
+    assert state["tool_iterations"] == before + 1
+    result = state["tool_results"][-1]
+    assert result["tool"] == "follow_reference"
+    assert result["relevant"] is False
+    assert result["result_ids"] == []
+    # And it is logged as an abandoned branch.
+    assert state["visited_branches"]
+    assert state["visited_branches"][-1]["branch_id"]
+
+
 def test_agent_visited_set_prevents_reinspect(civil_code: SimpleNamespace) -> None:
     # Both sub-questions rank the same nodes; the visited-set must stop the
     # second sub-question from re-inspecting them (architecture.md sec 4:
