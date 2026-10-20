@@ -116,9 +116,16 @@ def _kept_node_ids(evidence: dict[str, Any]) -> list[str]:
 def _build_response(
     state: AgentState,
     latency_ms: int,
-    tokens_source: str | None = TOKENS_SOURCE_ESTIMATED,
+    tokens_source: str | None = None,
 ) -> dict[str, Any]:
-    """Assemble the AskResponse from the final graph state."""
+    """Assemble the AskResponse from the final graph state.
+
+    The token counts come from the BACKEND when a model was called (the
+    provider's own prompt/completion counts, ADR-004) and fall back to the
+    character-count estimate when no model ran - a refusal, or the model-free
+    stub. The ``tokens_source`` label says which, so a consumer can never
+    mistake the estimate for measured usage.
+    """
     evidence: dict[str, Any] = state.get("evidence", {})
     insufficient = bool(state.get("insufficient"))
     # api.md sec 3: the abstention returns the SAME shape with
@@ -132,22 +139,35 @@ def _build_response(
     context: dict[str, Any] = state.get("context", {})
     parts = context.get("parts", []) if isinstance(context, dict) else []
     in_chars = sum(len(str(part.get("text", ""))) for part in parts if isinstance(part, dict))
+    out_chars = len(answer)
+
+    source = tokens_source or state.get("_gen_tokens_source")
+    if source == TOKENS_SOURCE_PROVIDER:
+        # The provider's own counts, recorded by the generation layer.
+        tokens_in = state.get("_gen_prompt_tokens")
+        tokens_out = state.get("_gen_completion_tokens")
+        counts = {
+            "in": int(tokens_in) if isinstance(tokens_in, int) else 0,
+            "out": int(tokens_out) if isinstance(tokens_out, int) else 0,
+        }
+    else:
+        source = TOKENS_SOURCE_ESTIMATED
+        counts = {"in": _approx_tokens(in_chars), "out": _approx_tokens(out_chars)}
+
     response: dict[str, Any] = {
         "answer_markdown": answer,
         "citations": citations,
         "evidence_ids": evidence_ids,
         "iterations": int(state.get("tool_iterations", 0)),
         "latency_ms": latency_ms,
-        "tokens": {"in": _approx_tokens(in_chars), "out": _approx_tokens(len(answer))},
+        "tokens": counts,
         "insufficient": insufficient,
     }
-    # The label is present exactly when it is needed: the Day-3 generator
-    # calls no model, so the counts are a character-count heuristic and a
-    # consumer could otherwise publish them as measured usage. It is an
-    # OPTIONAL field (api.md sec 5), so a client built against the 7-key
-    # shape still validates.
-    if tokens_source is not None:
-        response["tokens_source"] = tokens_source
+    # The label is present exactly when it is needed, and it is an OPTIONAL
+    # field (api.md sec 5), so a client built against the 7-key shape still
+    # validates.
+    if source is not None:
+        response["tokens_source"] = source
     return response
 
 
