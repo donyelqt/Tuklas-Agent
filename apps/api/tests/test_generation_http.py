@@ -182,6 +182,29 @@ def test_generation_single_shot_and_stream_send_the_same_request(
     assert streamed["stream"] is True
 
 
+def test_generation_a_per_call_seed_overrides_the_instance(recorder: Any) -> None:
+    """ADR-004 names temperature and seed as CALL parameters.
+
+    A judge (the Day-6 eval runner) needs the interface to express a
+    per-call seed and temperature, and the recorded result must carry the
+    EFFECTIVE values - the record and the run cannot disagree.
+    """
+    llm = LLMInterface(
+        model="recorded-model", base_url=recorder.base_url, temperature=0.0, seed=42
+    )
+    result = llm.generate("the question", temperature=0.7, seed=99)
+    options = recorder.requests[-1]["options"]
+    assert options["seed"] == 99
+    assert options["temperature"] == 0.7
+    # The recorded result carries what was SENT, not the instance's values.
+    assert result.seed == 99
+    assert result.temperature == 0.7
+    # A call without overrides uses the instance's.
+    llm.generate("the question")
+    assert recorder.requests[-1]["options"]["seed"] == 42
+    assert recorder.requests[-1]["options"]["temperature"] == 0.0
+
+
 def test_generation_stop_and_max_tokens_are_sent(recorder: Any) -> None:
     """The stop sequences and the token cap reach the backend."""
     llm = LLMInterface(

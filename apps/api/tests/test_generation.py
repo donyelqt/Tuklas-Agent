@@ -743,6 +743,53 @@ def test_generation_citations_shape() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_generation_citation_numbers_match_the_prompt() -> None:
+    """A citation's n must be the number the PROMPT showed for that part.
+
+    The prompt numbers every part [1] [2] [3] and tells the model to cite an
+    entry by its number alone. If the citations were numbered by the count of
+    EMITTED citations, a skipped part would shift every later number: the
+    model's [3] would resolve to nothing and its [2] would point at the
+    wrong node.
+    """
+    from apps.api.generation.citations import assemble_citations
+    from apps.api.generation.prompts import render_prompt
+
+    parts = [
+        {"node_id": "A", "text": "alpha", "score": 1.0},
+        {"node_id": "B", "text": "beta", "score": 0.9},  # NOT in the evidence
+        {"node_id": "C", "text": "gamma", "score": 0.8},
+    ]
+    evidence = {
+        "kept": [
+            {"node_id": "A", "title": "Art A", "page_start": 1, "page_end": 1},
+            {"node_id": "C", "title": "Art C", "page_start": 3, "page_end": 3},
+        ]
+    }
+    prompt = render_prompt({"parts": parts}, "q", ["q"], disclaimer="d")
+    citations = assemble_citations(parts, evidence)
+
+    # The prompt's own numbering.
+    prompt_numbers: dict[str, int] = {}
+    for line in prompt.splitlines():
+        if line.startswith("["):
+            number, _, rest = line.partition("]")
+            node_id = rest.split("node_id:")[-1].strip()
+            prompt_numbers[node_id] = int(number[1:])
+
+    # Every citation's n is the number the prompt showed for that node.
+    for citation in citations:
+        assert citation["n"] == prompt_numbers[citation["node_id"]], (
+            f"{citation['node_id']} is [{citation['n']}] in the citations but "
+            f"[{prompt_numbers[citation['node_id']]}] in the prompt"
+        )
+    # The skipped part gets no citation, and no page span is invented.
+    assert all(c["node_id"] != "B" for c in citations)
+    # The gap is preserved: C keeps the prompt's number 3.
+    c_c = next(c for c in citations if c["node_id"] == "C")
+    assert c_c["n"] == 3
+
+
 def test_generation_refusal_shape() -> None:
     """A failed gate returns the canned abstention, no citations, insufficient.
 
