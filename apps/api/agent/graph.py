@@ -296,10 +296,39 @@ def _sufficiency_gate_node(state: AgentState) -> AgentState:
         return state
 
     if not state.get("broadened") and budget_left(state) > 0:
+        # Broaden ONLY the sub-questions that failed. A sub-question that
+        # already has a supporter has its evidence in the kept set; adding
+        # broadened hits for it would push better nodes out of the top-8
+        # window, not add any.
+        broadened: list[str] = []
+        for sub_question in missing:
+            reduced = _broaden(sub_question)
+            if reduced == sub_question:
+                # The stoplist strip changed nothing, so the retry would run
+                # the identical search. Retrieval is deterministic, so the
+                # retry cannot change the outcome: skip it rather than spend
+                # iteration budget on a search we already know the answer to.
+                continue
+            broadened.append(reduced)
+        if not broadened:
+            state["broadened"] = True
+            state["trace"].append(
+                {
+                    "node": "broaden_retry",
+                    "result": "skipped_no_reduction",
+                    "missing_sub_questions": missing,
+                }
+            )
+            state["trace"].append(
+                {
+                    "node": "sufficiency_gate",
+                    "result": "insufficient_evidence",
+                    "missing_sub_questions": missing,
+                }
+            )
+            state["_gate_route"] = "build_context"
+            return state
         state["broadened"] = True
-        broadened = [
-            _broaden(sub_question) for sub_question in sub_questions
-        ]
         state["_broadened_queries"] = broadened
         state["trace"].append(
             {

@@ -204,6 +204,16 @@ sufficiency_gate → (more? search again : build_context) → generate → END`.
   retrieval miss, not an invalid plan.
 - The abstention string is pinned in api.md §3; the SSE payload schemas are pinned
   there too (PLAN.md Day 5 gap #18, closed by the Day-3 slice).
+- *Reachability of the broaden-retry (measured 2026-10-20, Day-3):* the retry is
+  specified against an all-zero lex layer. Because BM25's lex component is
+  min-max normalized, a query matching exactly one node scores that node
+  `lex = 1.0` and clears the 0.15 threshold alone; the gate therefore fails only
+  on a query that matches nothing, which is built only from non-stopwords — and
+  the stoplist cannot reduce such a query. The retry is implemented, and it
+  skips itself when the strip cannot change the query (an identical search is
+  provably useless and would spend budget to learn nothing). Whether it can ever
+  fire is a property of the corpus and the scoring model, not of the agent;
+  measured on the Civil Code, no rescue case was found. See TODO.md Day 3.
 
 ---
 

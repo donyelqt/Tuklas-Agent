@@ -149,6 +149,44 @@ points at.
     expands rather than follows, and no reference branch is reachable until that
     parsing lands. Recording it here rather than pretending the branch is exercised.
 
+  - *Measured finding — `expand_context` results cannot enter the evidence set
+    (2026-10-20).* `select_evidence` takes the SCORED hits from `search_nodes`; a
+    node discovered by expanding a hit was never scored, so it has no score and
+    cannot be a supporter. The expansion is therefore a *reading* step (it tells
+    the trace and the answer which neighbours surround the hit) and not a second
+    source of evidence. This matches `retrieval.md` §5 — `select_evidence(hits:
+    list[NodeHit], sub_questions)` — but it means the "expand" branch of the
+    topology changes what the agent READS, not what it CITES. Recorded because a
+    reader could otherwise assume an expanded neighbour can be cited.
+
+  - *Measured finding — the broaden-retry is unreachable on this corpus (2026-10-20).*
+    `retrieval.md` §3 says the retry fires when the lex layer is all-zero, and §7
+    makes it the one recovery path before `insufficient_evidence`. On the Civil
+    Code it cannot fire, and the reason is mechanical: BM25's lex layer is
+    min-max normalized over the query's candidates, so a query that matches
+    exactly ONE node gives that node `lex = 1.0` — which clears the 0.15
+    threshold on its own. The gate therefore fails only when the query matches
+    NO node at all, and such a query is built only from non-stopwords (any
+    stoplist word — `the`, `of`, `article` … — occurs in 44–2570 nodes, so it
+    always produces a lexical match and the gate passes). A query made only of
+    non-stopwords is exactly the query the stoplist cannot reduce, so the
+    "stopword-strip + identifier-only" retry would re-run the identical search.
+    Measured: 0 rescue cases across every search performed (stopword+real-word
+    combinations, title-only words, short-text nodes, identifier queries).
+    Two consequences, both recorded rather than papered over:
+    (a) the retry is skipped when the strip cannot change the query — re-running
+    an identical search is provably useless because retrieval is deterministic,
+    and it would spend iteration budget to learn nothing;
+    (b) a query the gate fails on now goes straight to `insufficient_evidence`.
+    The mechanism is implemented and unit-tested; what is missing is a corpus
+    where it can be exercised. **Open question for the corpus decision (D2):**
+    the retry is specified against a scoring model whose lex layer does not
+    min-max-normalize a single match to 1.0. Either the corpus gains a document
+    whose headings are the only match for a plausible question, or
+    `retrieval.md` §3's premise is amended to match how BM25 actually scores.
+    Not resolved unilaterally — the spec is authoritative and the corpus is
+    already pinned.
+
 ---
 
 ## Day 4 — Slice 4: Generation (LLMInterface + citations + refusal)
