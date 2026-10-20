@@ -18,6 +18,8 @@ Base path `/v1`. JSON request/response; streaming over SSE. Uniform error shape 
   | `EVAL_FAILED` | 500 | runner crash, invalid config |
   | `INTERNAL_ERROR` | 500 | unhandled server fault. `details` is always EMPTY: the internal exception is logged, never returned (api.md §1: "no traceback leaks"). The app-level handler in `apps/api/api/app.py` emits this code too, so the table lists it rather than leaving a code clients have no arm for. |
 - Pagination: `GET /v1/documents?page=1&pageSize=20` (defaults 1/20, max `pageSize` 100, 1-indexed) → `{ data, pagination: { page, pageSize, totalItems, totalPages } }`.
+- A malformed request body answers with the SAME error body as every other failure: `422 VALIDATION_ERROR`, `details` naming the offending field and the problem type. The framework's default `{"detail": [...]}` shape is NOT used — a client has no arm for it, and the table above lists `VALIDATION_ERROR` for exactly this case.
+- Cross-origin: the explorer at `/app/*` (architecture.md §7) is a separate runtime on another origin, so the API answers the browser's CORS preflight. The allowed origins come from `TUKLAS_CORS_ORIGINS` (comma-separated); the default is `http://localhost:3000,http://127.0.0.1:3000`.
 
 ## 2. Documents
 
@@ -57,8 +59,27 @@ POST /v1/ask/stream (same body, SSE) — frozen v1 event sequence:
   (repeat) → evidence{evidence_ids, insufficient} → token{text}* → done{ask_response} | error{error}
   # zero-tool-call runs legal: plan → evidence(empty) → done(insufficient ask_response).
   # error carries the §1 error body. Contract test pins this order.
+  # The wire format is `event: <name>\ndata: <json>\n\n` per frame. The data
+  # payload is the event's SCHEMA OBJECT (the table below), NOT a wrapper
+  # that repeats the event name: the name travels in the `event:` line.
+  # Response headers: Content-Type: text/event-stream, Cache-Control:
+  # no-cache, X-Accel-Buffering: no.
+  # A bad body is a 422 RESPONSE, not an SSE error event: the request never
+  # reached a run, so there is no run to report an error about. The error
+  # event is for a failure DURING the run.
 GET /v1/nodes/{id} → NodeFull + hierarchy_path + outgoing refs | 404
+  # Flat: the node's own fields, then the two additions.
+  # { node_id, document_id, parent_id, type, title, text, page_start,
+  #   page_end, depth, position,
+  #   hierarchy_path: string[],
+  #   references: [{ id, target_node_id: string|null, reference_text }] }
+  # target_node_id is null for an UNRESOLVED edge: the target was not
+  # identified, and it is never guessed.
 GET /v1/nodes/{id}/source → { text, page_start, page_end, hierarchy_path } | 404
+  # node_id?: string is an OPTIONAL addition (§5): it names the node the
+  # source came from, so a client that fetched it from a citation can check
+  # that the citation and the source agree. The four contract keys are
+  # always present.
 ```
 
 The canned abstention string is pinned — the wording is part of the contract, so
@@ -121,7 +142,8 @@ GET /v1/evaluations/{id} → { status, config: EvalConfig, per_question: [Questi
 
 ## 5. Verification
 
-- [ ] Pydantic v2 request/response models committed with implementation (field types, optionality, bounds: `top_k 1..20`, `max_iterations 1..12`, `pageSize 1..100`).
+- [x] Pydantic v2 request/response models committed with implementation (field types, optionality, bounds: `top_k 1..20`, `max_iterations 1..12`, `pageSize 1..100`). **Done (2026-10-20, Day-5):** `apps/api/models/schemas.py` holds the request and response models for every route. The bounds are ENFORCED (a value outside the range is a 422, never a clamped value), and the string fields carry no length bound, because the contract declares bounds only for the numeric fields — a bound the contract does not declare would reject a request the contract declares legal (an empty question is the legal zero-tool-call run).
 - [x] Contract test `test_ask_stream_order` (incl. zero-tool-call + error-terminal cases). **Done (2026-10-20, Day-3):** `apps/api/tests/test_agent.py` — `test_ask_stream_order` asserts the WHOLE event sequence, not membership: `plan → (tool_call, tool_result)* → evidence → token* → done`. The earlier form (first is plan, last is done, evidence between them, tool_call adjacent to its tool_result) still accepted `evidence` in the middle of the tool stream and `token` before `evidence`; verified by injecting that reorder and watching the test fail. Two companion cases: `test_ask_stream_order_zero_tool_call` (`plan → evidence(empty) → done`) and `test_ask_stream_order_error_is_terminal` (one terminal `error` carrying the §1 body, no `done` after it).
-- [x] Error-body shape asserted on all failure paths (upload 422s, dup-hash 409, unknown ids 404, LLM-down 503). **Partly done (2026-10-20, Day-3):** the ask path's failure paths are asserted — 404 for an unknown document, 422 for a bad `max_iterations` and for a bad body, and the terminal SSE `error` carrying the §1 body. The upload paths (422s, dup-hash 409) are Day-1 surface and are covered by `tests/test_ingest.py`; the LLM-down 503 arrives with Day 4's `LLMInterface`. `test_api_v1_snapshot.py` asserts the error body is exactly `{code, message, details}` for every code the agent can emit.
+- [x] The §3 routes are exposed over HTTP and pinned at the transport layer. **Done (2026-10-20, Day-5):** `apps/api/tests/test_api_routes.py` — the five §3 routes, their response shapes, the §1 error body on every failure path (404 unknown document, 404 unknown node, 422 malformed body, 422 `top_k` outside 1..20, 422 `max_iterations` outside 1..12, 503 LLM-down), and the SSE wire format. `test_ask_stream_event_order_is_frozen` asserts the whole sequence at the HTTP level; `test_ask_stream_rejects_a_batch_replay_implementation` states the discriminating check once and applies it to BOTH the route's streaming body and a batch/replay body, so the check must accept the first and reject the second — a replay produces the same events in the same order, so the order alone cannot tell them apart.
+- [x] Error-body shape asserted on all failure paths (upload 422s, dup-hash 409, unknown ids 404, LLM-down 503). **Done (2026-10-20, Day-5):** every failure path now answers with the §1 body. The upload paths (422s, dup-hash 409) are covered by `tests/test_ingest.py`; the retrieval/asking paths are covered by `tests/test_api_routes.py` — 404 unknown document, 404 unknown node, 422 malformed body, 422 `top_k` outside 1..20, 422 `max_iterations` outside 1..12, 503 LLM-down (a dead backend, no live model needed), and the terminal SSE `error` carrying the §1 body. `test_api_v1_snapshot.py` asserts the error body is exactly `{code, message, details}` for every code the agent can emit. A malformed body is no longer the framework's default `{"detail": [...]}`: `apps/api/api/app.py` maps `RequestValidationError` onto `422 VALIDATION_ERROR` in the §1 shape.
 - [x] Changes additive-only under `/v1` (new optional fields); renames/removals → `/v2` + ADR. Enforced by breaking-change test (snapshot response schemas). **Done (2026-10-20, Day-3):** `apps/api/tests/test_api_v1_snapshot.py` — the test was named in CONSTRAINTS.md and api.md §5 but did not exist, so the rule was asserted and not enforced. It pins the frozen AskResponse shape and the frozen error table, and it enforces the additive-only rule mechanically: no frozen key may be removed or renamed, the code and api.md must agree on the key set, and a key added after the freeze must be declared OPTIONAL (a required new key is a strict-schema break for a client built from the 7-key shape). `tokens_source` is therefore optional — it is present exactly when it is needed, and absent otherwise.

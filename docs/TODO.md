@@ -369,6 +369,78 @@ points at.
   recorded tuning run, like every other weight or normalisation change).
   Recorded against the Day-4 slice and raised for the retrieval tuning run.
 
+  - *Fixed (2026-10-21, retrieval):* the defect is closed by **ADR-005**
+  (`docs/decisions/ADR-005-identifier-precedence-and-own-identity.md`).
+  Three causes were measured and each was fixed at its source:
+  1. **The five components are SUMMED, so `ident` (capped at 1.0) could not
+     outrank `lex 1.0 + title 0.1 + hier 1.0 = 2.1`.** The fix is an ORDER,
+     not a weight: the node that UNIQUELY OWNS an exact label the query names
+     sorts first. The score VALUE, the five components and the §3 formula are
+     unchanged — no new weight, no tuned constant, no change to any published
+     component value. `scoring.evidence_rank_key` is the single source of the
+     order, used by the ranking, the evidence-window cut, the context
+     builder's prompt order and the agent's merged evidence set.
+  2. **The ident index could not identify anything.** It indexed every label
+     span anywhere in a title plus every ancestor's labels, so `art 57`
+     resolved to 404 nodes and `sec 1` to 230. `normalizer.own_identity` now
+     reads only a node's own HEADING, and `ident_index` records a `level`
+     column (1.0 owner, 0.5 inheritor). `art 57` now resolves to 1 node.
+  3. **The parser promoted body text and marginal notes to headings.** The
+     RapidFuzz near-miss path turned body sentences into headings (75 of the
+     corpus's 2583 headings; one made 402 articles inherit `art 57`), and the
+     PDF's marginal notes ("article 765. (n)") created a second node for five
+     provisions. A heading's number must now be terminated by a period or the
+     end of the line, and a marginal note is never a heading.
+
+  Three further defects were found while closing this one, all fixed at
+  their source:
+  4. **The `ident` VALUE and the OWNERSHIP question were conflated.** §3
+     states the component value as a property of the LABEL ("1.0 exact
+     normalized article id"), so a node carrying an exact label scores 1.0
+     whether it owns the label or inherits it; downgrading the inheritor
+     changes every published ident and score, which §3 forbids without a
+     recorded tuning run. Ownership is answered by the ident index's `level`
+     column, and only a level-1.0 node may be identified. Measured: 0 of the
+     corpus's components differ from the pre-fix values.
+  5. **A coordinated list of provisions yielded only the FIRST label.**
+     "Compare articles 1318 and 2124" extracted `art 1318` alone, and the
+     planner's split then left "2124" as a bare number, which carries no
+     label. Each number in a list joined by a comma, "and", "or" or "to" now
+     yields a label of the same family. Measured: both provisions are
+     identified and both are in the top 2 of the search results.
+  6. **The identified node was evicted first under budget pressure.** The
+     identifier precedence is an ORDER, so the named provision keeps whatever
+     score its other components gave it - often the lowest in the set - and
+     a lowest-score-first eviction dropped it exactly when the prompt was
+     too large to hold everything. The context builder now protects it
+     alongside the gate set.
+  7. **The evidence length floor dropped short PROVISIONS.** The pipeline
+     drops nodes whose text is under 50 characters, so that page-span nodes
+     whose text is not a provision do not reach the prompt. It was also
+     dropping provisions: article 1433 is 48 characters long, so a query
+     naming it ranked it first, identified it, and then threw it away - and
+     the model answered about a DIFFERENT article. 98 of the Civil Code's
+     article and section nodes are under the floor. The identified node is
+     now exempt from it.
+
+  Measured after the fix: the named provision is at **rank 1 in 200/200**
+  queries (40 random articles x 5 question forms; it was 47/200 before), and
+  is in the evidence window in 200/200. The golden 10Q stays 10/10. The five
+  previously-ambiguous article labels (765, 895, 1544, 1984, 2168) are rank
+  1 and identified in all 4 question forms each. A fresh ingest is 2579
+  nodes (2268 articles), with no phantom `part`/`division` containers and
+  none of the five marginal-note duplicates.
+  Verified end to end in a browser: "What does article 1318 require?" now
+  answers "Article 1318 requires consent of the contracting parties [1], an
+  object certain ... and a cause of the obligation", with citation [1] being
+  article 1318, p. 94.
+
+  **Reporting obligation (ADR-005):** the vectorless arm now has identifier
+  precedence and the dense arm has no ident component at all, so the arms
+  differ in more than the retrieval mechanism. Any reported comparison MUST
+  say so, so the direct-lookup category is not read as like-for-like. The
+  outcome of the comparison is unknown and is not claimed.
+
 **Targets:** `apps/api/generation/`. **Depends on:** Days 2 + 3.
 
 - [x] `LLMInterface.generate()` + `.generate_stream()` (ADR-004): ollama default,
@@ -415,31 +487,69 @@ points at.
 
 **Targets:** `apps/web/src/app/app/` (new route), new components. **Depends on:** Day 4.
 
-- [ ] Three panes: tree / source / answer at `/app/*`.
+- [x] Three panes: tree / source / answer at `/app/*`.
 - [x] SSE event payload schemas spec'd in `api.md` §3 **before** this slice (PLAN.md gap
   #18 — closed by the Day-3 slice: the schemas and the pinned abstention string are in
   api.md, with the Day-3 contract test pinning the order).
-- [ ] Client built against the frozen sequence: `plan → tool_call → tool_result →
+- [x] Client built against the frozen sequence: `plan → tool_call → tool_result →
   (repeat) → evidence → token* → done | error`.
-- [ ] Citation click → `GET /v1/nodes/{id}/source` → source pane renders
+- [x] Citation click → `GET /v1/nodes/{id}/source` → source pane renders
   `text + page + hierarchy_path`.
-- [ ] Persistent disclaimer banner (answer pane) — worded exactly as `copy.ts` line 221;
+- [x] Persistent disclaimer banner (answer pane) — worded exactly as `copy.ts` line 221;
   persists across answer interactions, does not scroll away.
-- [ ] Explorer runtime boundary (`architecture.md` §7): calls the local API at
+- [x] Explorer runtime boundary (`architecture.md` §7): calls the local API at
   `NEXT_PUBLIC_API_BASE_URL` (default `http://127.0.0.1:8000`) via `site.ts`; API
   unreachable → fail loud, never fabricate.
-- [ ] Web conventions (`SPEC.md` §12): `copy.ts` is the only source of marketing copy; no
+- [x] Web conventions (`SPEC.md` §12): `copy.ts` is the only source of marketing copy; no
   inline strings in JSX; `@theme` tokens in `globals.css`; icons from
   `@phosphor-icons/react/ssr`; radius 0 / no shadows; ASCII hyphens only on the marketing
   route; `text-ink-5` never on readable strings; `accent-2` only in
   `comparison-arms.tsx`.
-- [ ] `"use client"` boundary: SSE consumer + disclaimer state are client components;
+- [x] `"use client"` boundary: SSE consumer + disclaimer state are client components;
   tree + source panes server-rendered. No blanket `"use client"` on the page.
   - *Acceptance (AGENTS.md pre-flight):* `npx tsc --noEmit -p tsconfig.json` clean;
     `npm run lint` zero warnings; `npm run build` clean. Browser test: SSE events render
     in order; citation click opens source; disclaimer stays visible during stream.
     Marketing-route pre-flight per `docs/landing-page/DESIGN.md` §13 if the landing page
     is touched.
+
+  - *Done (2026-10-21), verified in a real browser against the running API:*
+    the route loads at `/app`; the three panes render; the disclaimer carries
+    the exact PRD US-2 wording, is visible before any question and after the
+    answer arrives, and is a sibling of the scroll container rather than
+    inside it (so it does not scroll away); the document picker lists both
+    ingested corpora; the tree renders 1395 nodes for the Civil Code; the SSE
+    steps render in the received order (plan, then each tool_call paired with
+    its tool_result, then evidence); a real answer came back from the local
+    model with citation buttons; clicking citation [1] fetched
+    `GET /v1/nodes/{id}/source` and the source pane showed the node id, the
+    page range and the hierarchy path, and the tree marked the node
+    `aria-current`; with the API forced unreachable the page shows a
+    `role="alert"` and a disabled Ask button, and no fake empty result. Zero
+    page errors, empty console.
+
+  - *The explorer needed the five frozen API routes, which did not exist.*
+    `apps/api/api/routes.py` registered only the four document routes; the
+    logic for `POST /v1/search`, `POST /v1/ask`, `POST /v1/ask/stream`,
+    `GET /v1/nodes/{id}` and `GET /v1/nodes/{id}/source` already existed in
+    `retrieval/api.py` and `agent/ask.py` but was never wired to HTTP. They
+    are wired now, per `api.md` §3, with a malformed body mapped to the
+    frozen error body (FastAPI's default `{"detail": [...]}` shape has no arm
+    in a client written against `api.md` §1). 28 new tests in
+    `apps/api/tests/test_api_routes.py`, including one that FAILS against a
+    batch/replay SSE implementation.
+
+  - *A pre-existing bug was found and fixed: the build emitted NO Tailwind
+    utilities.* Commit `5e16463` (the static-export commit) dropped the
+    `turbopack.rules` block that routes `*.css` through
+    `@tailwindcss/turbopack`. There is no `postcss.config.mjs` and no
+    `@tailwindcss/postcss` dependency in this package, so the loader IS the
+    pipeline. `next build` still reported success, so every gate passed
+    while the page rendered unstyled - including the MARKETING route, which
+    had no Tailwind CSS at all. Measured: the built stylesheet was 9,413
+    bytes with zero utility classes; with the loader restored it is 37,095
+    bytes with them. The loader is restored, with the reason recorded in
+    `next.config.ts` so the next person does not remove it again.
 
 ---
 

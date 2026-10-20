@@ -420,3 +420,70 @@ def test_error_matrix_oversize_page_gate(monkeypatch: pytest.MonkeyPatch, tmp_pa
     with pytest.raises(ApiError) as exc_info:
         ingest_pdf(str(tiny), slug="oversize-doc", db_path=str(tmp_path / "big.db"))
     _expect_api_error(exc_info, "VALIDATION_ERROR", 422)
+
+
+def test_parser_ignores_marginal_notes() -> None:
+    """A marginal note is not a heading.
+
+    The Civil Code PDF prints side notes like "article 765. (n)" beside a
+    provision. Read as a heading, each one creates a SECOND node for a
+    provision that is printed in full elsewhere, and the label stops
+    identifying anything: measured on the corpus, "art 765", "art 895",
+    "art 1544", "art 1984" and "art 2168" each resolved to two nodes.
+
+    The rule is a label, a period, and then ONLY a parenthesised marker. A
+    real provision carries text after the period and must still be a heading.
+    """
+    from apps.api.ingestion import parser
+
+    # The marginal notes the Civil Code actually prints: not headings.
+    for note in (
+        "article 765. (n)",
+        "article 895. (n)",
+        "article 1544. (n)",
+        "article 1984. (n)",
+        "article 2168. (1782)",
+    ):
+        assert parser._match_heading(note, 0, 0) is None, (
+            f"{note!r} is a marginal note and must not become a heading"
+        )
+
+    # A real provision, even one that ends in a parenthesised marker, IS a
+    # heading. This is the false-positive side of the rule.
+    for real in (
+        "Article 1320. An acceptance may be express or implied. (n)",
+        "Article 1318. There is no contract unless the following requisites concur:",
+        "SECTION 1",
+        "CHAPTER 2",
+        "BOOK I",
+        "TITLE IV",
+    ):
+        assert parser._match_heading(real, 0, 0) is not None, (
+            f"{real!r} is a real heading and must still be matched"
+        )
+
+
+def test_parser_ignores_body_text_headings() -> None:
+    """Body text is not a heading, even when it starts with a family word.
+
+    The RapidFuzz near-miss path used to turn body sentences into headings:
+    "party regarding the solemnization of the marriage in a place other than
+    those mentioned in article 57 ..." became a 'part' node, and the 402
+    articles under it inherited the label "art 57". A heading's number must
+    be terminated by a period or the end of the line; a number followed by a
+    word is part of a sentence.
+    """
+    from apps.api.ingestion import parser
+
+    for body in (
+        "party regarding the solemnization of the marriage in a place other than "
+        "those mentioned in article 57 if there be any such affidavit, in",
+        "party wall supports a building belonging to him. (575)",
+        "division of a thing owned in common by two or more persons. (541a)",
+        "at the expense of the usufructuary. (500)",
+        "articles 74 and 75. (4a)",
+        "articles 232 and 243.",
+    ):
+        assert parser._match_heading(body, 0, 0) is None, (
+            f"{body!r} is body text and must not become a heading"
+        )

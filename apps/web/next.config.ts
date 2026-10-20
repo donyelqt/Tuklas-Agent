@@ -15,6 +15,22 @@ const nextConfig: NextConfig = {
    },
    /* PPR (cacheComponents/partialPrefetching) is incompatible with output:
       "export" and is omitted. The landing page is a pure static build. */
+   /* Tailwind v4 is compiled by the Turbopack loader, NOT by PostCSS.
+      There is no `postcss.config.mjs` in this package and there is no
+      `@tailwindcss/postcss` dependency: the loader is the whole pipeline.
+      Dropping it (as the static-export commit did) does not fail the
+      build - it emits a stylesheet with the `@theme` custom properties and
+      the `@layer base` rules but with NO utility classes, so every page
+      renders unstyled while `next build` still reports success. The
+      loader is what turns `class="flex min-h-0"` into CSS. */
+   turbopack: {
+     rules: {
+       "*.css": {
+         loaders: ["@tailwindcss/turbopack"],
+         as: "*.css",
+       },
+     },
+   },
 };
 
 export default nextConfig;
