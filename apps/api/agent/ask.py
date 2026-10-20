@@ -342,13 +342,23 @@ def iter_sse_events(
     }
 
     # token{text}* — only a real answer streams tokens.
+    #
+    # The deltas are the PROVIDER'S, recorded by the generation layer in the
+    # order the backend emitted them - not a slicing of a finished string.
+    # (The Day-3 implementation cut the finished answer into 80-character
+    # pieces, which looked streamed but was not: the model had already
+    # finished before the first token event was produced.)
     answer = final_state.get("answer_md", CANNED_ABSTENTION)
     if not insufficient and answer and answer != CANNED_ABSTENTION:
-        for start_index in range(0, len(answer), TOKEN_CHUNK_CHARS):
-            yield {
-                "event": "token",
-                "text": answer[start_index : start_index + TOKEN_CHUNK_CHARS],
-            }
+        chunks = list(final_state.get("_gen_stream", []) or [])
+        if not chunks:
+            # No provider deltas were recorded (a model-free generator): fall
+            # back to the answer as one delta, so the client still receives the
+            # text and the concatenation is still the answer.
+            chunks = [answer]
+        for chunk in chunks:
+            if chunk:
+                yield {"event": "token", "text": str(chunk)}
 
     # The measured latency is the time the AGENT spent, not the time the
     # consumer took to read the stream: a slow client must not inflate the

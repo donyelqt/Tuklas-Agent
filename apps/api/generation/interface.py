@@ -235,6 +235,72 @@ class LLMInterface:
         except httpx.HTTPError as exc:
             raise self._unavailable(type(exc).__name__) from exc
 
+    def stream_result(
+        self,
+        prompt: str,
+        stop: list[str] | None = None,
+        max_tokens: int | None = None,
+    ) -> tuple[GenerationResult, list[str]]:
+        """One complete answer produced by the STREAMING endpoint.
+
+        The backend's streaming response carries the same final counters as
+        the single-shot one (the last streamed object holds them), so the
+        recorded result is the same shape either way. The deltas are returned
+        in the order the backend emitted them, and the text is their
+        concatenation - which is the same text the single-shot call returns
+        at the same temperature and seed.
+        """
+        payload = self._payload(prompt, stop, max_tokens, stream=True)
+        chunks: list[str] = []
+        counts: dict[str, Any] = {}
+        try:
+            with (
+                httpx.Client(timeout=self._timeout()) as client,
+                client.stream("POST", self._url(), json=payload) as response,
+            ):
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    data = self._stream_object(line)
+                    if data is None:
+                        continue
+                    text = data.get("response")
+                    if isinstance(text, str) and text:
+                        chunks.append(text)
+                    if data.get("done"):
+                        counts = data
+        except httpx.HTTPError as exc:
+            raise self._unavailable(type(exc).__name__) from exc
+        prompt_tokens, completion_tokens = self._counts(counts)
+        result = GenerationResult(
+            text="".join(chunks),
+            model=str(counts.get("model") or self.model),
+            backend=self.backend,
+            temperature=self.temperature,
+            seed=self.seed,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
+        # The deltas as the backend emitted them, in its order. The client
+        # streams these, so a token event IS a piece of the model's output
+        # rather than an arbitrary slice of the finished string.
+        return result, chunks
+
+    def _stream_object(self, line: str) -> dict[str, Any] | None:
+        """One streamed JSON object, or None when the line carries none.
+
+        A line that is not JSON is skipped rather than aborting the stream:
+        one malformed line is not a reason to lose the answer that already
+        arrived.
+        """
+        stripped = line.strip()
+        if not stripped:
+            return None
+        try:
+            data = json.loads(stripped)
+        except ValueError:
+            return None
+        return data if isinstance(data, dict) else None
+
     def _chunk_text(self, line: str) -> str:
         """The text of one streamed line, or "" for a line that carries none.
 

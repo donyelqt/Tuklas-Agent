@@ -856,6 +856,66 @@ def test_generation_records_model_backend_temperature_seed() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_generation_stream_yields_the_providers_deltas() -> None:
+    """The stream yields the BACKEND'S deltas, not a slicing of the text.
+
+    The Day-3 implementation cut a finished answer into 80-character pieces,
+    which looked streamed but was not: the model had already finished before
+    the first delta was produced. The deltas are now the ones the backend
+    emitted, in its order, and they concatenate to exactly the answer.
+
+    A fake llm records what it was asked for, so this needs no live model.
+    """
+    from apps.api.generation.interface import GenerationResult
+    from apps.api.generation.service import GenerationService
+
+    class _FakeStreamingLLM:
+        model = "fake-model"
+        backend = "ollama"
+        temperature = 0.0
+        seed = 42
+
+        def __init__(self) -> None:
+            self.deltas = ["The ", "answer ", "is ", "here."]
+
+        def generate(
+            self,
+            prompt: str,
+            stop: list[str] | None = None,
+            max_tokens: int | None = None,
+        ) -> GenerationResult:
+            return GenerationResult(
+                text="".join(self.deltas),
+                model=self.model,
+                backend=self.backend,
+                temperature=self.temperature,
+                seed=self.seed,
+                prompt_tokens=4,
+                completion_tokens=4,
+            )
+
+        def stream_result(
+            self,
+            prompt: str,
+            stop: list[str] | None = None,
+            max_tokens: int | None = None,
+        ) -> tuple[GenerationResult, list[str]]:
+            return self.generate(prompt, stop, max_tokens), list(self.deltas)
+
+    llm = _FakeStreamingLLM()
+    service = GenerationService(cast("LLMInterface", llm))
+    result = service.answer(
+        {"parts": [{"node_id": "n1", "text": "x" * 100, "score": 1.0}]},
+        "q",
+        ["q"],
+        {"kept": [{"node_id": "n1", "title": "t", "page_start": 1, "page_end": 1}]},
+        gate_passed=True,
+    )
+    # The deltas travel with the answer, individually.
+    assert result["stream"] == ["The ", "answer ", "is ", "here."]
+    assert "".join(result["stream"]) == result["answer_markdown"]
+
+
 def test_generation_never_degrades_to_a_fake_answer() -> None:
     """The service raises on a dead backend; it never returns a canned answer.
 

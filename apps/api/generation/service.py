@@ -23,6 +23,7 @@ to a fake answer (ADR-004 "Consequences").
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 from apps.api.generation.blocklist import find_advice
@@ -83,6 +84,8 @@ class GenerationService:
         #: own prompt/completion counts live here, because the answer dict's
         #: shape is fixed by the contract.
         self.last_result: GenerationResult | None = None
+        #: The provider's deltas for the last answer, in the backend's order.
+        self.last_chunks: list[str] = []
 
     def answer(
         self,
@@ -124,7 +127,18 @@ class GenerationService:
             sub_questions,
             disclaimer=DISCLAIMER,
         )
-        result = self.llm.generate(prompt)
+        # The answer is produced by the BACKEND'S streaming endpoint when the
+        # interface offers one, so the deltas the client will see are the ones
+        # the model emitted, in its order - not a slicing of a finished string.
+        # An interface that only offers the single-shot call still works: the
+        # answer arrives as one delta.
+        stream_result = getattr(self.llm, "stream_result", None)
+        if callable(stream_result):
+            result, chunks = stream_result(prompt)
+            self.last_chunks = list(chunks)
+        else:
+            result = self.llm.generate(prompt)
+            self.last_chunks = [result.text] if result.text else []
         self.last_result = result
 
         if find_advice(result.text):
@@ -151,8 +165,47 @@ class GenerationService:
             # a model was called, so its usage is known exactly.
             "prompt_tokens": result.prompt_tokens,
             "completion_tokens": result.completion_tokens,
+            # The deltas the SSE surface streams. They concatenate to exactly
+            # the answer text, so a client that joins them sees the same
+            # answer it would have got in one piece.
+            "stream": self.last_chunks,
         }
         return answer
+
+    def stream(
+        self,
+        context: dict[str, Any],
+        question: str,
+        sub_questions: list[str],
+        evidence: dict[str, Any],
+        *,
+        gate_passed: bool,
+    ) -> Iterator[str]:
+        """The answer's TEXT as the backend produces it (ADR-004).
+
+        The SSE surface streams these deltas, so the client sees the answer
+        arrive rather than a finished string cut into pieces.
+
+        The refusal path yields nothing: a failed gate produces the canned
+        abstention as a normal (non-streamed) answer, and a tripped advice
+        oracle discards the whole generated text. So the stream carries the
+        answer only when the gate passed AND the text is clean - which means
+        the text is buffered to check the oracle, and only then released as
+        the deltas that produced it. The deltas are the backend's real ones,
+        in the backend's order.
+        """
+        if not gate_passed:
+            return
+        prompt = render_prompt(
+            context, question, sub_questions, disclaimer=DISCLAIMER
+        )
+        chunks = list(self.llm.generate_stream(prompt))
+        text = "".join(chunks)
+        if find_advice(text):
+            # The oracle refuses the WHOLE answer; there is nothing to
+            # stream. The caller falls back to the uniform refusal.
+            return
+        yield from chunks
 
     def generate(
         self,
