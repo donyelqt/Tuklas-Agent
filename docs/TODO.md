@@ -136,8 +136,10 @@ points at.
   - *Acceptance (PLAN.md Day 3):* multi-hop fixture trace shows ≥ 1 abandoned branch
     (relevant=false, zero evidence) + ≥ 2 inspect/expand before the answer.
     `mypy apps/api` zero errors.
-  - *Verified (2026-10-20):* 44 agent tests green; full suite 77 passed; ruff clean;
-    mypy clean on 28 files; `check_no_vectors.py` OK (28 files scanned). Runtime smoke:
+  - *Verified (2026-10-20):* 50 agent tests green (plus 4 in `test_api_v1_snapshot.py`);
+    full suite 87 passed; ruff clean; mypy clean on 29 files; `check_no_vectors.py` OK
+    (29 files scanned); zero suppression comments in `apps/api/` or `apps/web/src/`.
+    Runtime smoke:
     a two-part question streams 2 searches, 6 inspects (1 abandoned), 2 expands, then
     `evidence` + `done`; gibberish → canned abstention with `citations: []` and
     `evidence_ids: []`; empty question → the legal zero-tool-call run
