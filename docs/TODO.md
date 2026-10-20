@@ -302,6 +302,17 @@ points at.
 
 ## Day 4 — Slice 4: Generation (LLMInterface + citations + refusal)
 
+- [ ] *Scope note (2026-10-20, Day-4):* ADR-004 names three backends
+  (`ollama | llamacpp | vllm`, Ollama default). Only Ollama is implemented in
+  this slice. The other two are OpenAI-compatible servers, so they are a
+  base_url away, but a backend that is not implemented must not be ACCEPTED
+  and then fail at the first request - the constructor rejects an unimplemented
+  backend by name, and the recorded `backend` field names the one that
+  actually ran, so a recorded run is never confused across backends.
+  Adding the other two is a Day-6 concern (the eval runner must record the
+  backend, and a two-backend parity check is a stronger test of the seam than
+  one).
+
 - [ ] *Measured (2026-10-20, Day-4):* the generation layer answers the 5 gold
   questions against the REAL local model (`qwen2.5:3b`, ollama, temperature 0,
   seed 42) through the full stack - retrieval, agent loop, generation. Result:

@@ -55,6 +55,15 @@ DEFAULT_TIMEOUT = 120.0
 CONNECT_TIMEOUT = 5.0
 
 #: The backends this interface can talk to.
+#:
+#: ADR-004 names three: ``ollama | llamacpp | vllm``, with Ollama the
+#: default. Only Ollama is implemented in this slice: the other two are
+#: OpenAI-compatible servers, so they are a base_url away, but a backend
+#: that is not implemented must not be ACCEPTED and then fail at the first
+#: request. The constructor rejects an unimplemented backend by name.
+#:
+#: The recorded ``backend`` field is the one that actually ran, so a run
+#: recorded against one backend is never confused with a run against another.
 SUPPORTED_BACKENDS = ("ollama",)
 
 
