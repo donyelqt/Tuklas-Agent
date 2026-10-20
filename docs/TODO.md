@@ -327,8 +327,9 @@ points at.
 - [x] *Measured (2026-10-20, Day-4):* the generation layer answers the 5 gold
   questions against the REAL local model (`qwen2.5:3b`, ollama, temperature 0,
   seed 42) through the full stack - retrieval, agent loop, generation.
-  **Reproducible:** `python scripts/measure_generation.py` - the harness is
-  committed, so this is a re-runnable record rather than a remembered number.
+  **Reproducible:** `python -m scripts.measure_generation` (from the repo
+  root) - the harness is committed, so this is a re-runnable record rather
+  than a remembered number.
   (It needs the corpus, which is gitignored per ADR-002, and a running local
   LLM; it skips with a clear message when the corpus is absent.)
   Result: **0 unmarked claims, 0 unresolved markers, 0 advice phrasing**
