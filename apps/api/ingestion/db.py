@@ -85,6 +85,220 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
 );
 """
 
+#: The eval columns the DDL above does not carry, added after the fact.
+#:
+#: architecture.md §8's DDL is frozen, and the two eval tables it declares
+#: are the ones the eval runner writes. But evaluation.md §6 requires the
+#: ``retrieval_runs`` row to carry the JOIN KEYS ``(evaluation_id,
+#: question_id, arm)`` plus the node ids, the weights snapshot and the
+#: latency, and the frozen DDL has no column for any of the three join
+#: keys. The DDL is not rewritten: the columns are added here, and the
+#: migration is idempotent, so a store created by the frozen DDL and a
+#: store created by the current code end up with the same shape.
+#:
+#: The pattern is the one ``apps/api/retrieval/index.py`` already uses for
+#: the ``ident_index.level`` column: CREATE IF NOT EXISTS, then ADD COLUMN
+#: when the column is missing.
+EVAL_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    # (table, column, DDL)
+    (
+        "evaluation_runs",
+        "config_id",
+        "config_id TEXT",
+    ),
+    (
+        "evaluation_runs",
+        "dataset_snapshot",
+        "dataset_snapshot TEXT",
+    ),
+    (
+        "evaluation_runs",
+        "status",
+        "status TEXT",
+    ),
+    (
+        "evaluation_runs",
+        "split_seed",
+        "split_seed INTEGER",
+    ),
+    (
+        "evaluation_runs",
+        "judge_prompt_version",
+        "judge_prompt_version TEXT",
+    ),
+    (
+        "evaluation_runs",
+        "code_version",
+        "code_version TEXT",
+    ),
+    (
+        "evaluation_runs",
+        "model",
+        "model TEXT",
+    ),
+    (
+        "evaluation_runs",
+        "backend",
+        "backend TEXT",
+    ),
+    (
+        "evaluation_runs",
+        "temperature",
+        "temperature REAL",
+    ),
+    (
+        "evaluation_runs",
+        "seed",
+        "seed INTEGER",
+    ),
+    (
+        "evaluation_runs",
+        "arms",
+        "arms TEXT",
+    ),
+    (
+        "evaluation_runs",
+        "k",
+        "k TEXT",
+    ),
+    # The per-question, per-arm row. The join keys come first; the rest is
+    # what the GET endpoint's QuestionRow needs, so the endpoint is a
+    # join and not a second computation.
+    (
+        "retrieval_runs",
+        "evaluation_id",
+        "evaluation_id TEXT",
+    ),
+    (
+        "retrieval_runs",
+        "question_id",
+        "question_id TEXT",
+    ),
+    (
+        "retrieval_runs",
+        "arm",
+        "arm TEXT",
+    ),
+    (
+        "retrieval_runs",
+        "category",
+        "category TEXT",
+    ),
+    (
+        "retrieval_runs",
+        "answerable",
+        "answerable INTEGER",
+    ),
+    (
+        "retrieval_runs",
+        "gold_nodes",
+        "gold_nodes TEXT",
+    ),
+    (
+        "retrieval_runs",
+        "rank_first_hit",
+        "rank_first_hit INTEGER",
+    ),
+    (
+        "retrieval_runs",
+        "gold_hit",
+        "gold_hit INTEGER",
+    ),
+    (
+        "retrieval_runs",
+        "generation_latency_ms",
+        "generation_latency_ms INTEGER",
+    ),
+    (
+        "retrieval_runs",
+        "total_latency_ms",
+        "total_latency_ms INTEGER",
+    ),
+    (
+        "retrieval_runs",
+        "tokens_in",
+        "tokens_in INTEGER",
+    ),
+    (
+        "retrieval_runs",
+        "tokens_out",
+        "tokens_out INTEGER",
+    ),
+    (
+        "retrieval_runs",
+        "tokens_source",
+        "tokens_source TEXT",
+    ),
+    (
+        "retrieval_runs",
+        "tool_iterations",
+        "tool_iterations INTEGER",
+    ),
+    (
+        "retrieval_runs",
+        "insufficient",
+        "insufficient INTEGER",
+    ),
+    (
+        "retrieval_runs",
+        "citations_valid",
+        "citations_valid INTEGER",
+    ),
+    (
+        "retrieval_runs",
+        "citation_node_ids",
+        "citation_node_ids TEXT",
+    ),
+    (
+        "retrieval_runs",
+        "claims_matched",
+        "claims_matched INTEGER",
+    ),
+    (
+        "retrieval_runs",
+        "claims_total",
+        "claims_total INTEGER",
+    ),
+    (
+        "retrieval_runs",
+        "faithfulness",
+        "faithfulness REAL",
+    ),
+    (
+        "retrieval_runs",
+        "judge_verdicts",
+        "judge_verdicts TEXT",
+    ),
+    (
+        "retrieval_runs",
+        "answer_markdown",
+        "answer_markdown TEXT",
+    ),
+    (
+        "retrieval_runs",
+        "judge_prompt_version",
+        "judge_prompt_version TEXT",
+    ),
+)
+
+
+def apply_column_migrations(conn: sqlite3.Connection) -> None:
+    """Add the eval columns the frozen §8 DDL does not carry.
+
+    Idempotent: a column that is already there is left alone, so a store
+    created by the frozen DDL and a store created by the current code end
+    up with the same shape. A store that is read-only (a restored copy on
+    a read-only mount) raises, and the caller sees the error rather than a
+    table that is silently missing the join keys.
+    """
+    for table, column, ddl in EVAL_COLUMN_MIGRATIONS:
+        columns = {
+            str(row["name"]) for row in conn.execute(f"PRAGMA table_info({table})")
+        }
+        if column in columns:
+            continue
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
 
 @contextmanager
 def connect(db_path: str | Path) -> Iterator[sqlite3.Connection]:
@@ -95,6 +309,7 @@ def connect(db_path: str | Path) -> Iterator[sqlite3.Connection]:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    apply_column_migrations(conn)
     try:
         yield conn
         conn.commit()

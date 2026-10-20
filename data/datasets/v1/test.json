@@ -1,0 +1,764 @@
+{
+  "name": "test",
+  "snapshot_id": "v1-test",
+  "seed": 42,
+  "notes": "The test split of the frozen 72-question benchmark (evaluation.md §1). Split seed 42, stratified by category. The test split is the REPORTED split and is touched once per frozen config. The answerable: false rows are built so that EVERY token of the question is absent from the corpus - not only the content tokens - and the generator MEASURES that against a real ingest before it writes the split. The reason is a measured one: the abstention gate is lexical, and the lex component is min-max normalized per query, so a single matching token gives lex = 1.0. Measured on the Civil Code, 'Elucidate zeppelin airship quantum observatory' refuses with no citations, while 'How does a zeppelin airship quantum observatory work?' is ANSWERED with 8 citations - the difference is entirely the scaffolding words, which occur in the corpus. A planted unanswerable question that shares ordinary vocabulary with the corpus is therefore ANSWERED, with citations, and the abstention metric then measures the dataset rather than the system. The honest limitation: refusing a question whose vocabulary is absent is a WEAKER test than refusing a question that is out-of-domain in substance. The abstention score this split produces is a lower bound on the system's refusal quality, not a measurement of it.",
+  "questions": [
+    {
+      "id": "q025",
+      "question": "Compare the conventional redemption of a sale with a right to repurchase with the legal redemption of a co-owner's share.",
+      "document": "civil-code-public",
+      "category": "comparison",
+      "gold_nodes": [
+        "node_civil-code-public_article_1601",
+        "node_civil-code-public_article_1619"
+      ],
+      "expected_claims": [
+        "conventional redemption",
+        "the vendor reserves the right to repurchase",
+        "legal redemption",
+        "the right to be subrogated"
+      ],
+      "answerable": true,
+      "notes": "The two redemption regimes, side by side. Article 1603 (the equitable-mortgage construction) is the distractor."
+    },
+    {
+      "id": "q026",
+      "question": "Compare the requisites of a contract with the requisites for the solemnization of marriage.",
+      "document": "civil-code-public",
+      "category": "comparison",
+      "gold_nodes": [
+        "node_civil-code-public_article_1318",
+        "node_civil-code-public_article_53"
+      ],
+      "expected_claims": [
+        "consent",
+        "object",
+        "cause",
+        "requisites",
+        "celebration"
+      ],
+      "answerable": true,
+      "notes": "Two different statutory lists. Article 53 opens the enumeration and the following articles carry each item."
+    },
+    {
+      "id": "q027",
+      "question": "Compare the requisites of an offer with the requisites of an acceptance.",
+      "document": "civil-code-public",
+      "category": "comparison",
+      "gold_nodes": [
+        "node_civil-code-public_article_1319",
+        "node_civil-code-public_article_1320"
+      ],
+      "expected_claims": [
+        "the meeting of the offer and the acceptance",
+        "upon the thing and the cause",
+        "express or implied"
+      ],
+      "answerable": true,
+      "notes": "1319 is the consent article and 1320 the acceptance article. The answer must carry both."
+    },
+    {
+      "id": "q028",
+      "question": "Compare the rules on a legacy of a thing belonging to another person with the rules on a legacy of a thing already belonging to the legatee.",
+      "document": "civil-code-public",
+      "category": "comparison",
+      "gold_nodes": [
+        "node_civil-code-public_article_930",
+        "node_civil-code-public_article_932"
+      ],
+      "expected_claims": [
+        "void",
+        "erroneously believed that the thing pertained to him",
+        "ineffective"
+      ],
+      "answerable": true,
+      "notes": "930 is the void legacy and 932 the ineffective legacy."
+    },
+    {
+      "id": "q029",
+      "question": "Compare the ways the unpaid seller may stop the goods in transitu: actual possession and notice.",
+      "document": "civil-code-public",
+      "category": "comparison",
+      "gold_nodes": [
+        "node_civil-code-public_article_1530",
+        "node_civil-code-public_article_1532"
+      ],
+      "expected_claims": [
+        "right of stoppage in transitu",
+        "actual possession",
+        "giving notice of his claim",
+        "carrier"
+      ],
+      "answerable": true,
+      "notes": "1532 states the two methods, 1530 the right."
+    },
+    {
+      "id": "q030",
+      "question": "How do the legitime of legitimate children and the legitime of legitimate parents differ?",
+      "document": "civil-code-public",
+      "category": "comparison",
+      "gold_nodes": [
+        "node_civil-code-public_article_888",
+        "node_civil-code-public_article_889"
+      ],
+      "expected_claims": [
+        "legitimate children and descendants",
+        "one-half of the hereditary estate",
+        "legitimate parents or ascendants",
+        "one-half of the hereditary estates of their children"
+      ],
+      "answerable": true,
+      "notes": "Two symmetric articles; the answer has to state each side."
+    },
+    {
+      "id": "q031",
+      "question": "Narrate concerto auditorium barbecue",
+      "document": "civil-code-public",
+      "category": "comparison",
+      "gold_nodes": [],
+      "expected_claims": [],
+      "answerable": false,
+      "notes": "Unanswerable: 'narrate', 'concerto', 'auditorium' and 'barbecue' are absent from BOTH corpora. The verb was 'tell' until the generator's check was made to reach the secondary corpus: 'tell' is absent from the Civil Code and present in the U.S. Code Title 11."
+    },
+    {
+      "id": "q032",
+      "question": "Article 1161 subjects civil obligations arising from criminal offences to the penal laws and to article 2177. What does article 2177 provide?",
+      "document": "civil-code-public",
+      "category": "cross-reference",
+      "gold_nodes": [
+        "node_civil-code-public_article_2177"
+      ],
+      "expected_claims": [
+        "subsidiary",
+        "civil responsibility",
+        "criminal",
+        "fine"
+      ],
+      "answerable": true,
+      "notes": "1161 cites 2177. The liability article is the substance of the answer."
+    },
+    {
+      "id": "q033",
+      "question": "Article 1529 states when the unpaid seller loses his lien. What does article 1530 give him instead?",
+      "document": "civil-code-public",
+      "category": "cross-reference",
+      "gold_nodes": [
+        "node_civil-code-public_article_1530"
+      ],
+      "expected_claims": [
+        "stopping them in transitu",
+        "resume possession",
+        "while they are in transit"
+      ],
+      "answerable": true,
+      "notes": "1529 and 1530 are adjacent, and the question names the first to lead to the second."
+    },
+    {
+      "id": "q034",
+      "question": "Article 1604 applies the provisions of article 1602 to a contract purporting to be an absolute sale. What does the Code provide about the presumption in a contract of sale with a right to repurchase?",
+      "document": "civil-code-public",
+      "category": "cross-reference",
+      "gold_nodes": [
+        "node_civil-code-public_article_1601"
+      ],
+      "expected_claims": [
+        "conventional redemption",
+        "the vendor reserves the right to repurchase",
+        "the contract shall be presumed"
+      ],
+      "answerable": true,
+      "notes": "The citing article names the cited one, but the PARSER merged article 1602's text into node 1601: the node's body carries 'ARTICLE 1602. The contract shall be presumed...'. So the gold is 1601, which is where the cited text actually lives. A gold of 1602 would not resolve."
+    },
+    {
+      "id": "q035",
+      "question": "Article 1606 gives the vendor a right to repurchase. How long does that right last, and what does the Code require of conventional redemption?",
+      "document": "civil-code-public",
+      "category": "cross-reference",
+      "gold_nodes": [
+        "node_civil-code-public_article_1601",
+        "node_civil-code-public_article_1606"
+      ],
+      "expected_claims": [
+        "four years",
+        "ten years",
+        "conventional redemption",
+        "the vendor reserves the right to repurchase"
+      ],
+      "answerable": true,
+      "notes": "1606 cites 1601. The question needs the cited provision and the period."
+    },
+    {
+      "id": "q036",
+      "question": "Article 1607 refers to article 1616. What does article 1616 provide about the sale of real property subject to the right of repurchase?",
+      "document": "civil-code-public",
+      "category": "cross-reference",
+      "gold_nodes": [
+        "node_civil-code-public_article_1616"
+      ],
+      "expected_claims": [
+        "real property",
+        "right of repurchase",
+        "vendor",
+        "vendee"
+      ],
+      "answerable": true,
+      "notes": "The citing article names the cited one. The cited article is the substantive provision."
+    },
+    {
+      "id": "q037",
+      "question": "Article 718 cites article 438, and article 720 fixes the reward the finder of a movable owes. What reward is fixed?",
+      "document": "civil-code-public",
+      "category": "cross-reference",
+      "gold_nodes": [
+        "node_civil-code-public_article_720"
+      ],
+      "expected_claims": [
+        "one-tenth",
+        "the sum or of the price of the thing found"
+      ],
+      "answerable": true,
+      "notes": "The question walks the citing article to the reward article. Article 719 is the deposit distractor."
+    },
+    {
+      "id": "q038",
+      "question": "Recite blockchain ledger cryptocurrency",
+      "document": "civil-code-public",
+      "category": "cross-reference",
+      "gold_nodes": [],
+      "expected_claims": [],
+      "answerable": false,
+      "notes": "Unanswerable: 'recite', 'blockchain', 'ledger' and 'cryptocurrency' are absent from the corpus."
+    },
+    {
+      "id": "q039",
+      "question": "How is ownership acquired by intellectual creation, and who are the persons who acquire it?",
+      "document": "civil-code-public",
+      "category": "definition",
+      "gold_nodes": [
+        "node_civil-code-public_article_721",
+        "node_civil-code-public_article_722"
+      ],
+      "expected_claims": [
+        "the following persons acquire ownership",
+        "the author and the composer",
+        "even before the publication"
+      ],
+      "answerable": true,
+      "notes": "The list is in 721 and the ownership in 722; the answer needs both, and 712 is the general acquisition article."
+    },
+    {
+      "id": "q040",
+      "question": "Outline zeppelin airship quantum observatory",
+      "document": "civil-code-public",
+      "category": "definition",
+      "gold_nodes": [],
+      "expected_claims": [],
+      "answerable": false,
+      "notes": "Unanswerable: 'outline', 'zeppelin', 'airship', 'quantum' and 'observatory' are absent from the corpus."
+    },
+    {
+      "id": "q041",
+      "question": "What is a donation by reason of marriage?",
+      "document": "civil-code-public",
+      "category": "definition",
+      "gold_nodes": [
+        "node_civil-code-public_article_126"
+      ],
+      "expected_claims": [
+        "made before its celebration",
+        "in consideration of the marriage",
+        "in favor of one or both of the future spouses"
+      ],
+      "answerable": true,
+      "notes": "A definitional article with three elements, each of which is a separate element of the definition."
+    },
+    {
+      "id": "q042",
+      "question": "What is a fideicommissary substitution?",
+      "document": "civil-code-public",
+      "category": "definition",
+      "gold_nodes": [
+        "node_civil-code-public_article_863"
+      ],
+      "expected_claims": [
+        "the fiduciary or first heir instituted",
+        "obliged to preserve",
+        "transmit to a second heir"
+      ],
+      "answerable": true,
+      "notes": "A specialised substitution. Article 857 is the general definition and is a distractor."
+    },
+    {
+      "id": "q043",
+      "question": "What is an aleatory contract?",
+      "document": "civil-code-public",
+      "category": "definition",
+      "gold_nodes": [
+        "node_civil-code-public_article_2010"
+      ],
+      "expected_claims": [
+        "one of the parties or both",
+        "in consideration of what the other shall give or do",
+        "event which is uncertain"
+      ],
+      "answerable": true,
+      "notes": "The definitional article on aleatory contracts."
+    },
+    {
+      "id": "q044",
+      "question": "What is juridical capacity under the Code?",
+      "document": "civil-code-public",
+      "category": "definition",
+      "gold_nodes": [
+        "node_civil-code-public_article_37"
+      ],
+      "expected_claims": [
+        "fitness to be the subject of legal relations",
+        "inherent in every natural person",
+        "lost only through death"
+      ],
+      "answerable": true,
+      "notes": "The definition article. The second sentence defines capacity to act, which the answer may mention but the gold is the definition."
+    },
+    {
+      "id": "q045",
+      "question": "What is legal redemption, and who may exercise it?",
+      "document": "civil-code-public",
+      "category": "definition",
+      "gold_nodes": [
+        "node_civil-code-public_article_1619"
+      ],
+      "expected_claims": [
+        "the right to be subrogated",
+        "upon the same terms and conditions",
+        "one who acquires a thing by purchase"
+      ],
+      "answerable": true,
+      "notes": "The definition of LEGAL redemption, against the conventional redemption of article 1601."
+    },
+    {
+      "id": "q046",
+      "question": "Elucidate zeppelin airship quantum observatory",
+      "document": "civil-code-public",
+      "category": "direct-lookup",
+      "gold_nodes": [],
+      "expected_claims": [],
+      "answerable": false,
+      "notes": "Unanswerable: 'elucidate', 'zeppelin', 'airship', 'quantum' and 'observatory' are all absent from BOTH corpora. Measured: this question refuses (insufficient=true, citations=[]) and the same question with ordinary scaffolding ('How does ... work?') is answered with 8 citations. The verb was 'explain' until the generator's check was made to reach the secondary corpus: 'explain' is absent from the Civil Code and present in the U.S. Code Title 11."
+    },
+    {
+      "id": "q047",
+      "question": "Summarize zeppelin concerto ultraviolet",
+      "document": "civil-code-public",
+      "category": "direct-lookup",
+      "gold_nodes": [],
+      "expected_claims": [],
+      "answerable": false,
+      "notes": "Unanswerable: 'summarize', 'zeppelin', 'concerto' and 'ultraviolet' are absent from the corpus."
+    },
+    {
+      "id": "q048",
+      "question": "What does Article 1318 say about the requisites of a contract?",
+      "document": "civil-code-public",
+      "category": "direct-lookup",
+      "gold_nodes": [
+        "node_civil-code-public_article_1318"
+      ],
+      "expected_claims": [
+        "consent",
+        "object",
+        "cause"
+      ],
+      "answerable": true,
+      "notes": "evaluation.md §2's own seed example. Distractors 1319/1320 are the consent and acceptance provisions; the gold is the requisites article."
+    },
+    {
+      "id": "q049",
+      "question": "What does Article 19 require of every person in the exercise of rights?",
+      "document": "civil-code-public",
+      "category": "direct-lookup",
+      "gold_nodes": [
+        "node_civil-code-public_article_19"
+      ],
+      "expected_claims": [
+        "act with justice",
+        "give everyone his due",
+        "honesty",
+        "good faith"
+      ],
+      "answerable": true,
+      "notes": "Carried over from the golden 10Q."
+    },
+    {
+      "id": "q050",
+      "question": "What does Article 26 say about the dignity of persons?",
+      "document": "civil-code-public",
+      "category": "direct-lookup",
+      "gold_nodes": [
+        "node_civil-code-public_article_26"
+      ],
+      "expected_claims": [
+        "dignity",
+        "personality",
+        "privacy",
+        "peace of mind"
+      ],
+      "answerable": true,
+      "notes": "Carried over from the golden 10Q. The article lists the acts that produce a cause of action for damages."
+    },
+    {
+      "id": "q051",
+      "question": "What does Article 887 say about the compulsory heirs?",
+      "document": "civil-code-public",
+      "category": "direct-lookup",
+      "gold_nodes": [
+        "node_civil-code-public_article_887"
+      ],
+      "expected_claims": [
+        "legitimate children and descendants",
+        "legitimate parents and ascendants",
+        "widow or widower"
+      ],
+      "answerable": true,
+      "notes": "Carried over from the golden 10Q. The enumeration order matters: the first three classes of compulsory heirs."
+    },
+    {
+      "id": "q052",
+      "question": "Article 221 states the general rule on the liability of a parent for the minor's acts. What exception does article 2180 carve out?",
+      "document": "civil-code-public",
+      "category": "exception",
+      "gold_nodes": [
+        "node_civil-code-public_article_2180"
+      ],
+      "expected_claims": [
+        "the father",
+        "the mother",
+        "damages caused by the minor children",
+        "live in their company"
+      ],
+      "answerable": true,
+      "notes": "The question names 221 to lead to the liability article 2180. Article 2176 is the general liability article."
+    },
+    {
+      "id": "q053",
+      "question": "Article 494 allows a co-owner to demand partition, but what exception does it state about keeping the thing undivided?",
+      "document": "civil-code-public",
+      "category": "exception",
+      "gold_nodes": [
+        "node_civil-code-public_article_494"
+      ],
+      "expected_claims": [
+        "an agreement to keep the thing undivided",
+        "not exceeding ten years",
+        "extended by a new agreement"
+      ],
+      "answerable": true,
+      "notes": "The exception is inside the same article. Article 496 is the manner distractor."
+    },
+    {
+      "id": "q054",
+      "question": "Article 872 forbids a testator from imposing any charge upon the legitime. What does article 874 say about a condition against remarrying?",
+      "document": "civil-code-public",
+      "category": "exception",
+      "gold_nodes": [
+        "node_civil-code-public_article_874"
+      ],
+      "expected_claims": [
+        "absolute condition not to contract a first or subsequent marriage",
+        "considered as not written",
+        "imposed on the widow or widower"
+      ],
+      "answerable": true,
+      "notes": "The question names the legitime rule to lead to the remarriage-condition rule."
+    },
+    {
+      "id": "q055",
+      "question": "Under what exception is the act of a thief or robber who has entered a hotel NOT deemed force majeure?",
+      "document": "civil-code-public",
+      "category": "exception",
+      "gold_nodes": [
+        "node_civil-code-public_article_2001"
+      ],
+      "expected_claims": [
+        "use of arms",
+        "irresistible force"
+      ],
+      "answerable": true,
+      "notes": "Article 2001 states the exception to article 2000's force-majeure rule."
+    },
+    {
+      "id": "q056",
+      "question": "Under what exception may a marriage be solemnized without a marriage license?",
+      "document": "civil-code-public",
+      "category": "exception",
+      "gold_nodes": [
+        "node_civil-code-public_article_72"
+      ],
+      "expected_claims": [
+        "on the point of death",
+        "more than fifteen kilometers",
+        "without necessity of a marriage license"
+      ],
+      "answerable": true,
+      "notes": "Article 72 is the exception to the license requirement of article 58. Article 57 is the place-of-solemnization distractor."
+    },
+    {
+      "id": "q057",
+      "question": "What exception does the Code state for the sale of a thing that has only a potential existence?",
+      "document": "civil-code-public",
+      "category": "exception",
+      "gold_nodes": [
+        "node_civil-code-public_article_1461"
+      ],
+      "expected_claims": [
+        "potential existence",
+        "subject to the condition that the thing will come into existence",
+        "the sale of a vain hope or expectancy is void"
+      ],
+      "answerable": true,
+      "notes": "Article 1461 is the provision on a thing with a potential existence. The old 'article 1211' framing was wrong: 1211 is about solidarity, not about potential existence."
+    },
+    {
+      "id": "q058",
+      "question": "What is the rule on the indivisibility of an obligation, and does it give rise to solidarity?",
+      "document": "civil-code-public",
+      "category": "exception",
+      "gold_nodes": [
+        "node_civil-code-public_article_1210"
+      ],
+      "expected_claims": [
+        "does not necessarily give rise to solidarity",
+        "nor does solidarity of itself imply indivisibility"
+      ],
+      "answerable": true,
+      "notes": "A short provision whose whole content is the exception. Articles 1208 and 1209 are the presumption and division distractors."
+    },
+    {
+      "id": "q059",
+      "question": "Explicate spectrometer centrifuge embargo",
+      "document": "civil-code-public",
+      "category": "multi-hop",
+      "gold_nodes": [],
+      "expected_claims": [],
+      "answerable": false,
+      "notes": "Unanswerable: 'explicate', 'spectrometer', 'centrifuge' and 'embargo' are absent from BOTH corpora. The verb was 'enumerate' until the generator's check was made to reach the secondary corpus: 'enumerate' is absent from the Civil Code and present in the U.S. Code Title 11."
+    },
+    {
+      "id": "q060",
+      "question": "How is a will revoked, and what is the effect of a revocation based on a false cause?",
+      "document": "civil-code-public",
+      "category": "multi-hop",
+      "gold_nodes": [
+        "node_civil-code-public_article_831",
+        "node_civil-code-public_article_833"
+      ],
+      "expected_claims": [
+        "annul only such dispositions",
+        "inconsistent with or contrary",
+        "based on a false cause or an illegal cause",
+        "null and void"
+      ],
+      "answerable": true,
+      "notes": "831 is the implied revocation and 833 the null revocation. Article 832 is the renouncing-heirs distractor."
+    },
+    {
+      "id": "q061",
+      "question": "What are the ways a partition may be made, and what happens when one of the co-owners is negligent or fraudulent?",
+      "document": "civil-code-public",
+      "category": "multi-hop",
+      "gold_nodes": [
+        "node_civil-code-public_article_496",
+        "node_civil-code-public_article_500"
+      ],
+      "expected_claims": [
+        "by agreement between the parties or by judicial proceedings",
+        "mutual accounting",
+        "damages caused by reason of his negligence or fraud"
+      ],
+      "answerable": true,
+      "notes": "A second route to the partition pair, worded differently from the multi-section row above."
+    },
+    {
+      "id": "q062",
+      "question": "What is the effect of a condition imposed upon an heir, and how is a purely potestative condition fulfilled?",
+      "document": "civil-code-public",
+      "category": "multi-hop",
+      "gold_nodes": [
+        "node_civil-code-public_article_876",
+        "node_civil-code-public_article_884"
+      ],
+      "expected_claims": [
+        "must be fulfilled by him as soon as he learns of the testator's death",
+        "rules established for conditional obligations"
+      ],
+      "answerable": true,
+      "notes": "876 is the potestative condition and 884 the governing rule. Article 872 is the legitime distractor."
+    },
+    {
+      "id": "q063",
+      "question": "What is the effect of a subsequent reconciliation between the offender and the offended person on a disinheritance?",
+      "document": "civil-code-public",
+      "category": "multi-hop",
+      "gold_nodes": [
+        "node_civil-code-public_article_922",
+        "node_civil-code-public_article_923"
+      ],
+      "expected_claims": [
+        "deprives the latter of the right to disinherit",
+        "renders ineffectual any disinheritance",
+        "the children and descendants of the person disinherited"
+      ],
+      "answerable": true,
+      "notes": "922 is the reconciliation and 923 the succession of the disinherited's children."
+    },
+    {
+      "id": "q064",
+      "question": "What is the legitime of legitimate children, and how much of the hereditary estate may the parent freely dispose of?",
+      "document": "civil-code-public",
+      "category": "multi-hop",
+      "gold_nodes": [
+        "node_civil-code-public_article_888",
+        "node_civil-code-public_article_889"
+      ],
+      "expected_claims": [
+        "one-half of the hereditary estate",
+        "freely dispose of the remaining half"
+      ],
+      "answerable": true,
+      "notes": "888 is the children's legitime and 889 the parents'. Article 890 is the division distractor."
+    },
+    {
+      "id": "q065",
+      "question": "Who may be an heir, and what is the rule on a disposition in favour of an unknown person?",
+      "document": "civil-code-public",
+      "category": "multi-hop",
+      "gold_nodes": [
+        "node_civil-code-public_article_782",
+        "node_civil-code-public_article_845"
+      ],
+      "expected_claims": [
+        "called to the succession",
+        "by the provision of a will or by operation of law",
+        "void",
+        "unless by some event or circumstance his identity becomes certain"
+      ],
+      "answerable": true,
+      "notes": "782 is the definition of an heir and 845 the rule on unknown persons. Article 843 is the naming distractor."
+    },
+    {
+      "id": "q066",
+      "question": "Elaborate centrifuge spectrometer ultraviolet embargo",
+      "document": "civil-code-public",
+      "category": "multi-section",
+      "gold_nodes": [],
+      "expected_claims": [],
+      "answerable": false,
+      "notes": "Unanswerable: 'elaborate', 'centrifuge', 'spectrometer', 'ultraviolet' and 'embargo' are absent from the corpus."
+    },
+    {
+      "id": "q067",
+      "question": "How does the right of stoppage in transitu operate, and when are the goods still in transit?",
+      "document": "civil-code-public",
+      "category": "multi-section",
+      "gold_nodes": [
+        "node_civil-code-public_article_1530",
+        "node_civil-code-public_article_1531"
+      ],
+      "expected_claims": [
+        "resume possession of the goods",
+        "while they are in transit",
+        "until the buyer takes delivery"
+      ],
+      "answerable": true,
+      "notes": "1530 is the right and 1531 the definition of transit. Article 1532 is the notice distractor."
+    },
+    {
+      "id": "q068",
+      "question": "How is a legal separation petition filed, and what grounds are available?",
+      "document": "civil-code-public",
+      "category": "multi-section",
+      "gold_nodes": [
+        "node_civil-code-public_article_97",
+        "node_civil-code-public_article_101"
+      ],
+      "expected_claims": [
+        "petition for legal separation",
+        "adultery",
+        "concubinage",
+        "no decree on a stipulation of facts"
+      ],
+      "answerable": true,
+      "notes": "97 lists the grounds and 101 forbids a decree on a stipulation. Article 103 is the six-month distractor."
+    },
+    {
+      "id": "q069",
+      "question": "How is emancipation effected, and what are its consequences for parental authority?",
+      "document": "civil-code-public",
+      "category": "multi-section",
+      "gold_nodes": [
+        "node_civil-code-public_article_397",
+        "node_civil-code-public_article_327"
+      ],
+      "expected_claims": [
+        "emancipation takes place",
+        "by the marriage of the minor",
+        "parental authority terminates"
+      ],
+      "answerable": true,
+      "notes": "397 lists the ways and 327 terminates the authority. Article 398 is the public-instrument distractor."
+    },
+    {
+      "id": "q070",
+      "question": "What is required for the adoption of a child, and what effect does the adoption have?",
+      "document": "civil-code-public",
+      "category": "multi-section",
+      "gold_nodes": [
+        "node_civil-code-public_article_340",
+        "node_civil-code-public_article_341"
+      ],
+      "expected_claims": [
+        "written consent",
+        "the parents",
+        "the same rights and duties",
+        "legitimate child"
+      ],
+      "answerable": true,
+      "notes": "340 is the consent and 341 the effect. Article 345 (the Rules of Court) is the procedure distractor."
+    },
+    {
+      "id": "q071",
+      "question": "What is the effect of an assignment of a credit, and against whom does it produce no effect?",
+      "document": "civil-code-public",
+      "category": "multi-section",
+      "gold_nodes": [
+        "node_civil-code-public_article_1625",
+        "node_civil-code-public_article_1626"
+      ],
+      "expected_claims": [
+        "shall produce no effect as against third persons",
+        "unless it appears in a public instrument",
+        "the debtor who pays his creditor shall be released"
+      ],
+      "answerable": true,
+      "notes": "1625 is the publicity requirement and 1626 the protection of the paying debtor. Article 1627 is the accessory-rights distractor."
+    },
+    {
+      "id": "q072",
+      "question": "Within what period must the right of legal pre-emption or redemption be exercised?",
+      "document": "civil-code-public",
+      "category": "multi-section",
+      "gold_nodes": [
+        "node_civil-code-public_article_1620",
+        "node_civil-code-public_article_1623"
+      ],
+      "expected_claims": [
+        "a co-owner of a thing may exercise the right of redemption",
+        "thirty days",
+        "the notice in writing by the prospective vendor"
+      ],
+      "answerable": true,
+      "notes": "1620 is who may exercise it and 1623 the period. Article 1621 is the adjoining-land distractor."
+    }
+  ]
+}
