@@ -302,6 +302,17 @@ points at.
 
 ## Day 4 — Slice 4: Generation (LLMInterface + citations + refusal)
 
+- [ ] *Wiring (2026-10-20, Day-4):* the ask surface and the graph now default
+  to the REAL configured generator, not the model-free stub. The stub applies
+  no advice oracle and no refusal path, so a request answered through it
+  would bypass the safety machinery the generation layer exists to provide.
+  The stub is explicit opt-in, for tests that want a deterministic answer.
+  The backend is selected by config (`apps/api/generation/config.py`:
+  `TUKLAS_LLM_BACKEND` / `_MODEL` / `_BASE_URL` / `_TEMPERATURE` / `_SEED` /
+  `_TIMEOUT`), which is what ADR-004 asks for - "Backend selected by config".
+  Verified through the DEFAULT path (no `generator=` argument): the real model
+  answers, the provider's deltas stream (87 token events), the token counts
+  are the provider's own, and the oracle is in force.
 - [ ] *Scope note (2026-10-20, Day-4):* ADR-004 names three backends
   (`ollama | llamacpp | vllm`, Ollama default). Only Ollama is implemented in
   this slice. The other two are OpenAI-compatible servers, so they are a
