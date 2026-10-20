@@ -238,9 +238,9 @@ sufficiency_gate → (more? search again : build_context) → generate → END`.
   renders it without reordering or truncation (Context Builder's job; contract test
   catches violations).
 - System constraints: answer only from evidence; every factual sentence carries `[n]`;
-  refusal path when the gate fails (zero kept evidence nodes or best kept score < 0.15,
-  PRD US-2) → canned abstention + `citations: []` + `insufficient: true`. Never a
-  fabricated number.
+  refusal path when the GATE FAILS (the gate verdict, not "are there kept
+  nodes" - see the sufficiency-gate section above; PRD US-2) → canned abstention
+  + `citations: []` + `insufficient: true`. Never a fabricated number.
 - Citation assembly: `citations[] = [{n, node_id, label, page_start, page_end}]`.
 - Post-generation blocklist rejects advice phrasing: "you should", "I advise",
   "your case", "you must" (single oracle, shared with architecture.md §6 and PRD US-2).

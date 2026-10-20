@@ -162,8 +162,14 @@ def agent_search_nodes(state: AgentState, args: dict[str, Any]) -> AgentState:
     normalization in scoring.py maps an all-zero lex layer to all-zero
     scores. Counting those as a hit would make every search branch
     relevant and hide the dead end the trace is supposed to show.
-    A hit is a match when its score is above zero, or when it carries an
-    identifier or title match (either can carry the answer on its own).
+
+    A hit is a match when the LEXICAL or IDENTIFIER component fired —
+    ``lex > 0 OR ident > 0`` — the same two signals the sufficiency gate
+    accepts (retrieval.md sec 3: "score >= 0.15 AND (lex > 0 OR
+    identifier-hit)"). The total score is NOT consulted, and neither is the
+    title component: the ``hier`` component scores 1.0 for any node that
+    shares a parent with a lex-top-3 node, so a structural sibling can
+    carry a full point without matching a single query term.
     """
     query = str(args["query"])
     raw_top_k = int(args.get("top_k", 10))

@@ -1242,6 +1242,82 @@ def test_agent_planner_retries_the_plan_once(civil_code: SimpleNamespace) -> Non
 # ---------------------------------------------------------------------------
 
 
+def test_agent_identifier_only_query() -> None:
+    # The contract's broaden-retry is "stopword-strip + identifier-only
+    # query" (retrieval.md sec 3). The identifier-only form carries the
+    # canonical labels and nothing else, so retrieval reaches the provisions
+    # the question is ABOUT rather than the ones that share a word with it.
+    from apps.api.agent.stoplist import identifier_query
+
+    assert identifier_query("article 1318") == "art 1318"
+    assert identifier_query("Art. 1318 requisites") == "art 1318"
+    assert identifier_query("section 2") == "sec 2"
+    # A question with no identifier has no identifier-only form.
+    assert identifier_query("what is succession") == ""
+    # A bare number is not a label, so it does not survive as one.
+    assert identifier_query("the said provision about 1318") == ""
+    # A range expands to the bare label plus each member.
+    assert "art 1318" in identifier_query("articles 1318-1320")
+    assert "art 1320" in identifier_query("articles 1318-1320")
+
+
+def test_agent_broaden_retry_prefers_the_identifier_only_form(
+    civil_code: SimpleNamespace,
+) -> None:
+    # When a sub-question carries an identifier, the retry must query with
+    # the identifier only - that is the first half of the contract's retry.
+    from apps.api.agent import graph as agent_graph
+
+    original = agent_graph.TOOL_TABLE["search_nodes"]
+    queries: list[str] = []
+
+    def stub_first_search(state: Any, args: Any) -> Any:
+        queries.append(str(args.get("query")))
+        if len(queries) == 1:
+            state["tool_iterations"] = int(state.get("tool_iterations", 0)) + 1
+            state["tool_results"].append(
+                {
+                    "tool": "search_nodes",
+                    "args": args,
+                    "result_ids": [],
+                    "relevant": False,
+                    "latency_ms": 0.0,
+                }
+            )
+            state["trace"].append(
+                {
+                    "tool": "search_nodes",
+                    "args": args,
+                    "result_ids": [],
+                    "relevant": False,
+                    "branch_id": "search_nodes#1",
+                    "latency_ms": 0.0,
+                }
+            )
+            return state
+        return original(state, args)
+
+    agent_graph.TOOL_TABLE["search_nodes"] = stub_first_search
+    try:
+        state = run_agent(
+            civil_code.doc_id,
+            "What does article 1318 require?",
+            db_path=civil_code.db,
+        )
+    finally:
+        agent_graph.TOOL_TABLE["search_nodes"] = original
+
+    broaden_entries = [
+        entry for entry in state.get("trace", []) if entry.get("node") == "broaden_retry"
+    ]
+    assert len(broaden_entries) == 1
+    retry_queries = broaden_entries[0]["broadened_queries"]
+    assert retry_queries, "the retry must issue a query"
+    assert retry_queries[0] == "art 1318", (
+        f"the retry must use the identifier-only form, got {retry_queries!r}"
+    )
+
+
 def test_agent_stoplist_contract() -> None:
     # FTS5 default English stopwords + the label words.
     for word in ("a", "an", "and", "the", "of", "with", "was", "were", "will"):

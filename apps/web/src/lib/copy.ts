@@ -90,7 +90,7 @@ export const problem = {
     items: [
       "Book IV, Title II, Chapter 1, Articles 1318, 1319, 1320 as parent and child",
       "Sibling provisions that share a parent",
-      "Cross references between articles, resolved as graph edges",
+      "Cross references between articles, parsed into graph edges",
       "A stable location: article, section, and page",
     ],
   },
@@ -113,7 +113,7 @@ export const pipeline = {
     },
     {
       name: "Index",
-      body: "SQLite stores nodes and reference edges, with BM25 over leaf bodies and an identifier index built at ingest.",
+      body: "SQLite stores the node tree, with BM25 over leaf bodies and an identifier index built at ingest.",
     },
     {
       name: "Plan",
@@ -156,7 +156,7 @@ export const comparison = {
     items: [
       "BM25 over leaf bodies with headings stripped",
       "Structural signal from parent, child, and sibling position",
-      "Reference signal from resolved cross-reference edges",
+      "Reference signal from cross-reference edges",
       "No dense embedding on the primary path",
     ],
   },

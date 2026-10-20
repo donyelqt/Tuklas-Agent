@@ -100,7 +100,7 @@ Export: `problem`
 | `flat.items[3]` | No way to walk to the neighbouring provision |
 | `structured.items[0]` | Book IV, Title II, Chapter 1, Articles 1318, 1319, 1320 as parent and child |
 | `structured.items[1]` | Sibling provisions that share a parent |
-| `structured.items[2]` | Cross references between articles, resolved as graph edges |
+| `structured.items[2]` | Cross references between articles, parsed into graph edges |
 | `structured.items[3]` | A stable location: article, section, and page |
 | `note` | Structure is kept at ingest so a query can use it, rather than trying to recover it from text. |
 
@@ -123,7 +123,7 @@ Export: `pipeline`
 | `steps[1].name` | Parse |
 | `steps[1].body` | A regex and heading-match parser writes a Book, Title, Chapter, Section, and Article tree, or flags a flat fallback. |
 | `steps[2].name` | Index |
-| `steps[2].body` | SQLite stores nodes and reference edges, with BM25 over leaf bodies and an identifier index built at ingest. |
+| `steps[2].body` | SQLite stores the node tree, with BM25 over leaf bodies and an identifier index built at ingest. |
 | `steps[3].name` | Plan |
 | `steps[3].body` | The planner emits one to four sub-questions, and a plan with none is treated as invalid. |
 | `steps[4].name` | Retrieve |
@@ -179,7 +179,7 @@ Export: `comparison`
 | `tuklas.label` | Tuklas |
 | `tuklas.items[0]` | BM25 over leaf bodies with headings stripped |
 | `tuklas.items[1]` | Structural signal from parent, child, and sibling position |
-| `tuklas.items[2]` | Reference signal from resolved cross-reference edges |
+| `tuklas.items[2]` | Reference signal from cross-reference edges |
 | `tuklas.items[3]` | No dense embedding on the primary path |
 | `vector.label` | Dense vector baseline |
 | `vector.items[0]` | Dense embeddings and similarity search |
@@ -314,7 +314,7 @@ Strings flagged during drafting and rewritten, with the reason.
 | `problem.lead` | Flat chunking destroys hierarchy, which measurably hurts legal question answering | Splitting a document into flat windows discards the relationships a legal answer has to rest on. | The PRD records hierarchy loss as an assumption, not a measurement. |
 | `problem.structured.items[0]` | Book IV, Title II, Chapter 1, Articles 1318-1320 | Book IV, Title II, Chapter 1, Articles 1318, 1319, 1320 as parent and child | The original needed an en-dash, which is banned. Listing the articles also shows the sibling set explicitly. |
 | `pipeline.lead` | A simple pipeline from upload to answer | Each step is a contract in the codebase, not a stage name on a slide. | "Simple" undersells the specs; the rewrite points at what the reader can check. |
-| `pipeline.steps[2].body` | Build a vector index of every chunk | SQLite stores nodes and reference edges, with BM25 over leaf bodies and an identifier index built at ingest. | The vector index is the arm Tuklas does not have. This is the arm it does. |
+| `pipeline.steps[2].body` | Build a vector index of every chunk | SQLite stores the node tree, with BM25 over leaf bodies and an identifier index built at ingest. | The vector index is the arm Tuklas does not have. This is the arm it does. |
 | `tools.headline` | Powerful agentic search tools | Seven tools are the only way in | "Powerful" is a banned filler claim and states nothing. |
 | `tools.lead` | A fully agentic retrieval stack | The agent has no direct database or file access to the document. Every node it sees arrives through one of these signatures. | "Fully agentic" is unfalsifiable. The replacement is the checkable architecture rule. |
 | `comparison.headline` | How Tuklas outperforms vector RAG | The comparison is designed, not won | Direct violation of honesty rule 1. |
