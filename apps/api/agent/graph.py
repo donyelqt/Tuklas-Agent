@@ -3,9 +3,14 @@
 Frozen topology (architecture.md sec 4)::
 
     START -> query_plan (1-4 sub_questions) -> search -> inspect ->
-    (relevant ? expand/follow : mark irrelevant + backtrack) ->
+    (relevant ? expand : mark irrelevant + backtrack) ->
     select_evidence (retrieval-owned) -> sufficiency_gate ->
     (more? search again : build_context) -> generate -> END
+
+The topology offers "expand OR follow"; this slice expands. The follow path
+needs an edge in the ``references_`` table, and ingestion does not parse
+reference edges yet (Day 1 scope), so no edge exists to follow. See the
+``_expand_or_backtrack_node`` docstring and TODO.md Day 3.
 
 Binding guards:
 - Budget: max 12 tool iterations per ask, INCLUDING the one broaden-retry.
@@ -224,6 +229,14 @@ def _expand_or_backtrack_node(state: AgentState) -> AgentState:
     architecture.md sec 4: "(relevant ? expand/follow : mark irrelevant +
     backtrack)". The wrapper already marked the dead branches; this node
     expands one surviving branch per sub-question.
+
+    The topology offers expand OR follow. The follow path is not reachable
+    here: ``follow_reference`` resolves an edge in the ``references_`` table,
+    and ingestion does not parse reference edges yet (Day 1 scope - the table
+    stays empty), so there is no edge to follow. The wrapper exists and
+    honours the ``resolved|unresolved|error`` contract; the graph expands
+    instead of following. Recorded in TODO.md Day 3 so the branch is not
+    mistaken for exercised behaviour.
     """
     results = state.get("tool_results", [])
     expanded: set[str] = set(state.get("_expanded", []))

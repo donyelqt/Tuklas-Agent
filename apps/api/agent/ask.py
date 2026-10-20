@@ -176,7 +176,6 @@ def iter_sse_events(
 
     On failure exactly one ``error`` event is yielded and iteration stops.
     """
-    start = time.perf_counter()
     gen: Generator = generator if generator is not None else StubGenerator()
     try:
         max_iterations = _validate_max_iterations(max_iterations)
@@ -188,6 +187,17 @@ def iter_sse_events(
 
     emitted_trace = 0
     plan_sent = False
+    # The agent's own elapsed time, EXCLUDING the time the consumer spends
+    # between events. A streaming surface cannot run ahead of its consumer:
+    # the generator is suspended at each yield, so wall-clock around the
+    # stream measures the consumer as much as the agent.
+    #
+    # The clock is therefore re-anchored every time the generator RESUMES
+    # (i.e. right after a yield returns). The time from a resume to the next
+    # chunk arriving is the graph's own work, with the consumer's think-time
+    # already excluded - the consumer was not running during it.
+    agent_elapsed_ms = 0
+    last_resume = time.perf_counter()
     # The stream yields the accumulated state per node; the last chunk is the
     # final state. Typed as AgentState so _build_response stays strict.
     final_state: AgentState = state
@@ -199,12 +209,19 @@ def iter_sse_events(
                 if not isinstance(delta, dict):
                     continue
                 final_state = AgentState(**delta)
+                # The graph produced this node's output: that is agent work,
+                # and the interval since the last resume is exactly it.
+                now = time.perf_counter()
+                agent_elapsed_ms += int((now - last_resume) * 1000)
                 if not plan_sent:
                     yield {
                         "event": "plan",
                         "sub_questions": list(delta.get("sub_questions", [])),
                     }
                     plan_sent = True
+                    # The generator is suspended here; the consumer's time
+                    # starts now and must not be counted.
+                    last_resume = time.perf_counter()
                 # Emit each tool trace entry exactly once, as it appears.
                 trace = delta.get("trace", [])
                 for entry in trace[emitted_trace:]:
@@ -212,12 +229,14 @@ def iter_sse_events(
                     if not tool:
                         continue
                     yield {"event": "tool_call", "tool": tool, "args": entry.get("args", {})}
+                    last_resume = time.perf_counter()
                     yield {
                         "event": "tool_result",
                         "tool": tool,
                         "result_ids": list(entry.get("result_ids", [])),
                         "relevant": bool(entry.get("relevant", False)),
                     }
+                    last_resume = time.perf_counter()
                 emitted_trace = len(trace)
     except errors.ApiError as err:
         yield _error_event(err)
@@ -267,5 +286,9 @@ def iter_sse_events(
                 "text": answer[start_index : start_index + TOKEN_CHUNK_CHARS],
             }
 
-    latency_ms = int((time.perf_counter() - start) * 1000)
+    # The measured latency is the time the AGENT spent, not the time the
+    # consumer took to read the stream: a slow client must not inflate the
+    # system's reported latency (evaluation.md sec 5 reports latency as a
+    # system metric). The clock stops when the graph does.
+    latency_ms = agent_elapsed_ms
     yield {"event": "done", "ask_response": _build_response(final_state, latency_ms)}

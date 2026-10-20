@@ -265,9 +265,16 @@ POST /v1/search { document_id, query, top_k?: int =10 (1..20) }
 POST /v1/ask { document_id, question, max_iterations?: int =12 (1..12) }
   → 200 AskResponse:
       { answer_markdown, citations: [{n,node_id,label,page_start,page_end}],
-        evidence_ids, iterations, latency_ms, tokens: {in,out}, insufficient }
+        evidence_ids, iterations, latency_ms, tokens: {in,out},
+        tokens_source: "estimated"|"provider", insufficient }
       # insufficient=false on success; abstention returns the SAME shape with
       # answer_markdown=canned text, citations=[], evidence_ids=[], insufficient=true
+      # tokens_source says how tokens was produced: "estimated" = a
+      # character-count heuristic (chars//4) over the evidence and the rendered
+      # answer, NOT a provider token count (the Day-3 generator calls no
+      # model); "provider" = the LLM backend reported the counts (Day 4). A
+      # consumer must not publish "estimated" numbers as measured usage.
+      # (This is the same shape api.md sec 3 pins; the two must not drift.)
   → 404 | 422 | 503 LLM_UNAVAILABLE
 POST /v1/ask/stream (same body, SSE) — frozen v1 event sequence:
   plan{sub_questions} → tool_call{tool,args} → tool_result{tool,result_ids,relevant} →
