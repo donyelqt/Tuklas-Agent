@@ -28,9 +28,9 @@ PREREQUISITE: a local LLM backend. The default is ollama at
 127.0.0.1:11434 with qwen2.5:3b (ADR-004). Override with the environment
 variables in apps/api/generation/config.py.
 
-Usage:
-    python scripts/measure_generation.py            # the 5 gold questions
-    python scripts/measure_generation.py --all      # the full golden 10
+Usage (from the repo root):
+    python -m scripts.measure_generation          # the 5 gold questions
+    python -m scripts.measure_generation --all    # the full golden 10
 """
 
 from __future__ import annotations
@@ -44,13 +44,6 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT))
-
-from apps.api.agent.ask import run_ask  # noqa: E402
-from apps.api.generation.blocklist import find_advice  # noqa: E402
-from apps.api.ingestion.service import ingest_pdf  # noqa: E402
-from apps.api.retrieval.index import build_indexes  # noqa: E402
-from apps.api.retrieval.scoring import tokenize_for_bm25  # noqa: E402
 
 CORPUS = REPO_ROOT / "data" / "documents" / "civil-code-ra386-icnl.pdf"
 SLUG = "civil-code-public"
@@ -117,6 +110,8 @@ def _is_a_question(sentence: str) -> bool:
 
 def _content_words(sentence: str) -> list[str]:
     """The words in a sentence that assert something."""
+    from apps.api.retrieval.scoring import tokenize_for_bm25
+
     return [
         word
         for word in tokenize_for_bm25(sentence)
@@ -141,6 +136,10 @@ def _measure(
     question: str, db_path: str, doc_id: str
 ) -> dict[str, Any]:
     """Measure one question through the full stack."""
+    from apps.api.agent.ask import run_ask
+    from apps.api.generation.blocklist import find_advice
+    from apps.api.retrieval.scoring import tokenize_for_bm25
+
     response = run_ask(doc_id, question, db_path=db_path)
     answer = response["answer_markdown"]
     citations = {c["n"]: c for c in response["citations"]}
@@ -221,6 +220,8 @@ def main() -> int:
         return 0
 
     import apps.api.retrieval.scoring as scoring
+    from apps.api.ingestion.service import ingest_pdf
+    from apps.api.retrieval.index import build_indexes
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
