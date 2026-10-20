@@ -290,6 +290,34 @@ def test_agent_search_that_matches_is_relevant(civil_code: SimpleNamespace) -> N
 # ---------------------------------------------------------------------------
 
 
+def test_agent_gate_fails_closed_for_an_unsearched_subquestion(
+    civil_code: SimpleNamespace,
+) -> None:
+    # select_evidence evaluates each sub-question against the whole kept set,
+    # so a sub-question that was NEVER searched would still collect supporters
+    # from the nodes another sub-question found - and the gate would pass for a
+    # question the agent never looked up. A budget of 1 truncates the search
+    # loop after the first sub-question, so the run must abstain rather than
+    # claim coverage it does not have.
+    question = "What is succession? What is the registration of chattel mortgages?"
+    state = run_agent(
+        civil_code.doc_id, question, max_iterations=1, db_path=civil_code.db
+    )
+    searched = [
+        result["args"]["query"]
+        for result in state.get("tool_results", [])
+        if result.get("tool") == "search_nodes"
+    ]
+    assert len(searched) == 1, "the budget should have truncated the searches"
+    assert state["_gate_passed"] is False
+    assert state["_gate_missing"], "the unsearched sub-question must be missing"
+    assert state["insufficient"] is True
+    # With enough budget for both searches, the gate passes.
+    full = run_agent(civil_code.doc_id, question, db_path=civil_code.db)
+    assert full["_gate_passed"] is True
+    assert full["insufficient"] is False
+
+
 def test_agent_visited_set_prevents_reinspect(civil_code: SimpleNamespace) -> None:
     # Both sub-questions rank the same nodes; the visited-set must stop the
     # second sub-question from re-inspecting them (architecture.md sec 4:
