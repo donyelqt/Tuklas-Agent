@@ -340,6 +340,50 @@ def test_agent_max_iterations_out_of_range_is_422(
         assert state["tool_iterations"] <= cap
 
 
+def test_agent_ask_path_validates_max_iterations(
+    civil_code: SimpleNamespace,
+) -> None:
+    # The ask surfaces must apply the same validation as run_agent. A request
+    # with max_iterations=999 must not run a 999-iteration ask, and 0/-1 must
+    # not silently produce a zero-iteration run that abstains as if it were a
+    # real result.
+    from apps.api.ingestion import errors
+
+    for cap in (0, -1, 13, 999):
+        with pytest.raises(errors.ApiError) as excinfo:
+            run_ask(civil_code.doc_id, "test", max_iterations=cap, db_path=civil_code.db)
+        assert excinfo.value.code == "VALIDATION_ERROR"
+        assert excinfo.value.status == 422
+
+        # The SSE surface must agree: one terminal error event, same code.
+        events = list(
+            iter_sse_events(
+                civil_code.doc_id, "test", max_iterations=cap, db_path=civil_code.db
+            )
+        )
+        assert events[-1]["event"] == "error"
+        assert events[-1]["error"]["code"] == "VALIDATION_ERROR"
+        assert len(events) == 1
+
+
+def test_agent_ask_path_reports_a_bad_body_as_422_not_500(
+    civil_code: SimpleNamespace,
+) -> None:
+    # A ValueError escaping the sync surface became a 500 INTERNAL_ERROR while
+    # the SSE surface returned 422 - one endpoint contract answering the same
+    # request two different ways.
+    #
+    # The value is built at runtime so the test exercises the path without
+    # lying to the type checker about the declared parameter type.
+    from apps.api.ingestion import errors
+
+    bad: Any = "twelve"
+    with pytest.raises(errors.ApiError) as excinfo:
+        run_ask(civil_code.doc_id, "test", max_iterations=bad, db_path=civil_code.db)
+    assert excinfo.value.status == 422
+    assert excinfo.value.code == "VALIDATION_ERROR"
+
+
 def test_agent_visited_set_prevents_reinspect(civil_code: SimpleNamespace) -> None:
     # Both sub-questions rank the same nodes; the visited-set must stop the
     # second sub-question from re-inspecting them (architecture.md sec 4:
