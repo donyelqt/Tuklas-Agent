@@ -12,6 +12,7 @@ import os
 import re
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from apps.api.agent.ask import CANNED_ABSTENTION, iter_sse_events, run_ask
@@ -454,6 +455,49 @@ def test_agent_sse_event_sequence(civil_code: SimpleNamespace) -> None:
     assert "token" in types
 
 
+def test_agent_sse_streams_incrementally(civil_code: SimpleNamespace) -> None:
+    # PRD US-3: the steps are STREAMED so the user can audit retrieval.
+    #
+    # A batch implementation (run the whole graph, then replay the trace)
+    # produces the SAME event sequence, so asserting the sequence proves
+    # nothing. What distinguishes them is WHEN the work happens: in a real
+    # stream the graph is still executing when the first event is yielded; in
+    # a batch replay the graph has already finished.
+    #
+    # The test counts the tool calls the graph makes. If the first event
+    # arrives before any tool has run, the implementation is streaming.
+    from apps.api.agent import graph as agent_graph
+
+    calls: list[str] = []
+    original = agent_graph.TOOL_TABLE["search_nodes"]
+
+    def counting_search(state: Any, args: Any) -> Any:
+        calls.append("search")
+        return original(state, args)
+
+    agent_graph.TOOL_TABLE["search_nodes"] = counting_search
+    try:
+        generator = iter_sse_events(
+            civil_code.doc_id,
+            "What are the requisites of contracts?",
+            db_path=civil_code.db,
+        )
+        first = next(generator)
+        assert first["event"] == "plan", "the first event must be the plan"
+        # The plan is yielded BEFORE any search has run: the graph is still
+        # executing. A batch replay would have run every tool first.
+        assert calls == [], f"tools already ran before the plan was yielded: {calls}"
+
+        # Draining the rest performs the work.
+        rest = list(generator)
+        types = [first["event"]] + [e["event"] for e in rest]
+        assert types[-1] == "done"
+        assert types.count("error") == 0
+        assert calls, "the search should have run while draining"
+    finally:
+        agent_graph.TOOL_TABLE["search_nodes"] = original
+
+
 def test_agent_sse_zero_tool_call_is_legal(civil_code: SimpleNamespace) -> None:
     # An invalid plan (the planner emits zero sub-questions) is the legal
     # zero-tool-call run: api.md sec 3 "zero-tool-call runs legal: plan ->
@@ -475,6 +519,9 @@ def test_agent_sse_zero_tool_call_is_legal(civil_code: SimpleNamespace) -> None:
 
 
 def test_agent_sse_bogus_db_is_error_event(civil_code: SimpleNamespace) -> None:
+    # api.md sec 3: the error event is TERMINAL - it is the last event of the
+    # stream. The plan may already have been sent before the failure, so the
+    # contract is "ends with exactly one error", not "starts with an error".
     events = list(
         iter_sse_events(
             civil_code.doc_id,
@@ -482,9 +529,14 @@ def test_agent_sse_bogus_db_is_error_event(civil_code: SimpleNamespace) -> None:
             db_path=str(Path(civil_code.db).parent / "missing.db"),
         )
     )
-    assert events[0]["event"] == "error"
-    assert set(events[0]["error"].keys()) == {"code", "message", "details"}
-    assert len(events) == 1
+    assert events[-1]["event"] == "error"
+    assert set(events[-1]["error"].keys()) == {"code", "message", "details"}
+    # Exactly one error event, and no done event after it.
+    assert [e["event"] for e in events].count("error") == 1
+    assert "done" not in [e["event"] for e in events]
+    # The stream is well formed up to the failure.
+    for event in events[:-1]:
+        assert event["event"] == "plan"
 
 
 # ---------------------------------------------------------------------------
