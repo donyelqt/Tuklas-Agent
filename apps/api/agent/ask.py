@@ -146,13 +146,13 @@ def _build_response(
     tokens_in = state.get("_gen_prompt_tokens")
     tokens_out = state.get("_gen_completion_tokens")
     if source == TOKENS_SOURCE_PROVIDER and (
-        isinstance(tokens_in, int) or isinstance(tokens_out, int)
+        isinstance(tokens_in, int) and isinstance(tokens_out, int)
     ):
-        # The provider's own counts, recorded by the generation layer.
-        counts = {
-            "in": int(tokens_in) if isinstance(tokens_in, int) else 0,
-            "out": int(tokens_out) if isinstance(tokens_out, int) else 0,
-        }
+        # The provider's own counts, recorded by the generation layer. BOTH
+        # must be present: a provider that reported only one of them left the
+        # other side unknown, and publishing a hard 0 for it under a
+        # "provider" label would present a fabricated zero as measured usage.
+        counts = {"in": int(tokens_in), "out": int(tokens_out)}
     else:
         # The provider reported NO counts (a truncated stream, a backend that
         # does not send them). Publishing zeros with tokens_source="provider"

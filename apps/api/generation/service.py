@@ -147,7 +147,11 @@ class GenerationService:
             # caller gets the uniform refusal, exactly as for a failed
             # gate.
             refusal = _refusal()
-            refusal.update(self._run_record(tokens_source="provider", result=result))
+            refusal.update(
+                self._run_record(
+                    tokens_source=self._token_source(result), result=result
+                )
+            )
             return refusal
 
         parts = _parts(context)
@@ -162,11 +166,7 @@ class GenerationService:
             # instead (api.md sec 3: a consumer must not publish estimated
             # numbers as measured usage - and zeros labelled as measured are
             # worse, because they look real).
-            "tokens_source": (
-                "provider"
-                if result.prompt_tokens is not None and result.completion_tokens is not None
-                else None
-            ),
+            "tokens_source": self._token_source(result),
             "model": result.model,
             "backend": result.backend,
             "temperature": result.temperature,
@@ -250,6 +250,20 @@ class GenerationService:
             evidence,
             gate_passed=gate_passed,
         )
+
+    @staticmethod
+    def _token_source(result: GenerationResult) -> str | None:
+        """The label for the token counts, derived from what the backend said.
+
+        "provider" means the backend REPORTED the counts. If it reported
+        none, or only one side of them, the label is None: the transport
+        falls back to the character-count estimate and says so. A "provider"
+        label over a fabricated zero is worse than an estimate, because it
+        looks measured.
+        """
+        if result.prompt_tokens is not None and result.completion_tokens is not None:
+            return "provider"
+        return None
 
     def _run_record(
         self, *, tokens_source: str | None, result: GenerationResult | None = None
