@@ -216,6 +216,49 @@ def test_agent_multi_hop_trace_abandoned_branch(civil_code: SimpleNamespace) -> 
 
 
 # ---------------------------------------------------------------------------
+# 6a. A search that matched nothing is an irrelevant branch
+# ---------------------------------------------------------------------------
+
+
+def test_agent_search_that_matches_nothing_is_irrelevant(
+    civil_code: SimpleNamespace,
+) -> None:
+    # search_nodes returns the document's top-k nodes even when the query
+    # matches nothing (every score 0.0). Counting those as hits would make
+    # every search branch relevant and hide the dead end in the trace.
+    state = run_agent(
+        civil_code.doc_id,
+        "qqzz wumpus frobnicatex",
+        db_path=civil_code.db,
+    )
+    searches = [
+        result
+        for result in state.get("tool_results", [])
+        if result.get("tool") == "search_nodes"
+    ]
+    assert searches, "expected at least one search"
+    for search in searches:
+        assert search["relevant"] is False, "a non-matching search must be irrelevant"
+        assert search["result_ids"] == [], "a non-matching search matched nothing"
+
+
+def test_agent_search_that_matches_is_relevant(civil_code: SimpleNamespace) -> None:
+    state = run_agent(
+        civil_code.doc_id,
+        "What are the requisites of contracts?",
+        db_path=civil_code.db,
+    )
+    searches = [
+        result
+        for result in state.get("tool_results", [])
+        if result.get("tool") == "search_nodes"
+    ]
+    assert searches
+    assert any(search["relevant"] for search in searches)
+    assert any(search["result_ids"] for search in searches)
+
+
+# ---------------------------------------------------------------------------
 # 6b. Visited-set: a node is inspected at most once
 # ---------------------------------------------------------------------------
 
