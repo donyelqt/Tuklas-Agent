@@ -112,6 +112,6 @@ GET /v1/evaluations/{id} → { status, config: EvalConfig, per_question: [Questi
 ## 5. Verification
 
 - [ ] Pydantic v2 request/response models committed with implementation (field types, optionality, bounds: `top_k 1..20`, `max_iterations 1..12`, `pageSize 1..100`).
-- [ ] Contract test `test_ask_stream_order` (incl. zero-tool-call + error-terminal cases).
+- [x] Contract test `test_ask_stream_order` (incl. zero-tool-call + error-terminal cases). **Done (2026-10-20, Day-3):** `apps/api/tests/test_agent.py` — `test_ask_stream_order` asserts the WHOLE event sequence, not membership: `plan → (tool_call, tool_result)* → evidence → token* → done`. The earlier form (first is plan, last is done, evidence between them, tool_call adjacent to its tool_result) still accepted `evidence` in the middle of the tool stream and `token` before `evidence`; verified by injecting that reorder and watching the test fail. Two companion cases: `test_ask_stream_order_zero_tool_call` (`plan → evidence(empty) → done`) and `test_ask_stream_order_error_is_terminal` (one terminal `error` carrying the §1 body, no `done` after it).
 - [ ] Error-body shape asserted on all failure paths (upload 422s, dup-hash 409, unknown ids 404, LLM-down 503).
 - [ ] Changes additive-only under `/v1` (new optional fields); renames/removals → `/v2` + ADR. Enforced by breaking-change test (snapshot response schemas).
