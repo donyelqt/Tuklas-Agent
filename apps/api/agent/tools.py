@@ -221,7 +221,19 @@ def agent_list_children(state: AgentState, args: dict[str, Any]) -> AgentState:
     node_id = str(args["node_id"])
     limit = min(50, max(1, int(args.get("limit", 50))))
     start = time.perf_counter()
-    children = list_children(node_id=node_id, limit=limit, **_db_kwarg(state))
+    try:
+        children = list_children(node_id=node_id, limit=limit, **_db_kwarg(state))
+    except errors.ApiError as err:
+        _record(
+            state,
+            "list_children",
+            {"node_id": node_id, "limit": limit},
+            [],
+            False,
+            (time.perf_counter() - start) * 1000.0,
+            error=err.code,
+        )
+        return state
     latency = (time.perf_counter() - start) * 1000.0
     ids = _node_ids(children)
     relevant = any(_evidence_eligible(child) for child in children)
@@ -240,7 +252,19 @@ def agent_get_parent(state: AgentState, args: dict[str, Any]) -> AgentState:
     """get_parent — None at the document root (retrieval.md sec 5)."""
     node_id = str(args["node_id"])
     start = time.perf_counter()
-    parent = get_parent(node_id=node_id, **_db_kwarg(state))
+    try:
+        parent = get_parent(node_id=node_id, **_db_kwarg(state))
+    except errors.ApiError as err:
+        _record(
+            state,
+            "get_parent",
+            {"node_id": node_id},
+            [],
+            False,
+            (time.perf_counter() - start) * 1000.0,
+            error=err.code,
+        )
+        return state
     latency = (time.perf_counter() - start) * 1000.0
     ids = [str(parent["node_id"])] if isinstance(parent, dict) and parent.get("node_id") else []
     _record(
@@ -259,7 +283,19 @@ def agent_expand_context(state: AgentState, args: dict[str, Any]) -> AgentState:
     node_id = str(args["node_id"])
     radius = min(2, max(0, int(args.get("radius", 1))))
     start = time.perf_counter()
-    neighbors = expand_context(node_id=node_id, radius=radius, **_db_kwarg(state))
+    try:
+        neighbors = expand_context(node_id=node_id, radius=radius, **_db_kwarg(state))
+    except errors.ApiError as err:
+        _record(
+            state,
+            "expand_context",
+            {"node_id": node_id, "radius": radius},
+            [],
+            False,
+            (time.perf_counter() - start) * 1000.0,
+            error=err.code,
+        )
+        return state
     latency = (time.perf_counter() - start) * 1000.0
     ids = _node_ids(neighbors)
     relevant = any(_evidence_eligible(node) for node in neighbors)
