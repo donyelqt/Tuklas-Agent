@@ -431,6 +431,124 @@ def test_agent_search_that_matches_is_relevant(civil_code: SimpleNamespace) -> N
 # ---------------------------------------------------------------------------
 
 
+def test_agent_irrelevant_branch_hits_never_reach_the_evidence_pool(
+    civil_code: SimpleNamespace,
+) -> None:
+    # architecture.md sec 4: "irrelevant branches contribute zero evidence
+    # nodes". search_nodes returns the document's top-k nodes even when the
+    # query matched nothing (every score 0.0), so feeding those hits
+    # downstream would let an irrelevant branch contribute evidence - and
+    # select_evidence dedups by node_id keeping the FIRST occurrence, so a
+    # score-0 copy could shadow the same node's genuinely-scored copy.
+    state = run_agent(
+        civil_code.doc_id, "qqzz wumpus frobnicatex", db_path=civil_code.db
+    )
+    searches = [
+        result
+        for result in state.get("tool_results", [])
+        if result.get("tool") == "search_nodes"
+    ]
+    assert searches
+    for result in searches:
+        assert result["relevant"] is False
+        assert result["result_ids"] == []
+    # The evidence pool holds only the MATCHED hits.
+    matched_total = sum(len(result.get("result_ids", [])) for result in searches)
+    assert len(state.get("_hits", [])) == matched_total
+
+
+def test_agent_trace_carries_the_fallback_flag(
+    civil_code: SimpleNamespace,
+) -> None:
+    # retrieval.md sec 6: "the fallback flag is computed in score_nodes from
+    # parse_confidence and carried on every ScoredNode (so search_nodes
+    # results surface it); the Day 3 trace reads it from retrieval rather
+    # than recomputing it." A flat-fallback document is answered from a
+    # page-only tree with ident/title/hier = 0, and the trace must say so.
+    state = run_agent(
+        civil_code.doc_id,
+        "What are the requisites of contracts?",
+        db_path=civil_code.db,
+    )
+    searches = [
+        entry
+        for entry in state.get("trace", [])
+        if entry.get("tool") == "search_nodes"
+    ]
+    assert searches
+    for entry in searches:
+        assert "fallback" in entry, "the search trace entry must carry the fallback flag"
+        assert isinstance(entry["fallback"], bool)
+    # The Civil Code parses structurally, so it is not a flat fallback.
+    assert searches[0]["fallback"] is False
+
+
+def test_agent_broaden_retry_inspects_its_hits(
+    civil_code: SimpleNamespace,
+) -> None:
+    # The topology's "search again" returns to the search-and-INSPECT cycle.
+    # A broadened hit that was never inspected has not been read, and the
+    # trace must show the read - so the retry must not skip the inspect node.
+    from apps.api.agent import graph as agent_graph
+
+    original = agent_graph.TOOL_TABLE["search_nodes"]
+    calls: list[str] = []
+
+    def stub_first_search(state: Any, args: Any) -> Any:
+        calls.append(str(args.get("query")))
+        if len(calls) == 1:
+            # The first search finds nothing: the gate fails, the retry fires.
+            state["tool_iterations"] = int(state.get("tool_iterations", 0)) + 1
+            state["tool_results"].append(
+                {
+                    "tool": "search_nodes",
+                    "args": args,
+                    "result_ids": [],
+                    "relevant": False,
+                    "latency_ms": 0.0,
+                }
+            )
+            state["trace"].append(
+                {
+                    "tool": "search_nodes",
+                    "args": args,
+                    "result_ids": [],
+                    "relevant": False,
+                    "branch_id": "search_nodes#1",
+                    "latency_ms": 0.0,
+                }
+            )
+            return state
+        return original(state, args)
+
+    agent_graph.TOOL_TABLE["search_nodes"] = stub_first_search
+    try:
+        state = run_agent(
+            civil_code.doc_id,
+            "What are the requisites of contracts?",
+            db_path=civil_code.db,
+        )
+    finally:
+        agent_graph.TOOL_TABLE["search_nodes"] = original
+
+    # The retry ran its own search AND inspected what it found.
+    assert len(calls) >= 2, "the retry must issue its own search"
+    inspections = [
+        result
+        for result in state.get("tool_results", [])
+        if result.get("tool") == "inspect_node"
+    ]
+    assert inspections, "the broadened hits must be inspected before selection"
+    # The order is: search (no hits) -> gate -> retry -> search -> inspect.
+    tool_order = [
+        result.get("tool")
+        for result in state.get("tool_results", [])
+        if result.get("tool") in {"search_nodes", "inspect_node"}
+    ]
+    assert tool_order[0] == "search_nodes"
+    assert "inspect_node" in tool_order[1:], "inspection must follow the retry's search"
+
+
 def test_agent_gate_fails_closed_for_an_unsearched_subquestion(
     civil_code: SimpleNamespace,
 ) -> None:
