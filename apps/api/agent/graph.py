@@ -228,15 +228,35 @@ def _expand_or_backtrack_node(state: AgentState) -> AgentState:
     return state
 
 
+def _searched_sub_questions(state: AgentState) -> list[str]:
+    """The sub-questions the agent actually searched for.
+
+    ``select_evidence`` evaluates each sub-question against the whole kept set,
+    so a sub-question that was never searched would still collect supporters
+    from the nodes another sub-question found — and the gate would pass for a
+    question the agent never looked up. When the budget truncates the search
+    loop, that turns a partial run into a confident answer.
+
+    Only the sub-questions that were searched are therefore put to the gate.
+    An unsearched sub-question has no supporters, so the gate fails closed for
+    it and the run abstains rather than claiming coverage it does not have.
+    """
+    searched = list(state.get("_searched", []))
+    if not searched:
+        return []
+    planned = list(state.get("sub_questions", []))
+    return [sub for sub in planned if sub in searched]
+
+
 def _select_evidence_node(state: AgentState) -> AgentState:
     """Retrieval-owned evidence gate (retrieval.md sec 5)."""
-    evidence = select_evidence(
-        state.get("_hits", []), state.get("sub_questions", []), **_db_kwarg(state)
-    )
+    asked = _searched_sub_questions(state)
+    evidence = select_evidence(state.get("_hits", []), asked, **_db_kwarg(state))
     state["evidence"] = evidence
     state["trace"].append(
         {
             "node": "select_evidence",
+            "asked_sub_questions": asked,
             "kept": len(evidence.get("kept", [])),
             "insufficient": bool(evidence.get("insufficient")),
         }
@@ -250,6 +270,10 @@ def _gate_verdict(state: AgentState) -> tuple[bool, list[str]]:
     The support check itself is retrieval-owned (``select_evidence`` already
     applied score >= 0.15 AND (lex > 0 OR identifier-hit)); the agent reads
     the per-question supporter lists and decides only pass/fail.
+
+    A sub-question the agent never searched has no supporter list at all, so
+    it counts as missing: the gate fails closed rather than reporting coverage
+    the run never looked up.
     """
     evidence = state.get("evidence", {})
     gate = evidence.get("gate", {}) if isinstance(evidence, dict) else {}
