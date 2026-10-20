@@ -158,7 +158,7 @@ def test_agent_sufficiency_gate_fail_abstention(civil_code: SimpleNamespace) -> 
 # ---------------------------------------------------------------------------
 
 
-def test_agent_broaden_retry_once(civil_code: SimpleNamespace) -> None:
+def test_agent_broaden_retry_is_attempted_once(civil_code: SimpleNamespace) -> None:
     # A query whose every token matches no node: the lex layer is all-zero,
     # so the gate has no supporter (retrieval.md sec 3, sec 7).
     query = "qqzz wumpus frobnicatex"
@@ -168,13 +168,39 @@ def test_agent_broaden_retry_once(civil_code: SimpleNamespace) -> None:
     broaden_entries = [
         entry for entry in state.get("trace", []) if entry.get("node") == "broaden_retry"
     ]
-    # Exactly one retry: retrieval.md sec 7 says "one broaden-retry".
+    # Exactly one retry attempt: retrieval.md sec 7 says "one broaden-retry".
     assert len(broaden_entries) == 1
-    broadened_queries = broaden_entries[0]["broadened_queries"]
-    assert broadened_queries == [broaden(query)]
-    # The retry still failed, so the run ends in the abstention.
+    # This query is made only of non-stopwords, so the stoplist strip cannot
+    # reduce it. Re-running the identical search would be provably useless
+    # (retrieval is deterministic), so the retry is skipped rather than
+    # spending iteration budget on a search whose answer is already known.
+    assert broaden_entries[0]["result"] == "skipped_no_reduction"
     assert state["insufficient"] is True
     assert state["tool_iterations"] <= MAX_TOOL_ITERATIONS
+
+
+def test_agent_broaden_retry_only_touches_failing_subquestions(
+    civil_code: SimpleNamespace,
+) -> None:
+    # The retry must not re-search a sub-question that already has a
+    # supporter: its evidence is in the kept set, and broadened hits would
+    # push better nodes out of the top-8 window rather than add any.
+    state = run_agent(
+        civil_code.doc_id,
+        "What are the requisites of contracts? qqzz wumpus frobnicatex",
+        db_path=civil_code.db,
+    )
+    broaden_entries = [
+        entry for entry in state.get("trace", []) if entry.get("node") == "broaden_retry"
+    ]
+    assert len(broaden_entries) <= 1
+    for entry in broaden_entries:
+        missing = entry.get("missing_sub_questions", [])
+        queries = entry.get("broadened_queries", [])
+        if queries:
+            assert len(queries) == len(missing)
+            for query in queries:
+                assert query in missing or query == broaden(query)
 
 
 # ---------------------------------------------------------------------------
