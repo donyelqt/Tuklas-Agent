@@ -39,7 +39,8 @@ from apps.api.ingestion import errors
 #: Characters per streamed token event.
 TOKEN_CHUNK_CHARS = 80
 
-#: The AskResponse keys (api.md sec 3). Frozen.
+#: The AskResponse keys (api.md sec 3). Frozen, plus the additive
+#: ``tokens_source`` label.
 ASK_RESPONSE_KEYS = frozenset(
     {
         "answer_markdown",
@@ -48,13 +49,30 @@ ASK_RESPONSE_KEYS = frozenset(
         "iterations",
         "latency_ms",
         "tokens",
+        "tokens_source",
         "insufficient",
     }
 )
 
 
+#: How the token counts in an AskResponse were produced.
+#:
+#: "estimated" — a character-count heuristic (chars // 4) over the evidence
+#: payload and the rendered answer. It is NOT a provider token count: no model
+#: was called, and the "input" side is the size of the evidence, not the size
+#: of a prompt. Day 4 replaces it with the provider's own usage numbers.
+#: "provider" — the LLM backend reported the counts.
+TOKENS_SOURCE_ESTIMATED = "estimated"
+TOKENS_SOURCE_PROVIDER = "provider"
+
+
 def _approx_tokens(chars: int) -> int:
-    """Stub token accounting; Day 4 replaces this with real provider usage."""
+    """A character-count estimate, NOT a provider token count.
+
+    Labelled as such in the response (``tokens_source``) so no downstream
+    consumer can mistake it for measured usage. Day 4 replaces it with the
+    provider's own numbers.
+    """
     return max(0, chars // 4)
 
 
@@ -89,6 +107,9 @@ def _build_response(state: AgentState, latency_ms: int) -> dict[str, Any]:
         "iterations": int(state.get("tool_iterations", 0)),
         "latency_ms": latency_ms,
         "tokens": {"in": _approx_tokens(in_chars), "out": _approx_tokens(len(answer))},
+        # Tells the consumer whether the token counts are measured or
+        # estimated. "estimated" until the LLM backend reports real usage.
+        "tokens_source": TOKENS_SOURCE_ESTIMATED,
         "insufficient": insufficient,
     }
 
