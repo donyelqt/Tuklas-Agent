@@ -136,12 +136,24 @@ points at.
   - *Acceptance (PLAN.md Day 3):* multi-hop fixture trace shows ≥ 1 abandoned branch
     (relevant=false, zero evidence) + ≥ 2 inspect/expand before the answer.
     `mypy apps/api` zero errors.
-  - *Verified (2026-10-20):* 18 agent tests green; full suite 51 passed; ruff clean;
+  - *Verified (2026-10-20):* 26 agent tests green; full suite 58 passed; ruff clean;
     mypy clean on 28 files; `check_no_vectors.py` OK (28 files scanned). Runtime smoke:
     a two-part question streams 2 searches, 6 inspects (1 abandoned), 2 expands, then
     `evidence` + `done`; gibberish → canned abstention with `citations: []` and
     `evidence_ids: []`; empty question → the legal zero-tool-call run
     (`plan → evidence(empty) → done`).
+  - *SSE streaming (2026-10-20):* the first implementation ran the whole graph
+    and replayed the accumulated trace as events. The event SEQUENCE was
+    correct, so a sequence assertion could not see it — but nothing was
+    streamed, which PRD US-3 requires ("I want to see the agent's
+    search→inspect→expand steps streamed"). Measured before: first event and
+    last event both at 0.153s (one burst). After: `plan` at 0.011s, then each
+    `tool_call`/`tool_result` pair as that tool completes, tokens at the end.
+    The graph now runs through LangGraph's `stream(stream_mode="updates")` and
+    the SSE layer emits each trace entry exactly once as it appears. The test
+    discriminates instead of restating the implementation: it counts the tool
+    calls and asserts none has run when the `plan` event is yielded (it fails
+    against the batch implementation).
 
   - *Deferred to Day 4:* the `follow_reference` wrapper exists and honours the
     `resolved|unresolved|error` contract, but the `references_` table is empty —
