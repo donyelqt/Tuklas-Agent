@@ -902,6 +902,36 @@ def test_agent_sse_emits_every_trace_entry_exactly_once(
         assert results == trace_tools, f"tool_result stream differs: {question}"
 
 
+def test_agent_sse_latency_excludes_consumer_time(
+    civil_code: SimpleNamespace,
+) -> None:
+    # evaluation.md sec 5 reports latency as a SYSTEM metric. A streaming
+    # surface cannot run ahead of its consumer, so a wall-clock measurement
+    # around the whole stream measures the consumer as much as the agent - a
+    # slow client would inflate the system's reported latency.
+    import time
+
+    question = "What are the requisites of contracts?"
+
+    fast = list(
+        iter_sse_events(civil_code.doc_id, question, db_path=civil_code.db)
+    )
+    fast_latency = fast[-1]["ask_response"]["latency_ms"]
+
+    generator = iter_sse_events(
+        civil_code.doc_id, question, db_path=civil_code.db
+    )
+    next(generator)
+    time.sleep(1.5)  # the consumer is slow
+    slow = list(generator)
+    slow_latency = slow[-1]["ask_response"]["latency_ms"]
+
+    # The 1.5s the consumer spent must not appear in the measurement.
+    assert slow_latency < fast_latency + 1000, (
+        f"consumer think-time leaked into the latency: {slow_latency} vs {fast_latency}"
+    )
+
+
 def test_agent_sse_zero_tool_call_is_legal(civil_code: SimpleNamespace) -> None:
     # An invalid plan (the planner emits zero sub-questions) is the legal
     # zero-tool-call run: api.md sec 3 "zero-tool-call runs legal: plan ->
