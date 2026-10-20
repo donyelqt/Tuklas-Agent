@@ -59,6 +59,7 @@ class AgentState(TypedDict, total=False):
     _gate_passed: bool
     _gate_missing: list[str]
     _broadened_queries: list[str]
+    _broadened_for: list[str]
     _db_path: str | None
     _searched: list[str]
     _visited: list[str]

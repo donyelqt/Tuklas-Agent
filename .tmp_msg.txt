@@ -1,0 +1,44 @@
+fix: the broaden-retry must be able to change the gate verdict
+
+The CORRECTNESS review lens found that the retry could never rescue the gate,
+which made it a no-op that only spent iteration budget.
+
+F1 (Critical) - the retry's hits were ORPHANED. The wrapper files hits under
+the QUERY that retrieved them, and select_evidence looks hits up BY
+SUB-QUESTION. The broadened query is a different string from the
+sub-question it broadens ("art 1318" vs "What does article 1318 require"), so
+the retry's hits were filed under a key nothing ever read. The second gate
+evaluation therefore saw exactly the same hits as the first, the verdict was
+identical, and the retry fired, spent budget, ran its search + inspect +
+expand - and the run abstained anyway.
+
+Fixed in three places, because each was a real by-value bug:
+- the broaden node now records which sub-question each broadened query
+  serves, and re-files the retry's hits under that sub-question;
+- the mapping is read, mutated and written back - the state channel hands
+  out the mapping by value, so mutating it in place was lost (the same bug
+  in the search wrapper, fixed there too);
+- a sub-question counts as searched if a broadened query ran ON ITS BEHALF,
+  not only if its own query ran - otherwise the retry's evidence is
+  retrieved and then never judged.
+
+Also: _broadened_for had to be declared as a channel in AgentState;
+LangGraph drops undeclared keys, which is why the re-filing appeared to do
+nothing.
+
+Measured before: the retry searched "art 1318", found 1 hit, and the gate
+still failed. After: the hit supports the sub-question, the gate passes, and
+the run answers with article 1318 - the provision the identifier-only query
+reached. The retry is no longer a budget-burning no-op.
+
+F2 (Required) - the merged top-8 cut could drop a sub-question's only
+supporter. Each sub-question has its own top-8, so a plain score-ordered cut
+of the merged list could drop a sub-question's sole supporter in favour of
+higher-scoring nodes another sub-question contributed - and the gate then
+failed for a sub-question retrieval had actually supported. The cut is now
+supporter-aware: the supporters of every sub-question are kept first, and the
+remaining slots go to the highest-scoring nodes. Measured on a four-part
+question: every sub-question keeps its supporters (3+1+3+1 = the whole
+8-node window) and the gate passes.
+
+81 passed; ruff clean; mypy clean on 28 files; check_no_vectors.py OK.

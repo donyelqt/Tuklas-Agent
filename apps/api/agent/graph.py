@@ -285,8 +285,18 @@ def _searched_sub_questions(state: AgentState) -> list[str]:
     searched = list(state.get("_searched", []))
     if not searched:
         return []
+    # A sub-question counts as searched if its OWN query was run, or if a
+    # broadened query was run ON ITS BEHALF. The retry's hits are filed
+    # under the sub-question they broaden, so the gate must ask about that
+    # sub-question - otherwise the retry's evidence is retrieved and then
+    # never judged.
+    broadened_for = list(state.get("_broadened_for", []))
     planned = list(state.get("sub_questions", []))
-    return [sub for sub in planned if sub in searched]
+    return [
+        sub
+        for sub in planned
+        if sub in searched or sub in broadened_for
+    ]
 
 
 def _select_evidence_node(state: AgentState) -> AgentState:
@@ -333,7 +343,22 @@ def _select_evidence_node(state: AgentState) -> AgentState:
     # The top-8 evidence window (retrieval.md sec 5) applies to the MERGED
     # set too: the agent assembles one context, and that context must not
     # carry more nodes than the window allows.
-    kept = kept[:_EVIDENCE_KEEP_TOP]
+    #
+    # The cut is SUPPORTER-AWARE. Each sub-question had its own top-8, so a
+    # plain score-ordered cut of the merged list can drop a sub-question's
+    # only supporter in favour of higher-scoring nodes another sub-question
+    # contributed - and the gate would then fail for a sub-question that
+    # retrieval had actually supported. The supporters of every sub-question
+    # are kept first; the remaining slots go to the highest-scoring nodes.
+    supporter_ids: set[str] = set()
+    for supporters in per_question.values():
+        supporter_ids.update(str(node_id) for node_id in supporters)
+    supporters_kept = [
+        item for item in kept if str(item.get("node_id")) in supporter_ids
+    ]
+    others = [item for item in kept if str(item.get("node_id")) not in supporter_ids]
+    kept = (supporters_kept + others)[:_EVIDENCE_KEEP_TOP]
+    kept.sort(key=lambda item: (-float(item.get("score", 0.0)), str(item.get("node_id"))))
     # The gate's supporter lists are then filtered to the kept window. Each
     # sub-question had its OWN top-8, so before this filter the supporters
     # could name nodes the merged evidence set does not carry - the gate
@@ -434,6 +459,12 @@ def _sufficiency_gate_node(state: AgentState) -> AgentState:
         # broadened hits for it would push better nodes out of the top-8
         # window, not add any.
         broadened: list[str] = []
+        # Which sub-question each broadened query serves. The retry's hits
+        # must be attributed to the sub-question they broaden, not to the
+        # broadened query's own text: select_evidence looks the hits up by
+        # sub-question, so hits filed under the broadened query would be
+        # orphaned and the retry could never change the verdict.
+        broadened_for: list[str] = []
         for sub_question in missing:
             # The contract's retry is "stopword-strip + identifier-only query"
             # (retrieval.md sec 3). The identifier-only form is tried FIRST
@@ -443,6 +474,7 @@ def _sufficiency_gate_node(state: AgentState) -> AgentState:
             identifier_only = _identifier_query(sub_question)
             if identifier_only:
                 broadened.append(identifier_only)
+                broadened_for.append(sub_question)
                 continue
             reduced = _broaden(sub_question)
             if reduced == sub_question:
@@ -452,6 +484,7 @@ def _sufficiency_gate_node(state: AgentState) -> AgentState:
                 # iteration budget on a search we already know the answer to.
                 continue
             broadened.append(reduced)
+            broadened_for.append(sub_question)
         if not broadened:
             state["broadened"] = True
             state["trace"].append(
@@ -472,10 +505,12 @@ def _sufficiency_gate_node(state: AgentState) -> AgentState:
             return state
         state["broadened"] = True
         state["_broadened_queries"] = broadened
+        state["_broadened_for"] = broadened_for
         state["trace"].append(
             {
                 "node": "broaden_retry",
                 "broadened_queries": broadened,
+                "broadened_for": broadened_for,
                 "missing_sub_questions": missing,
             }
         )
@@ -511,14 +546,30 @@ def _broaden_search_node(state: AgentState) -> AgentState:
     is selected.
     """
     queries = state.get("_broadened_queries", [])
+    targets = state.get("_broadened_for", [])
     batches = list(state.get("_hit_batches", []))
-    for query in queries:
+    for index, query in enumerate(queries):
         if budget_left(state) <= 0:
             break
         state = TOOL_TABLE["search_nodes"](state, {"query": query, "top_k": 10})
         results = state.get("tool_results", [])
         node_ids = list(results[-1]["result_ids"]) if results else []
         batches.append(node_ids)
+        # Re-file the retry's hits under the sub-question they broaden. The
+        # wrapper filed them under the broadened query's own text, and
+        # select_evidence looks hits up BY SUB-QUESTION - so without this the
+        # retry's hits are orphaned and the retry can never change the
+        # verdict, which would make it a no-op that only spends budget.
+        target = targets[index] if index < len(targets) else None
+        if target is not None:
+            # Read, mutate and write back: the state channel hands out the
+            # mapping by value, so mutating it in place would be lost when
+            # the node returns.
+            by_question = dict(state.get("_hits_by_question", {}))
+            hits = by_question.get(query, [])
+            if hits:
+                by_question.setdefault(target, []).extend(hits)
+            state["_hits_by_question"] = by_question
     state["_hit_batches"] = batches
     return state
 
