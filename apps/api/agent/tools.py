@@ -196,9 +196,13 @@ def agent_search_nodes(state: AgentState, args: dict[str, Any]) -> AgentState:
     # sub-question's gate check (a node retrieved for A carries lex > 0
     # relative to A, and the supporter rule accepts lex > 0 for ANY
     # sub-question).
-    state.setdefault("_hits_by_question", {}).setdefault(query, []).extend(matched)
-    state.setdefault("_hits", []).extend(matched)
-    state.setdefault("_searched", []).append(query)
+    # The mapping is read, mutated and written back: the state channel hands
+    # out the mapping by value, so mutating it in place would be lost.
+    by_question = dict(state.get("_hits_by_question", {}))
+    by_question.setdefault(query, []).extend(matched)
+    state["_hits_by_question"] = by_question
+    state["_hits"] = list(state.get("_hits", [])) + list(matched)
+    state["_searched"] = list(state.get("_searched", [])) + [query]
     # retrieval.md sec 6: the fallback flag is computed by score_nodes and
     # carried on every ScoredNode; the Day-3 trace reads it from retrieval
     # rather than recomputing it. A flat-fallback document (parse_confidence

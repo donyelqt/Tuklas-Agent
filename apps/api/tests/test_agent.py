@@ -674,6 +674,108 @@ def test_agent_gate_supporters_are_inside_the_kept_set(
     assert len(kept_ids) <= 8
 
 
+def test_agent_broaden_retry_hits_reach_the_gate(civil_code: SimpleNamespace) -> None:
+    """The retry's hits must be attributed to the sub-question they broaden.
+
+    The wrapper files hits under the QUERY that retrieved them, and
+    select_evidence looks hits up BY SUB-QUESTION. The broadened query is a
+    different string from the sub-question it broadens ("art 1318" vs "What
+    does article 1318 require"), so without re-filing, the retry's hits were
+    orphaned: the second gate evaluation saw exactly the same hits as the
+    first, the verdict was identical, and the retry was a no-op that only
+    spent iteration budget.
+    """
+    from apps.api.agent import graph as agent_graph
+
+    original = agent_graph.TOOL_TABLE["search_nodes"]
+    queries: list[str] = []
+
+    def stub_first_search(state: Any, args: Any) -> Any:
+        queries.append(str(args.get("query")))
+        if len(queries) == 1:
+            # The first search finds nothing, so the gate fails and the
+            # retry fires.
+            state["tool_iterations"] = int(state.get("tool_iterations", 0)) + 1
+            state["tool_results"].append(
+                {
+                    "tool": "search_nodes",
+                    "args": args,
+                    "result_ids": [],
+                    "relevant": False,
+                    "latency_ms": 0.0,
+                }
+            )
+            state["trace"].append(
+                {
+                    "tool": "search_nodes",
+                    "args": args,
+                    "result_ids": [],
+                    "relevant": False,
+                    "branch_id": "search_nodes#1",
+                    "latency_ms": 0.0,
+                }
+            )
+            return state
+        return original(state, args)
+
+    agent_graph.TOOL_TABLE["search_nodes"] = stub_first_search
+    try:
+        state = run_agent(
+            civil_code.doc_id,
+            "What does article 1318 require?",
+            db_path=civil_code.db,
+        )
+    finally:
+        agent_graph.TOOL_TABLE["search_nodes"] = original
+
+    # The retry ran the identifier-only query.
+    assert len(queries) >= 2, "the retry must issue its own search"
+    assert queries[1] == "art 1318"
+
+    # The retry's hit RESCUES the gate: the sub-question now has a supporter
+    # and the run answers instead of abstaining.
+    per_question = state["evidence"]["gate"]["per_question"]
+    assert per_question.get("What does article 1318 require"), (
+        "the retry's hit must support the sub-question it broadens"
+    )
+    assert state["_gate_passed"] is True
+    assert state["insufficient"] is False
+
+
+def test_agent_merged_cut_keeps_every_subquestions_supporter(
+    civil_code: SimpleNamespace,
+) -> None:
+    """The merged top-8 cut must be supporter-aware.
+
+    Each sub-question has its own top-8, so a plain score-ordered cut of the
+    merged list can drop a sub-question's only supporter in favour of
+    higher-scoring nodes another sub-question contributed - and the gate then
+    fails for a sub-question retrieval had actually supported.
+    """
+    question = (
+        "What are the requisites of contracts? What is succession? "
+        "What is the registration of chattel mortgages? What is a sale?"
+    )
+    state = run_agent(civil_code.doc_id, question, db_path=civil_code.db)
+    evidence = state["evidence"]
+    kept_ids = {
+        str(item.get("node_id")) for item in evidence.get("kept", [])
+    }
+    per_question = evidence.get("gate", {}).get("per_question", {})
+    assert len(per_question) == 4
+    for sub_question, supporters in per_question.items():
+        assert supporters, f"no supporter for {sub_question!r}"
+        assert set(supporters) <= kept_ids, (
+            f"the cut dropped a supporter of {sub_question!r}: "
+            f"{sorted(set(supporters) - kept_ids)}"
+        )
+    # The window still holds.
+    assert len(kept_ids) <= 8
+    # And the gate passes: no sub-question lost its support.
+    assert state["_gate_passed"] is True
+    assert state["_gate_missing"] == []
+
+
 def test_agent_gate_fails_closed_for_an_unsearched_subquestion(
     civil_code: SimpleNamespace,
 ) -> None:
