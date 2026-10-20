@@ -704,5 +704,11 @@ def test_agent_stoplist_contract() -> None:
     for word in ("said", "provision", "provides", "article", "section"):
         assert word in STOPLIST
     assert broaden("the said provision about contracts") == "about contracts"
-    # A query made only of stopwords still yields a usable (non-empty) query.
-    assert broaden("the and of") != ""
+    # A query made only of stopwords must NOT be reduced to a stopword: "the"
+    # occurs in ~2268 corpus nodes, so a stopword-only query would score
+    # lex=1.0 against almost the whole corpus and the gate would pass on a
+    # query that means nothing. The original is the honest fallback.
+    assert broaden("the and of") == "the and of"
+    # An empty query stays empty rather than becoming a bare stopword.
+    assert broaden("") == ""
+    assert broaden("   ") == "   "

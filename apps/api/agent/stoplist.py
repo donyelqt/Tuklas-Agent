@@ -81,7 +81,13 @@ def broaden(query: str) -> str:
     if kept:
         return " ".join(kept)
     if tokens:
-        return max(tokens, key=len)
+        # Every token was a stopword. Returning the longest one would hand the
+        # caller a stopword-only query, which is WORSE than the original: a
+        # stopword like "the" occurs in ~2268 of the corpus nodes, so the
+        # min-max-normalized lex component gives the top hit lex=1.0 and the
+        # gate passes on a query that means nothing. The original query is the
+        # honest answer here - it is what the caller already tried.
+        return query
     # Empty input: nothing to broaden to. Return the original so the caller's
     # budget still accounts for the attempt rather than silently skipping.
     return query
