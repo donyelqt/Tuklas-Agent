@@ -194,6 +194,21 @@ sufficiency_gate → (more? search again : build_context) → generate → END`.
   - *What insufficiency means:* the gate verdict, NOT "are there kept nodes". A query
     with no lexical match can still leave score-0 nodes in the kept set; answering from
     those would fabricate. The abstention therefore keys on the gate verdict.
+  - *Measured limitation (2026-10-20, Day-3):* the gate as specified does not refuse
+    an out-of-domain question. `lex` is min-max normalized per query, so the
+    best-matching node always scores `lex = 1.0` whenever the query matches
+    anything at all — the strength of the match is erased, and the rule
+    `score >= 0.15 AND (lex > 0 OR identifier-hit)` is satisfied by a single
+    token appearing anywhere in the corpus. Measured: five plausible
+    unanswerable questions ("Who is the current President of the Philippines?",
+    and four others) all pass the gate with 8 citations each. The agent applies
+    the specified rule faithfully; the rule is what cannot discriminate. Absolute
+    BM25, match breadth, and term coverage were measured and none of them
+    separates answerable from unanswerable either. The consequence is recorded
+    against the Day-6 dataset in TODO.md (an `answerable: false` row must be
+    out-of-domain in a way the lexical layer can see, or the abstention score is
+    0 for every arm). Changing the lex definition is a `retrieval.md` §3 change
+    and needs a recorded tuning run; it is not made from the Day-3 slice.
 - **Backtrack:** `tool_result` carries `relevant: bool`; irrelevant branches contribute
   zero evidence nodes, logged with branch id. Visited-set prevents re-inspect loops.
   - *What makes a branch relevant:* the node it returned could itself contribute
