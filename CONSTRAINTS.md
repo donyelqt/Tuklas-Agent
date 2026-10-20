@@ -12,6 +12,7 @@ Tightening is silent; loosening requires human approval in the commit message.
 - No skipped or deleted tests without a reason in the commit message.
 - No secrets in source (API keys, tokens, absolute private paths).
 - Vectorless quarantine (research-credibility gate): `apps/api/{ingestion,retrieval,agent,generation,api}/` must not import `sentence_transformers | faiss | chromadb | qdrant_client | pgvector`, and `cosine_similarity` must not appear in `apps/api/retrieval/`. `experiments/vector/` must be imported only by `apps/api/evaluation/`. Checked by `scripts/check_no_vectors.py` (Day 3 deliverable, before any retrieval code merges).
+  - **Tightened (2026-10-21, Day 7):** the quarantined directories may not import `fastembed`, `onnxruntime` or `numpy` either. The deny list names libraries; the intent is that the vectorless arm contains no vector machinery, and those three are the runtime the dense arm is actually built on. `numpy` is not among the five named packages, and the `cosine_similarity` grep cannot see a cosine written as `np.dot(a, b) / (norm(a) * norm(b))`. Tightening is permitted without approval.
 - Agent thinness: `apps/api/agent/` must not import `sqlite3 | sqlalchemy | apps.api.models` — all node access via the 7 tools. Same script, same gate.
 - No legal-advice language in prompts/UI ("you should", "I advise", "your case", "you must") — research tool framing only.
 - This file does not get weakened to make a change pass.
@@ -37,12 +38,41 @@ Tightening is silent; loosening requires human approval in the commit message.
 
 | Metric | Today | Direction |
 |--------|-------|-----------|
-| Recall@5 (Tuklas, dev-24) | unmeasured | must not fall once first run lands |
-| MRR@10 (Tuklas, dev-24) | unmeasured | must not fall once first run lands |
-| Ask p95 latency (local) | unmeasured | record; budget set after first run |
+| Recall@5 (Tuklas, dev-24) | 0.717 | must not fall |
+| MRR@10 (Tuklas, dev-24) | 0.708 | must not fall |
+| Ask p95 latency (local) | 608,259 ms | record; budget set after first run |
 
 First benchmark run sets the ratchet values above — update this table then, not before.
 (Dev split is 24Q per `evaluation.md §1`; the 10Q smoke gate is a validity check, not the ratchet set.)
+
+**Status (2026-10-21, Day 6 + 7):** the ratchet is SET, from a real dev-24 run of
+the evaluation harness. Config `cfg_0f73ff26c0d38d54`, split seed 42, model
+`qwen2.5:3b` on ollama at temperature 0, seed 42, judge prompt `judge-v1-batch`,
+n = 24 questions x 2 arms. The values above are the Tuklas (vectorless) arm's,
+macro-averaged over the 23 answerable dev questions; the 1 unanswerable row is
+excluded from the retrieval aggregate and scored by abstention instead.
+
+Two facts about the p95 value, so it is not misread. It is 608,259 ms — over ten
+minutes — and it is the tail of a distribution in which the p50 is 2,226 ms. The
+tail is ONE question: the local model took ten minutes on a single generation
+call, and one such call in 24 sets the 95th percentile. The metric is recorded as
+measured, because a ratchet that smooths a tail away is not a ratchet. The budget
+is NOT set by this row: a p95 over 24 samples is a single order statistic, and
+"must not fall" would be a claim about noise. The p50 (2,226 ms) is the number a
+reader should compare against.
+
+The reproducible artifact is the run itself: `evaluation_runs` row `eval_083a4c15`
+with its 48 `retrieval_runs` rows in the store, joinable on
+`(evaluation_id, question_id, arm)`.
+
+**What is NOT in this table, and why.** The dense arm's numbers are not ratchet
+values: the ratchet is the vectorless arm's, and the two arms differ in more
+than the retrieval mechanism (ADR-005's identifier precedence and `ident`
+component exist only in the vectorless arm), so a ratchet that tracked both would
+be a ratchet on two different systems. The reported TEST-48 numbers live in
+`data/eval-reports/v1-test.md`, not here: evaluation.md §1 makes the test split
+the reported one and the dev split the tuning one, and a ratchet that the tuning
+split can move is not a ratchet.
 
 ## Exceptions
 
