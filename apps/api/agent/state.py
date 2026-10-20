@@ -67,6 +67,7 @@ class AgentState(TypedDict, total=False):
     _gen_seed: int
     _gen_prompt_tokens: int
     _gen_completion_tokens: int
+    _gen_stream: list[str]
     _db_path: str | None
     _searched: list[str]
     _visited: list[str]

@@ -723,6 +723,12 @@ def _generate_node_factory(generator: Generator) -> Any:
             state["_gen_prompt_tokens"] = result["prompt_tokens"]
         if result.get("completion_tokens") is not None:
             state["_gen_completion_tokens"] = result["completion_tokens"]
+        # The provider's real deltas, when the generator produced them. The SSE
+        # surface streams THESE, not a slicing of the finished answer, so the
+        # client sees the answer arrive.
+        stream = result.get("stream")
+        if isinstance(stream, list):
+            state["_gen_stream"] = [str(chunk) for chunk in stream]
         return state
 
     return _generate
