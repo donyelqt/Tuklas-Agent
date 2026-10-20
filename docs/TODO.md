@@ -108,21 +108,195 @@ points at.
 **Targets:** `apps/api/agent/`. **Depends on:** Day 2. **Must NOT import** `sqlite3`,
 `sqlalchemy`, `apps.api.models` (CONSTRAINTS.md, same script).
 
-- [ ] LangGraph graph: `START → query_plan → search → inspect → (relevant? expand/follow :
+- [x] LangGraph graph: `START → query_plan → search → inspect → (relevant? expand/follow :
   mark irrelevant + backtrack) → select_evidence → sufficiency_gate → (more? search again
-  : build_context) → generate → END`.
-- [ ] **7 thin wrappers** only (arg validation + call `retrieval.api` + trace logging).
-- [ ] Max 12 tool iterations **including** the broaden-retry; retry does not reset.
-- [ ] Sufficiency gate (binding): per-sub-question `score ≥ 0.15 AND (lex > 0 OR
+  : build_context) → generate → END`. Built in `apps/api/agent/graph.py`
+  (langgraph 0.2.76, `StateGraph` + `START`/`END`); 9 nodes — the 8 in the topology
+  plus `broaden_search`, the retry branch.
+- [x] **7 thin wrappers** only (arg validation + call `retrieval.api` + trace logging) —
+  `apps/api/agent/tools.py`, one function per tool plus `TOOL_TABLE`; the graph reaches
+  the tree through that table and nowhere else.
+- [x] Max 12 tool iterations **including** the broaden-retry; retry does not reset.
+  Every wrapper call ticks the counter; the retry spends from it.
+- [x] Sufficiency gate (binding): per-sub-question `score ≥ 0.15 AND (lex > 0 OR
   identifier-hit)`; every planned sub-question needs ≥1 supporting node (planner emitting
   0 is invalid → gate fails closed → retry plan once, then insufficient). One
   broaden-retry (stopword-strip + identifier-only, stoplist per `retrieval.md` §3),
   then `insufficient_evidence` exit with the unified abstention shape.
-- [ ] Backtrack: `relevant: bool` on every `tool_result`; irrelevant branches contribute
+  - *Implementation note:* the threshold check stays retrieval-owned — `select_evidence`
+    returns `gate.per_question` (the supporter lists) and the agent decides pass/fail
+    from it. The agent never re-scores a hit. Insufficiency is decided by that verdict,
+    NOT by "are there kept nodes": a query with no lexical match can still leave
+    score-0 nodes in the kept set, and answering from those would fabricate.
+- [x] Backtrack: `relevant: bool` on every `tool_result`; irrelevant branches contribute
   zero evidence, logged with branch id; visited-set prevents re-inspect loops.
+  - *Implementation note:* a branch is relevant iff the node it returned could itself
+    contribute evidence (≥50 chars of text AND a page span — the same two rules
+    `select_evidence` applies). A heading-only node is a dead branch, not evidence.
   - *Acceptance (PLAN.md Day 3):* multi-hop fixture trace shows ≥ 1 abandoned branch
     (relevant=false, zero evidence) + ≥ 2 inspect/expand before the answer.
     `mypy apps/api` zero errors.
+  - *Verified (2026-10-20):* 50 agent tests green (plus 4 in `test_api_v1_snapshot.py`);
+    full suite 87 passed; ruff clean; mypy clean on 29 files; `check_no_vectors.py` OK
+    (29 files scanned); zero suppression comments in `apps/api/` or `apps/web/src/`.
+    Runtime smoke:
+    a two-part question streams 2 searches, 6 inspects (1 abandoned), 2 expands, then
+    `evidence` + `done`; gibberish → canned abstention with `citations: []` and
+    `evidence_ids: []`; empty question → the legal zero-tool-call run
+    (`plan → evidence(empty) → done`); an unknown document raises `NOT_FOUND` 404 and
+    the SSE path yields one terminal `error` event carrying the api.md §1 body.
+  - *Gate fails closed for an unsearched sub-question (2026-10-20).* `select_evidence`
+    evaluates each sub-question against the WHOLE kept set, so a sub-question that was
+    never searched still collected supporters from the nodes another sub-question
+    found — and the gate passed for a question the agent never looked up. Measured
+    with a budget of 1 (which truncates the search loop after the first
+    sub-question): both sub-questions reported 8 supporters and the gate passed.
+    The agent now puts only the SEARCHED sub-questions to the gate; an unsearched
+    one counts as missing and the run abstains. The retrieval contract is
+    untouched — the agent simply stops asking about a question it did not look up.
+    After: budget 1 → gate fails closed, `insufficient: true`, 0 citations; budget ≥ 2
+    → gate passes and answers.
+
+  - *Request validation (2026-10-20):* `max_iterations` outside api.md §3's 1..12 is
+    a 422 (`VALIDATION_ERROR`), not a silent clamp — 13 used to clamp to a
+    1-iteration run and 0/-1 produced a zero-iteration run that answered with the
+    canned abstention as if it were a real result. The route layer validates
+    `page`/`pageSize`/`depth` the same way; the agent now hands it a typed 422.
+
+  - *An irrelevant branch's hits no longer reach the evidence pool (2026-10-20).*
+    `search_nodes` returns the document's top-k nodes whether or not the query
+    matched them — a non-matching query comes back with every score at 0.0.
+    The wrapper fed ALL of them to `select_evidence` while marking the branch
+    irrelevant, which breaks architecture.md §4 ("irrelevant branches contribute
+    zero evidence nodes") twice over: the score-0 nodes could occupy kept
+    slots, and `select_evidence` dedups by `node_id` keeping the FIRST
+    occurrence, so a score-0 copy could shadow the same node's genuinely-scored
+    copy from a later, relevant search. Measured on "article 1318" (19 of the
+    20 top nodes overlap with the irrelevant branch): before, the kept set held
+    `article_1318` (score 1.000) plus three score-0 nodes — a heading, a
+    section and a book — that a reader would have been shown as evidence;
+    after, it holds `article_1318` alone. Only the MATCHED hits feed the pool
+    now.
+
+  - *SSE streaming (2026-10-20):* the first implementation ran the whole graph
+    and replayed the accumulated trace as events. The event SEQUENCE was
+    correct, so a sequence assertion could not see it — but nothing was
+    streamed, which PRD US-3 requires ("I want to see the agent's
+    search→inspect→expand steps streamed"). Measured before: first event and
+    last event both at 0.153s (one burst). After: `plan` at 0.011s, then each
+    `tool_call`/`tool_result` pair as that tool completes, tokens at the end.
+    The graph now runs through LangGraph's `stream(stream_mode="updates")` and
+    the SSE layer emits each trace entry exactly once as it appears. The test
+    discriminates instead of restating the implementation: it counts the tool
+    calls and asserts none has run when the `plan` event is yielded (it fails
+    against the batch implementation).
+
+  - *Deferred to Day 4:* the `follow_reference` wrapper exists and honours the
+    `resolved|unresolved|error` contract, but the `references_` table is empty —
+    ingestion does not parse reference edges yet (Day 1 scope). The graph therefore
+    expands rather than follows, and no reference branch is reachable until that
+    parsing lands. Recording it here rather than pretending the branch is exercised.
+
+  - *Measured finding — `expand_context` results cannot enter the evidence set
+    (2026-10-20).* `select_evidence` takes the SCORED hits from `search_nodes`; a
+    node discovered by expanding a hit was never scored, so it has no score and
+    cannot be a supporter. The expansion is therefore a *reading* step (it tells
+    the trace and the answer which neighbours surround the hit) and not a second
+    source of evidence. This matches `retrieval.md` §5 — `select_evidence(hits:
+    list[NodeHit], sub_questions)` — but it means the "expand" branch of the
+    topology changes what the agent READS, not what it CITES. Recorded because a
+    reader could otherwise assume an expanded neighbour can be cited.
+
+  - *Measured finding — the specified gate cannot refuse an out-of-domain
+    question (2026-10-20).* This is the most consequential finding of the slice
+    and it blocks the Day-6 dataset, so it is recorded here in full.
+    PRD US-2 and `evaluation.md` §4 make refusal binding: on an
+    `answerable: false` question, "correct refusal = 1, **any cited answer = 0**".
+    Measured on the Civil Code, the gate as specified passes EVERY plausible
+    unanswerable question:
+    | question | gate | citations |
+    |---|---|---|
+    | Who is the current President of the Philippines? | PASS | 8 |
+    | What is the registration fee for a fishing license? | PASS | 8 |
+    | How many days do I have to file an appeal to the Court of Appeals? | PASS | 8 |
+    | What is the penalty for driving without a driver's license? | PASS | 8 |
+    | When did the Civil Code take effect? | PASS | 8 |
+    Root cause, measured (not inferred): `lex` is BM25 **min-max normalized per
+    query** (`retrieval.md` §3), so the best-matching node always scores
+    `lex = 1.0` whenever the query matches anything at all — the strength of the
+    match is erased. The gate's rule (`score >= 0.15 AND (lex > 0 OR ident-hit)`)
+    is therefore satisfied by a *single token* appearing anywhere in the
+    document. "Who is the current President of the Philippines?" matches 2300 of
+    2412 nodes; "What are the requisites of contracts?" matches 2302. The
+    discriminating signal does not exist in the lexical layer.
+    The refusal therefore triggers on TOKEN ABSENCE, not on topic. Measured
+    exactly: one corpus occurrence of any query token is enough for the gate to
+    pass with `lex = 1.0` — `fishing` (3 nodes), `driving` (2), `appeal` (4),
+    `president` (1) all pass; `zzzznotaword` and `xylophone zygote` (0 nodes)
+    fail closed and abstain correctly. So the constraint on a planted
+    `answerable: false` row is stricter than "out-of-domain": every content
+    token of the question must be absent from the corpus, or the question will
+    be answered with citations and scored abstention = 0.
+
+    Ruled out by measurement, so the next reader does not repeat the search:
+    - **absolute BM25** instead of min-max: unanswerable scores are HIGHER
+      (36.4 for the appeal question vs 15.3 for the requisites question);
+    - **match breadth**: ~2300/2412 for both answerable and unanswerable;
+    - **term coverage** (max content tokens of the query present in one kept
+      node): answerable 0.67–1.00, unanswerable 0.33–1.00 — overlapping;
+    - **raw token isolation**: `model.get_scores(["zzzznotaword"])` correctly
+      returns 0 for every document, so `rank_bm25` is not the culprit — the
+      normalization is.
+    The agent is NOT at fault: the gate reads retrieval's own verdict and
+    applies the specified threshold. The specified threshold is what cannot
+    discriminate. Consequences and the decision:
+    - The Day-6 dataset's `answerable: false` rows must be planted so the
+      question is out-of-domain for the *corpus* in a way the lexical layer can
+      see — e.g. naming a subject with no occurrence in the corpus at all
+      ("fishing license") — or the abstention score will be 0 for every arm and
+      the comparison will report a refusal failure that is really a dataset
+      failure.
+    - A refusal signal that survives a min-max-normalized lexical layer is
+      needed if out-of-domain refusal is a product requirement. That is a
+      retrieval-layer change (an absolute-score component, or a coverage
+      requirement), which is Day-2/§3 territory and needs a recorded tuning run
+      before it can change the frozen contract.
+    - **Not changed here.** `retrieval.md` §3 is frozen and the weights/lex
+    definition are authoritative; inventing a new signal inside the Day-3 slice
+    would silently change the retrieval contract and invalidate the Day-2
+    golden set. Recorded for the Day-6 dataset design and the retrieval tuning
+      run instead.
+
+  - *Measured finding — the broaden-retry is unreachable on this corpus (2026-10-20).*
+    `retrieval.md` §3 says the retry fires when the lex layer is all-zero, and §7
+    makes it the one recovery path before `insufficient_evidence`. On the Civil
+    Code it cannot fire, and the reason is mechanical: BM25's lex layer is
+    min-max normalized over the query's candidates, so a query that matches
+    exactly ONE node gives that node `lex = 1.0` — which clears the 0.15
+    threshold on its own. The gate therefore fails only when the query matches
+    NO node at all, and such a query is built only from non-stopwords (any
+    stoplist word — `the`, `of`, `article` … — occurs in 44–2570 nodes, so it
+    always produces a lexical match and the gate passes). A query made only of
+    non-stopwords is exactly the query the stoplist cannot reduce, so the
+    "stopword-strip + identifier-only" retry would re-run the identical search.
+    Measured: 0 rescue cases across every search performed (stopword+real-word
+    combinations, title-only words, short-text nodes, identifier queries).
+    Two consequences, both recorded rather than papered over:
+    (a) the retry is skipped when the strip cannot change the query — re-running
+    an identical search is provably useless because retrieval is deterministic,
+    and it would spend iteration budget to learn nothing;
+    (b) a query the gate fails on now goes straight to `insufficient_evidence`.
+    The mechanism is implemented, and the retry's FIRING path is exercised by a
+    test that stubs the first search to return nothing (so the gate fails and
+    the retry runs); the retry is nonetheless unreachable on the real corpus.
+    What is missing is a corpus where it can fire by itself. **Open question for
+    the corpus decision (D2):**
+    the retry is specified against a scoring model whose lex layer does not
+    min-max-normalize a single match to 1.0. Either the corpus gains a document
+    whose headings are the only match for a plausible question, or
+    `retrieval.md` §3's premise is amended to match how BM25 actually scores.
+    Not resolved unilaterally — the spec is authoritative and the corpus is
+    already pinned.
 
 ---
 
@@ -150,8 +324,10 @@ points at.
 **Targets:** `apps/web/src/app/app/` (new route), new components. **Depends on:** Day 4.
 
 - [ ] Three panes: tree / source / answer at `/app/*`.
-- [ ] SSE event payload schemas spec'd in `api.md` **before** this slice (PLAN.md gap #18)
-  and client built against the frozen sequence: `plan → tool_call → tool_result →
+- [x] SSE event payload schemas spec'd in `api.md` §3 **before** this slice (PLAN.md gap
+  #18 — closed by the Day-3 slice: the schemas and the pinned abstention string are in
+  api.md, with the Day-3 contract test pinning the order).
+- [ ] Client built against the frozen sequence: `plan → tool_call → tool_result →
   (repeat) → evidence → token* → done | error`.
 - [ ] Citation click → `GET /v1/nodes/{id}/source` → source pane renders
   `text + page + hierarchy_path`.
@@ -184,6 +360,17 @@ slices 1–5.
   per-question rows + aggregates + system stats per `api.md` §4.
 - [ ] Frozen 72Q dataset at `data/datasets/v1/{dev,test}.json` (24 dev + 48 test, 7
   categories, ≥3 dev + ≥6 test per category, ≥5 `answerable: false`, seed 42).
+  - *Constraint from the Day-3 measured finding:* an `answerable: false` row must
+    have EVERY content token absent from the corpus. The gate as specified
+    passes any question where one token occurs even once in the corpus
+    (`lex = 1.0` from min-max normalization), so a planted unanswerable
+    question that shares ordinary vocabulary with the corpus — "fishing
+    license" (3 and 18 occurrences) — is answered with 8 citations, and
+    `evaluation.md` §4 scores that as abstention = 0 for BOTH arms. Design the
+    rows against that constraint, or the refusal metric measures the dataset
+    rather than the system. A dataset built this way also has to be honest about
+    what it measures: refusing a question whose vocabulary is absent is a
+    weaker test than refusing a question that is out-of-domain in substance.
 - [ ] Arm A (Tuklas): full agent loop, slices 1–5.
 - [ ] Arm B (Vector): dense retrieval under `experiments/vector/` only, embedding model
   from D3. Exposes the same retrieval result shape so "arms differ only in retrieval"
