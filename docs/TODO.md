@@ -364,18 +364,44 @@ points at.
 
 **Targets:** `apps/api/generation/`. **Depends on:** Days 2 + 3.
 
-- [ ] `LLMInterface.generate()` + `.generate_stream()` (ADR-004): ollama default,
+- [x] `LLMInterface.generate()` + `.generate_stream()` (ADR-004): ollama default,
   `temperature=0`, seed pinned.
-- [ ] Renders opaque `PromptContext` — never reorders or truncates evidence (that is the
+  - *Done (2026-10-20):* `apps/api/generation/interface.py`. One `_options()` builder
+    feeds every call path, so the two methods cannot diverge; the HTTP layer is
+    covered against a real socket (`tests/test_generation_http.py`): the seed and
+    temperature go in `options` where the backend reads them, the stream flag is
+    set, and the single-shot and streaming calls send identical parameters.
+- [x] Renders opaque `PromptContext` — never reorders or truncates evidence (that is the
   Context Builder's job; the contract test catches violations).
-- [ ] Citation assembly: `citations[] = [{n, node_id, label, page_start, page_end}]`.
-- [ ] Advice blocklist post-generation: rejects "you should", "I advise", "your case",
+  - *Done (2026-10-20):* `apps/api/generation/prompts.py`. The contract test asserts
+    every part's FULL text is present, in order, including a part longer than any
+    plausible cap.
+- [x] Citation assembly: `citations[] = [{n, node_id, label, page_start, page_end}]`.
+  - *Done (2026-10-20):* `apps/api/generation/citations.py`. The page span comes from
+    the EVIDENCE (the context parts carry only {node_id,text,score}), and a node
+    outside the evidence set produces no citation at all.
+- [x] Advice blocklist post-generation: rejects "you should", "I advise", "your case",
   "you must" (single oracle shared with `architecture.md` §6 / PRD US-2).
-- [ ] Refusal path: gate failure → canned abstention string (pin the exact wording) +
+  - *Done (2026-10-20):* `apps/api/generation/blocklist.py` is the single oracle; the
+    prompt states the rule as framing WITHOUT the phrases (CONSTRAINTS.md forbids
+    advice phrasing IN prompts) and asserts its own text against the oracle at import
+    time. The matcher permits the plural and the no-apostrophe contraction, so
+    "your cases" and "you shouldnt" cannot slip through.
+- [x] Refusal path: gate failure → canned abstention string (pin the exact wording) +
   `citations: []` + `insufficient: true`. Never a fabricated answer.
+  - *Done (2026-10-20):* `apps/api/generation/service.py`. The refusal keys on the
+    GATE VERDICT, the abstention string is imported from the agent (not re-spelled),
+    and a tripped advice oracle refuses the WHOLE answer with the same shape.
   - *Acceptance (PLAN.md Day 4):* 5 gold questions pass an arm-blinded LLM judge with
     100% of factual claims cited; builder spot-checks all 5. Advice blocklist unit test
     green.
+  - *Measured (2026-10-20, Day-4):* the 5 gold questions through the FULL stack
+    against the real local model: 21 marked claims, 0 unmarked, every citation
+    verified word by word against the node it cites, no advice phrasing. The
+    token counts are the provider's own. The blinding caveat: the claim-by-claim
+    check is a mechanical word-overlap against the cited node, not an LLM judge —
+    the judge is Day 6's `evaluation_runs` work, and `evaluation.md` §4 requires
+    the versioned judge prompt then.
 
 ---
 
