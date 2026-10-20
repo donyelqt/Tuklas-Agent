@@ -181,6 +181,15 @@ points at.
     document. "Who is the current President of the Philippines?" matches 2300 of
     2412 nodes; "What are the requisites of contracts?" matches 2302. The
     discriminating signal does not exist in the lexical layer.
+    The refusal therefore triggers on TOKEN ABSENCE, not on topic. Measured
+    exactly: one corpus occurrence of any query token is enough for the gate to
+    pass with `lex = 1.0` — `fishing` (3 nodes), `driving` (2), `appeal` (4),
+    `president` (1) all pass; `zzzznotaword` and `xylophone zygote` (0 nodes)
+    fail closed and abstain correctly. So the constraint on a planted
+    `answerable: false` row is stricter than "out-of-domain": every content
+    token of the question must be absent from the corpus, or the question will
+    be answered with citations and scored abstention = 0.
+
     Ruled out by measurement, so the next reader does not repeat the search:
     - **absolute BM25** instead of min-max: unanswerable scores are HIGHER
       (36.4 for the appeal question vs 15.3 for the requisites question);
@@ -301,12 +310,16 @@ slices 1–5.
 - [ ] Frozen 72Q dataset at `data/datasets/v1/{dev,test}.json` (24 dev + 48 test, 7
   categories, ≥3 dev + ≥6 test per category, ≥5 `answerable: false`, seed 42).
   - *Constraint from the Day-3 measured finding:* an `answerable: false` row must
-    be out-of-domain in a way the lexical layer can see. The gate as specified
-    passes any question that matches a single corpus token, so a planted
-    unanswerable question that shares ordinary vocabulary with the corpus will
-    be answered with citations, and `evaluation.md` §4 scores that as
-    abstention = 0 for BOTH arms. Design the rows against that constraint, or
-    the refusal metric measures the dataset rather than the system.
+    have EVERY content token absent from the corpus. The gate as specified
+    passes any question where one token occurs even once in the corpus
+    (`lex = 1.0` from min-max normalization), so a planted unanswerable
+    question that shares ordinary vocabulary with the corpus — "fishing
+    license" (3 and 18 occurrences) — is answered with 8 citations, and
+    `evaluation.md` §4 scores that as abstention = 0 for BOTH arms. Design the
+    rows against that constraint, or the refusal metric measures the dataset
+    rather than the system. A dataset built this way also has to be honest about
+    what it measures: refusing a question whose vocabulary is absent is a
+    weaker test than refusing a question that is out-of-domain in substance.
 - [ ] Arm A (Tuklas): full agent loop, slices 1–5.
 - [ ] Arm B (Vector): dense retrieval under `experiments/vector/` only, embedding model
   from D3. Exposes the same retrieval result shape so "arms differ only in retrieval"
