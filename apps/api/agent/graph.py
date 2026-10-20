@@ -332,9 +332,21 @@ def _select_evidence_node(state: AgentState) -> AgentState:
     kept.sort(key=lambda item: (-float(item.get("score", 0.0)), str(item.get("node_id"))))
     # The top-8 evidence window (retrieval.md sec 5) applies to the MERGED
     # set too: the agent assembles one context, and that context must not
-    # carry more nodes than the window allows. The gate's supporters are
-    # never dropped by this cut - only non-supporting nodes are.
+    # carry more nodes than the window allows.
     kept = kept[:_EVIDENCE_KEEP_TOP]
+    # The gate's supporter lists are then filtered to the kept window. Each
+    # sub-question had its OWN top-8, so before this filter the supporters
+    # could name nodes the merged evidence set does not carry - the gate
+    # would then pass on supporters the answer never shows. architecture.md
+    # sec 4: the gate passes iff every sub-question has >= 1 supporting node
+    # IN THE KEPT SET.
+    kept_ids = {str(item.get("node_id")) for item in kept}
+    per_question = {
+        sub_question: [
+            node_id for node_id in supporters if node_id in kept_ids
+        ]
+        for sub_question, supporters in per_question.items()
+    }
     gate_ids: list[str] = []
     for node_ids in per_question.values():
         for node_id in node_ids:

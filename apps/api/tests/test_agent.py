@@ -641,6 +641,39 @@ def test_agent_supporter_sets_do_not_cross_subquestions(
     assert len(state["evidence"]["kept"]) <= 8
 
 
+def test_agent_gate_supporters_are_inside_the_kept_set(
+    civil_code: SimpleNamespace,
+) -> None:
+    """architecture.md sec 4: the gate passes iff every sub-question has >= 1
+    supporting node IN THE KEPT SET.
+
+    Each sub-question has its own top-8, so before the supporters were
+    filtered to the merged window, a sub-question's supporter list could name
+    nodes the merged evidence set does not carry - the gate would then pass on
+    supporters the answer never shows. Measured before: 8 of the 16 supporters
+    were outside the 8-node kept set.
+    """
+    state = run_agent(
+        civil_code.doc_id,
+        "What is succession? What is the registration of chattel mortgages?",
+        db_path=civil_code.db,
+    )
+    evidence = state["evidence"]
+    kept_ids = {
+        str(item.get("node_id")) for item in evidence.get("kept", [])
+    }
+    gate = evidence.get("gate", {})
+    # Every supporter the gate names is in the kept set.
+    for sub_question, supporters in gate.get("per_question", {}).items():
+        assert set(supporters) <= kept_ids, (
+            f"{sub_question!r} claims supporters outside the kept set: "
+            f"{sorted(set(supporters) - kept_ids)}"
+        )
+    assert set(gate.get("node_ids", [])) <= kept_ids
+    # The kept set respects the window.
+    assert len(kept_ids) <= 8
+
+
 def test_agent_gate_fails_closed_for_an_unsearched_subquestion(
     civil_code: SimpleNamespace,
 ) -> None:
