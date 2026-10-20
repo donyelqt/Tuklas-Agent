@@ -643,6 +643,18 @@ def _build_context_node(state: AgentState) -> AgentState:
     return state
 
 
+def _default_generator() -> Generator:
+    """The configured generator: the real local LLM (ADR-004).
+
+    Imported lazily so the agent module does not depend on the generation
+    package at import time, and so a caller that passes its own generator
+    never pays for constructing one.
+    """
+    from apps.api.generation.config import generator_from_env
+
+    return generator_from_env()
+
+
 def _assemble_citations(
     parts: list[dict[str, Any]], evidence: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -743,7 +755,11 @@ def build_graph(generator: Generator | None = None) -> CompiledStateGraph:
     select_evidence, sufficiency_gate, broaden_search, build_context, generate.
     """
     graph = StateGraph(AgentState)
-    gen: Generator = generator if generator is not None else StubGenerator()
+    # The REAL generator by default, for the same reason as the ask surface:
+    # the stub applies no advice oracle and no refusal path. A caller that
+    # wants the deterministic model-free answer passes StubGenerator
+    # explicitly.
+    gen: Generator = generator if generator is not None else _default_generator()
 
     graph.add_node("query_plan", _query_plan_node)
     graph.add_node("search", _search_node)

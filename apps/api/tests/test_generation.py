@@ -51,7 +51,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
-from apps.api.agent.graph import CANNED_ABSTENTION
+from apps.api.agent.graph import CANNED_ABSTENTION, StubGenerator
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from apps.api.generation.interface import GenerationResult, LLMInterface
@@ -1030,6 +1030,79 @@ def test_generation_ask_trace_records_the_run(civil_code: SimpleNamespace) -> No
     import json
 
     assert json.loads(row["evidence_ids"]) == list(response["evidence_ids"])
+
+
+def test_generation_the_real_generator_is_the_default() -> None:
+    """The ask surface defaults to the REAL local LLM, not the stub.
+
+    The model-free stub applies no advice oracle and no refusal path, so a
+    request answered through it would bypass the safety machinery the
+    generation layer exists to provide. The stub is explicit opt-in.
+    """
+    from apps.api.agent import ask as ask_module
+    from apps.api.agent import graph as graph_module
+    from apps.api.generation.config import generator_from_env
+    from apps.api.generation.service import GenerationService
+
+    # The default resolves to a generator built from the CONFIG, not the
+    # stub.
+    default = ask_module._default_generator()
+    assert not isinstance(default, StubGenerator), (
+        "the ask surface must not default to the model-free stub"
+    )
+    # The configured generator exposes the backend it will talk to.
+    backend = cast("GenerationService", default).llm
+    assert backend.backend == "ollama"
+    assert backend.temperature == 0.0
+    assert backend.seed == 42
+
+    # The graph's own default is the same.
+    graph_default = graph_module._default_generator()
+    assert not isinstance(graph_default, StubGenerator)
+
+    # And the configured generator honours the environment.
+    import os
+
+    os.environ["TUKLAS_LLM_MODEL"] = "a-different-model"
+    os.environ["TUKLAS_LLM_SEED"] = "7"
+    try:
+        configured = generator_from_env()
+        assert configured.llm.model == "a-different-model"
+        assert configured.llm.seed == 7
+    finally:
+        del os.environ["TUKLAS_LLM_MODEL"]
+        del os.environ["TUKLAS_LLM_SEED"]
+
+
+def test_generation_the_service_never_returns_an_empty_answer() -> None:
+    """A backend that produced no text is a 503, never an empty answer."""
+    from apps.api.generation.service import GenerationService
+
+    class _EmptyLLM:
+        model = "m"
+        backend = "ollama"
+        temperature = 0.0
+        seed = 42
+
+        def generate(
+            self,
+            prompt: str,
+            stop: list[str] | None = None,
+            max_tokens: int | None = None,
+        ) -> GenerationResult:
+            # A backend that answers with an empty body must not be able to
+            # produce a successful-looking answer.
+            raise AssertionError("the interface must reject an empty response")
+
+    service = GenerationService(cast("LLMInterface", _EmptyLLM()))
+    with pytest.raises(AssertionError):
+        service.answer(
+            {"parts": [{"node_id": "n1", "text": "x" * 100, "score": 1.0}]},
+            "q",
+            ["q"],
+            {"kept": []},
+            gate_passed=True,
+        )
 
 
 def test_generation_never_degrades_to_a_fake_answer() -> None:

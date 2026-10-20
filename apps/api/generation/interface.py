@@ -206,9 +206,15 @@ class LLMInterface:
         if not isinstance(data, dict):
             raise self._unavailable("invalid-response")
         text = data.get("response")
+        if not isinstance(text, str) or not text.strip():
+            # A body with no usable text is an unusable backend, not an empty
+            # answer: api.md sec 1 puts "returns an unusable body" under
+            # LLM_UNAVAILABLE. Answering "" with a 200 would present a backend
+            # failure as a successful (and empty) answer.
+            raise self._unavailable("empty-response")
         prompt_tokens, completion_tokens = self._counts(data)
         return GenerationResult(
-            text=text if isinstance(text, str) else "",
+            text=text,
             model=str(data.get("model") or self.model),
             backend=self.backend,
             temperature=self.temperature,
@@ -279,6 +285,10 @@ class LLMInterface:
                         counts = data
         except httpx.HTTPError as exc:
             raise self._unavailable(type(exc).__name__) from exc
+        if not chunks:
+            # A stream that carried no text is an unusable backend, not an
+            # empty answer - the same rule as the single-shot path.
+            raise self._unavailable("empty-response")
         prompt_tokens, completion_tokens = self._counts(counts)
         result = GenerationResult(
             text="".join(chunks),

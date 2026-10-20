@@ -231,6 +231,81 @@ def test_generation_unusable_body_is_a_503_not_an_answer(recorder: Any) -> None:
         thread.join(timeout=5)
 
 
+def test_generation_an_empty_response_is_a_503_not_an_empty_answer(
+    recorder: Any,
+) -> None:
+    """A backend that answers with no usable text is UNAVAILABLE.
+
+    api.md sec 1 puts "returns an unusable body" under LLM_UNAVAILABLE.
+    Answering "" with a 200 would present a backend failure as a successful
+    (and empty) answer, which is the "fake answer" shape ADR-004 forbids.
+    """
+    from apps.api.ingestion import errors
+
+    class _Empty(BaseHTTPRequestHandler):
+        def log_message(self, *args: Any) -> None:
+            """Silence the default stderr logging."""
+
+        def do_POST(self) -> None:
+            body = json.dumps({"model": "recorded-model", "done": True}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = HTTPServer(("127.0.0.1", 0), _Empty)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        llm = LLMInterface(
+            model="recorded-model", base_url=f"http://127.0.0.1:{port}", seed=42
+        )
+        with pytest.raises(errors.ApiError) as excinfo:
+            llm.generate("the question")
+        assert excinfo.value.code == "LLM_UNAVAILABLE"
+        assert excinfo.value.status == 503
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_generation_a_stream_with_no_text_is_a_503(recorder: Any) -> None:
+    """A stream that carries no text is an unusable backend too."""
+    from apps.api.ingestion import errors
+
+    class _EmptyStream(BaseHTTPRequestHandler):
+        def log_message(self, *args: Any) -> None:
+            """Silence the default stderr logging."""
+
+        def do_POST(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson")
+            self.end_headers()
+            self.wfile.write(
+                json.dumps({"response": "", "done": True}).encode() + b"\n"
+            )
+            self.wfile.flush()
+
+    server = HTTPServer(("127.0.0.1", 0), _EmptyStream)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        llm = LLMInterface(
+            model="recorded-model", base_url=f"http://127.0.0.1:{port}", seed=42
+        )
+        with pytest.raises(errors.ApiError) as excinfo:
+            llm.stream_result("the question")
+        assert excinfo.value.code == "LLM_UNAVAILABLE"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def test_generation_a_closed_port_fails_fast(recorder: Any) -> None:
     """A backend that is not there fails in seconds, not in the read timeout."""
     import time
