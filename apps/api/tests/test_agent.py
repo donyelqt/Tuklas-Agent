@@ -116,10 +116,86 @@ def test_agent_broaden_retry_does_not_reset_budget(civil_code: SimpleNamespace) 
         entry for entry in state.get("trace", []) if entry.get("node") == "broaden_retry"
     ]
     assert len(broaden_entries) == 1
-    # The retry consumes budget: the counter after the retry is still counted.
+    # On this corpus the retry is SKIPPED (the stoplist cannot reduce a query
+    # of non-stopwords), so it spends no budget - the counter is the
+    # pre-gate search alone. The counter is still within the cap, and the
+    # retry was attempted exactly once.
+    assert broaden_entries[0]["result"] == "skipped_no_reduction"
     assert state["tool_iterations"] > 0
     assert state["tool_iterations"] <= MAX_TOOL_ITERATIONS
     assert state["broadened"] is True
+
+
+def test_agent_broaden_retry_spends_budget_and_does_not_reset(
+    civil_code: SimpleNamespace,
+) -> None:
+    """The retry must SPEND from the budget, not reset it.
+
+    architecture.md sec 4: "max 12 tool iterations per ask, including the one
+    broaden-retry below. Retry does not reset the counter."
+
+    The retry is unreachable on this corpus (measured: a query of non-stopwords
+    cannot be reduced, and a query with a stopword always passes the gate), so
+    the first search is stubbed to return nothing. That forces the gate to
+    fail and the retry to fire, which is the only way to observe the retry's
+    effect on the counter.
+    """
+    from apps.api.agent import graph as agent_graph
+
+    original = agent_graph.TOOL_TABLE["search_nodes"]
+    calls: list[str] = []
+
+    def stub_first_search(state: Any, args: Any) -> Any:
+        calls.append(str(args.get("query")))
+        if len(calls) == 1:
+            # The first search finds nothing: the gate fails, so the retry
+            # fires. Recorded exactly like a real no-hit search.
+            state["tool_iterations"] = int(state.get("tool_iterations", 0)) + 1
+            state["tool_results"].append(
+                {
+                    "tool": "search_nodes",
+                    "args": args,
+                    "result_ids": [],
+                    "relevant": False,
+                    "latency_ms": 0.0,
+                }
+            )
+            state["trace"].append(
+                {
+                    "tool": "search_nodes",
+                    "args": args,
+                    "result_ids": [],
+                    "relevant": False,
+                    "branch_id": "search_nodes#1",
+                    "latency_ms": 0.0,
+                }
+            )
+            return state
+        return original(state, args)
+
+    agent_graph.TOOL_TABLE["search_nodes"] = stub_first_search
+    try:
+        state = run_agent(
+            civil_code.doc_id,
+            "What are the requisites of contracts?",
+            max_iterations=12,
+            db_path=civil_code.db,
+        )
+    finally:
+        agent_graph.TOOL_TABLE["search_nodes"] = original
+
+    # The retry fired and ran a search of its own.
+    broaden_entries = [
+        entry for entry in state.get("trace", []) if entry.get("node") == "broaden_retry"
+    ]
+    assert len(broaden_entries) == 1
+    assert broaden_entries[0].get("broadened_queries"), "the retry did not run a search"
+    assert len(calls) >= 2, "the retry must issue its own search"
+
+    # The counter was NOT reset by the retry: it counted every call.
+    assert state["tool_iterations"] == len(state.get("tool_results", []))
+    assert state["tool_iterations"] >= 2
+    assert state["tool_iterations"] <= MAX_TOOL_ITERATIONS
 
 
 # ---------------------------------------------------------------------------
