@@ -40,9 +40,6 @@ from apps.api.agent.trace import record_ask
 from apps.api.ingestion import errors
 from apps.api.ingestion.service import DB_PATH as DEFAULT_DB_PATH
 
-#: Characters per streamed token event.
-TOKEN_CHUNK_CHARS = 80
-
 _LOG = logging.getLogger(__name__)
 
 #: The AskResponse keys (api.md sec 3).

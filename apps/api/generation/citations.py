@@ -76,10 +76,23 @@ def assemble_citations(
     ``parts`` are the PromptContext parts in the order they were rendered;
     ``evidence`` is the kept evidence the Context Builder was given. The
     result is ordered like ``parts``, numbered from 1.
+
+    The number is the part's POSITION in the rendered prompt, not the count
+    of emitted citations. The prompt numbers every part `[1] [2] [3]` and
+    tells the model to "cite an entry by its number alone", so a citation's
+    ``n`` must be the number the prompt showed for that part. Numbering by
+    the emitted count instead would shift every marker after a skipped part,
+    so a model's ``[3]`` would resolve to nothing and its ``[2]`` would
+    point at the WRONG node.
+
+    A part whose node is not in the evidence set gets NO citation (no page
+    span is invented), but the numbering of the parts around it is
+    unchanged - the gap is the point: ``n`` is the prompt's number, not a
+    position in this list.
     """
     by_id = _kept_by_id(evidence)
     citations: list[dict[str, Any]] = []
-    for part in parts:
+    for position, part in enumerate(parts, start=1):
         if not isinstance(part, dict):
             continue
         node_id = str(part.get("node_id", ""))
@@ -87,11 +100,13 @@ def assemble_citations(
             continue
         item = by_id.get(node_id)
         if item is None:
-            # Not in the evidence set: no citation is invented for it.
+            # Not in the evidence set: no citation is invented for it. The
+            # numbering of the other parts is untouched, so the prompt's
+            # [n] still resolves to the right node.
             continue
         citations.append(
             {
-                "n": len(citations) + 1,
+                "n": position,
                 "node_id": node_id,
                 "label": _label(item, node_id),
                 "page_start": _page(item, "page_start"),

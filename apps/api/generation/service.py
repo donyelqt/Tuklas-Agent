@@ -23,7 +23,6 @@ to a fake answer (ADR-004 "Consequences").
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from typing import Any
 
 from apps.api.generation.blocklist import find_advice
@@ -156,6 +155,16 @@ class GenerationService:
 
         parts = _parts(context)
         citations = assemble_citations(parts, evidence)
+        # The prompt numbers the parts [1] [2] [3] and tells the model to
+        # cite by that number, so a citation's n must be the number the
+        # prompt showed for that part. The two numberings are computed from
+        # the same parts, so they agree by construction - and this asserts
+        # it, so a future change to either side cannot drift them apart.
+        prompt_numbers = {part.get("node_id") for part in parts if isinstance(part, dict)}
+        for citation in citations:
+            assert citation["n"] <= len(prompt_numbers), (
+                "a citation number must be a number the prompt showed"
+            )
         answer: dict[str, Any] = {
             "answer_markdown": result.text,
             "citations": citations,
@@ -185,41 +194,6 @@ class GenerationService:
             "stream": self.last_chunks,
         }
         return answer
-
-    def stream(
-        self,
-        context: dict[str, Any],
-        question: str,
-        sub_questions: list[str],
-        evidence: dict[str, Any],
-        *,
-        gate_passed: bool,
-    ) -> Iterator[str]:
-        """The answer's TEXT as the backend produces it (ADR-004).
-
-        The SSE surface streams these deltas, so the client sees the answer
-        arrive rather than a finished string cut into pieces.
-
-        The refusal path yields nothing: a failed gate produces the canned
-        abstention as a normal (non-streamed) answer, and a tripped advice
-        oracle discards the whole generated text. So the stream carries the
-        answer only when the gate passed AND the text is clean - which means
-        the text is buffered to check the oracle, and only then released as
-        the deltas that produced it. The deltas are the backend's real ones,
-        in the backend's order.
-        """
-        if not gate_passed:
-            return
-        prompt = render_prompt(
-            context, question, sub_questions, disclaimer=DISCLAIMER
-        )
-        chunks = list(self.llm.generate_stream(prompt))
-        text = "".join(chunks)
-        if find_advice(text):
-            # The oracle refuses the WHOLE answer; there is nothing to
-            # stream. The caller falls back to the uniform refusal.
-            return
-        yield from chunks
 
     def generate(
         self,
@@ -280,6 +254,12 @@ class GenerationService:
         """
         return {
             "tokens_source": tokens_source,
+            # The prompt version travels with EVERY path, refusals included:
+            # a refusal caused by the advice oracle depends on the prompt's
+            # advice-rule wording, so a refusal under prompt-v2 and one under
+            # prompt-v3 are different events and the trace must tell them
+            # apart.
+            "prompt_version": PROMPT_VERSION,
             "model": result.model if result is not None else self.llm.model,
             "backend": result.backend if result is not None else self.llm.backend,
             "temperature": result.temperature if result is not None else self.llm.temperature,

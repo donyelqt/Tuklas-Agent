@@ -1,9 +1,19 @@
 """The local-LLM seam (ADR-004, architecture.md sec 6).
 
-One interface, two methods: ``generate`` (single-shot, used by answers and
-judges) and ``generate_stream`` (token stream, used by the SSE surface). Both
-take the SAME sampling parameters, so a streamed answer and a single-shot
-answer of the same prompt are the same run.
+One interface, three methods, all taking the SAME sampling parameters, so a
+streamed answer and a single-shot answer of the same prompt are the same run:
+
+- ``generate`` — one complete answer, with the run recorded. Used by answers
+  and by judges.
+- ``generate_stream`` — the answer's text as the backend's own deltas.
+- ``stream_result`` — the same stream, plus the recorded result (the deltas
+  and the backend's counters). This is what the generation service uses: the
+  answer the client receives IS the stream, so the deltas it streams are the
+  ones the model produced.
+
+``temperature`` and ``seed`` may be overridden per call (ADR-004 names them
+as call parameters); the EFFECTIVE values are what the recorded result
+carries, so the record and the run cannot disagree.
 
 Two binding rules live here:
 
@@ -139,9 +149,23 @@ class LLMInterface:
         """The backend's generation endpoint."""
         return f"{self.base_url}/api/generate"
 
-    def _options(self, stop: list[str] | None, max_tokens: int | None) -> dict[str, Any]:
-        """The sampling options, identical for both call paths."""
-        options: dict[str, Any] = {"temperature": self.temperature, "seed": self.seed}
+    def _options(
+        self,
+        stop: list[str] | None,
+        max_tokens: int | None,
+        temperature: float | None = None,
+        seed: int | None = None,
+    ) -> dict[str, Any]:
+        """The sampling options, identical for both call paths.
+
+        A per-call ``temperature``/``seed`` overrides the instance's; the
+        EFFECTIVE values are what the recorded result carries, so the record
+        and the run cannot disagree (ADR-004 names both as call parameters).
+        """
+        options: dict[str, Any] = {
+            "temperature": self.temperature if temperature is None else float(temperature),
+            "seed": self.seed if seed is None else int(seed),
+        }
         if stop:
             options["stop"] = list(stop)
         if max_tokens is not None:
@@ -149,14 +173,20 @@ class LLMInterface:
         return options
 
     def _payload(
-        self, prompt: str, stop: list[str] | None, max_tokens: int | None, stream: bool
+        self,
+        prompt: str,
+        stop: list[str] | None,
+        max_tokens: int | None,
+        stream: bool,
+        temperature: float | None = None,
+        seed: int | None = None,
     ) -> dict[str, Any]:
         """The request body for one generation call."""
         return {
             "model": self.model,
             "prompt": prompt,
             "stream": stream,
-            "options": self._options(stop, max_tokens),
+            "options": self._options(stop, max_tokens, temperature, seed),
         }
 
     def _unavailable(self, reason: str) -> errors.ApiError:
@@ -184,14 +214,24 @@ class LLMInterface:
         prompt: str,
         stop: list[str] | None = None,
         max_tokens: int | None = None,
+        *,
+        temperature: float | None = None,
+        seed: int | None = None,
     ) -> GenerationResult:
         """One complete answer, with the run recorded.
+
+        ``temperature`` and ``seed`` override the instance's for THIS call
+        (ADR-004 names them as call parameters); the effective values are
+        what the recorded result carries, so the record and the run cannot
+        disagree.
 
         Raises ``LLM_UNAVAILABLE`` (503) when the backend cannot be reached
         or fails; it never returns a fabricated answer in place of the text
         the model did not produce.
         """
-        payload = self._payload(prompt, stop, max_tokens, stream=False)
+        payload = self._payload(
+            prompt, stop, max_tokens, stream=False, temperature=temperature, seed=seed
+        )
         try:
             with httpx.Client(timeout=self._timeout()) as client:
                 response = client.post(self._url(), json=payload)
@@ -217,8 +257,8 @@ class LLMInterface:
             text=text,
             model=str(data.get("model") or self.model),
             backend=self.backend,
-            temperature=self.temperature,
-            seed=self.seed,
+            temperature=self.temperature if temperature is None else float(temperature),
+            seed=self.seed if seed is None else int(seed),
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
         )
@@ -228,6 +268,9 @@ class LLMInterface:
         prompt: str,
         stop: list[str] | None = None,
         max_tokens: int | None = None,
+        *,
+        temperature: float | None = None,
+        seed: int | None = None,
     ) -> Iterator[str]:
         """The answer as a stream of text chunks.
 
@@ -236,7 +279,9 @@ class LLMInterface:
         streaming is used when it has it; a chunk is yielded as soon as it
         arrives, and the stream ends when the backend says it is done.
         """
-        payload = self._payload(prompt, stop, max_tokens, stream=True)
+        payload = self._payload(
+            prompt, stop, max_tokens, stream=True, temperature=temperature, seed=seed
+        )
         try:
             with (
                 httpx.Client(timeout=self._timeout()) as client,
@@ -255,6 +300,9 @@ class LLMInterface:
         prompt: str,
         stop: list[str] | None = None,
         max_tokens: int | None = None,
+        *,
+        temperature: float | None = None,
+        seed: int | None = None,
     ) -> tuple[GenerationResult, list[str]]:
         """One complete answer produced by the STREAMING endpoint.
 
@@ -265,7 +313,9 @@ class LLMInterface:
         concatenation - which is the same text the single-shot call returns
         at the same temperature and seed.
         """
-        payload = self._payload(prompt, stop, max_tokens, stream=True)
+        payload = self._payload(
+            prompt, stop, max_tokens, stream=True, temperature=temperature, seed=seed
+        )
         chunks: list[str] = []
         counts: dict[str, Any] = {}
         try:
@@ -287,15 +337,23 @@ class LLMInterface:
             raise self._unavailable(type(exc).__name__) from exc
         if not chunks:
             # A stream that carried no text is an unusable backend, not an
-            # empty answer - the same rule as the single-shot path.
+            # empty answer - the same rule as the single-shot path. A body
+            # that is not newline-delimited JSON at all (an HTML error page,
+            # a proxy's JSON error object) lands here, and the single-shot
+            # path already treats that shape as a typed failure.
             raise self._unavailable("empty-response")
+        if not counts:
+            # The stream carried text but never a final object with the
+            # counters. The text is real, so the answer is real; the counts
+            # are simply not known, which the service reports honestly.
+            pass
         prompt_tokens, completion_tokens = self._counts(counts)
         result = GenerationResult(
             text="".join(chunks),
             model=str(counts.get("model") or self.model),
             backend=self.backend,
-            temperature=self.temperature,
-            seed=self.seed,
+            temperature=self.temperature if temperature is None else float(temperature),
+            seed=self.seed if seed is None else int(seed),
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
         )
