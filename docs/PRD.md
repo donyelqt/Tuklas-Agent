@@ -111,7 +111,7 @@ As Rosa, I want to upload a PDF and browse its Book/Title/Chapter/Article tree s
 **US-2 — Ask and get a cited answer (or an explicit refusal)**
 As Rosa, I want to ask a question and get an answer where every legal claim has a citation so I can verify it.
 - [ ] Answer renders `[1]`-style citations; click opens source node/page. `insufficient: false` on success.
-- [ ] Refusal trigger: zero kept evidence nodes **or** best kept score < 0.15 (gate threshold, `architecture.md §4`) → canned "retrieved evidence is insufficient…" + `citations: []` + `insufficient: true`. Never a hallucinated answer.
+- [ ] Refusal trigger: the sufficiency gate fails (the gate verdict — every planned sub-question needs a supporting node in the kept set, at the 0.15 threshold of `architecture.md §4`; a kept node that supports nothing does not count) → canned "retrieved evidence is insufficient…" + `citations: []` + `insufficient: true`. Never a hallucinated answer.
 - [ ] Disclaimer (persistent answer-pane banner): "Tuklas is a research discovery tool, not a lawyer. Verify provisions before relying on them." Prompt + post-generation blocklist rejects "you should" / "I advise" / "your case" / "you must" phrasing (single oracle, shared with `architecture.md §6`).
 - Verify: 5 gold questions; LLM-judge (blinded) confirms 100% of factual claims cited; builder spot-checks all 5.
 

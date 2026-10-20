@@ -91,3 +91,31 @@ def broaden(query: str) -> str:
     # Empty input: nothing to broaden to. Return the original so the caller's
     # budget still accounts for the attempt rather than silently skipping.
     return query
+
+
+def identifier_query(query: str) -> str:
+    """The identifier-only query of the broaden-retry (retrieval.md sec 3).
+
+    The contract names the retry as "stopword-strip + identifier-only query".
+    The stopword strip is :func:`broaden`; this is the second half: the
+    canonical labels the query carries, and nothing else.
+
+    "article 1318" -> "art 1318"; "the said provision about 1318" -> "1318"
+    (a bare number is not a label, so it does not survive as one).
+
+    Retrieval resolves the labels through the identifier index, so a query that
+    carries only its identifiers hits the provisions the query is ABOUT, and
+    not the provisions that merely share a word with it. That is a different
+    neighbourhood from the stopword-stripped text, which is why the contract
+    asks for both.
+
+    Returns "" when the query carries no identifier - the caller then keeps
+    the stopword-stripped form, because an empty query would match everything.
+    """
+    from apps.api.retrieval.normalizer import extract_labels
+
+    labels = [label for label, _level in extract_labels(query)]
+    if not labels:
+        return ""
+    # Order is stable (extract_labels preserves it) and duplicates are gone.
+    return " ".join(labels)

@@ -136,7 +136,7 @@ points at.
   - *Acceptance (PLAN.md Day 3):* multi-hop fixture trace shows ≥ 1 abandoned branch
     (relevant=false, zero evidence) + ≥ 2 inspect/expand before the answer.
     `mypy apps/api` zero errors.
-  - *Verified (2026-10-20):* 41 agent tests green; full suite 74 passed; ruff clean;
+  - *Verified (2026-10-20):* 44 agent tests green; full suite 77 passed; ruff clean;
     mypy clean on 28 files; `check_no_vectors.py` OK (28 files scanned). Runtime smoke:
     a two-part question streams 2 searches, 6 inspects (1 abandoned), 2 expands, then
     `evidence` + `done`; gibberish → canned abstention with `citations: []` and
@@ -284,8 +284,11 @@ points at.
     an identical search is provably useless because retrieval is deterministic,
     and it would spend iteration budget to learn nothing;
     (b) a query the gate fails on now goes straight to `insufficient_evidence`.
-    The mechanism is implemented and unit-tested; what is missing is a corpus
-    where it can be exercised. **Open question for the corpus decision (D2):**
+    The mechanism is implemented, and the retry's FIRING path is exercised by a
+    test that stubs the first search to return nothing (so the gate fails and
+    the retry runs); the retry is nonetheless unreachable on the real corpus.
+    What is missing is a corpus where it can fire by itself. **Open question for
+    the corpus decision (D2):**
     the retry is specified against a scoring model whose lex layer does not
     min-max-normalize a single match to 1.0. Either the corpus gains a document
     whose headings are the only match for a plausible question, or

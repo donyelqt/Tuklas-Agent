@@ -1,0 +1,46 @@
+fix: four honesty-lens findings - the refusal trigger, a wrong docstring, the reference-edge claims, and the identifier-only retry
+
+F2 - the refusal trigger in SPEC.md §7 and PRD.md US-2 stated the
+SUPERSEDED rule: "zero kept evidence nodes OR best kept score < 0.15". The
+implemented trigger is the gate VERDICT (every planned sub-question needs a
+supporting node in the kept set). The old wording contradicts the
+implementation and the rest of the same document - a kept node that supports
+nothing does not count. Both now say the gate verdict.
+
+F5 - apps/api/agent/tools.py's docstring stated a third relevance rule
+("its score is above zero, or when it carries an identifier or title
+match") that matches neither retrieval.md §3 nor the code in the same file
+(the code implements lex > 0 OR ident > 0). The code was right - it mirrors
+the gate's rule - and the docstring was wrong. It now describes the
+implemented rule, including why the total score and the title component are
+not consulted.
+
+F7 - the marketing copy claimed reference edges are "resolved as graph
+edges", that "SQLite stores nodes and reference edges", and that there is a
+"Reference signal from resolved cross-reference edges". Ingestion writes
+ZERO reference edges: the only INSERT INTO references_ in the repo is a test
+fixture, so the ref component is identically 0.0 for every node and every
+query. A visitor reading the page would believe the reference signal is live;
+a researcher measuring components.ref would find it always zero and could
+not tell whether the corpus lacks cross-references or the feature is
+unbuilt. The copy now says the edges are parsed into the tree, that SQLite
+stores the node tree, and refers to the reference signal without claiming
+it is resolved. docs/landing-page/COPY.md updated in lockstep.
+
+F9 - three frozen documents specify the retry as "stopword-strip +
+identifier-only query" (retrieval.md §3, architecture.md §4, SPEC.md §6), but
+only the stopword strip was implemented. The second half is now built:
+apps/api/agent/stoplist.py gains identifier_query(), which returns the
+canonical labels the question carries and nothing else ("article 1318" ->
+"art 1318", "section 2" -> "sec 2", a bare number -> ""), and the retry
+tries that form first when the question carries an identifier. Verified: the
+identifier-only query reaches the provision by its label (article_1318 with
+ident=1.00, lex=0.00) - a different signal from the lexical path, which is
+why the contract asks for both.
+
+Also: docs/TODO.md's "implemented and unit-tested" claim for the retry
+overstated what the test proved, and the verification counts were stale.
+Both corrected with the numbers re-measured, and the record now cites the
+command that produced them.
+
+77 passed; ruff clean; mypy clean on 28 files; check_no_vectors.py OK.

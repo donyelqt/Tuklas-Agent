@@ -45,6 +45,7 @@ from typing import Any, Protocol, cast, runtime_checkable
 
 from apps.api.agent.state import AgentState, initial_state
 from apps.api.agent.stoplist import broaden as _broaden
+from apps.api.agent.stoplist import identifier_query as _identifier_query
 from apps.api.agent.tools import TOOL_TABLE, budget_left
 from apps.api.ingestion import errors
 from apps.api.retrieval.api import select_evidence
@@ -422,9 +423,18 @@ def _sufficiency_gate_node(state: AgentState) -> AgentState:
         # window, not add any.
         broadened: list[str] = []
         for sub_question in missing:
+            # The contract's retry is "stopword-strip + identifier-only query"
+            # (retrieval.md sec 3). The identifier-only form is tried FIRST
+            # when the question carries an identifier: it reaches the
+            # provisions the question is ABOUT, which is a different
+            # neighbourhood from the stopword-stripped text.
+            identifier_only = _identifier_query(sub_question)
+            if identifier_only:
+                broadened.append(identifier_only)
+                continue
             reduced = _broaden(sub_question)
             if reduced == sub_question:
-                # The stoplist strip changed nothing, so the retry would run
+                # Neither form can change the query, so the retry would run
                 # the identical search. Retrieval is deterministic, so the
                 # retry cannot change the outcome: skip it rather than spend
                 # iteration budget on a search we already know the answer to.
