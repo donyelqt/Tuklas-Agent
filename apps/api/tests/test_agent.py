@@ -308,6 +308,75 @@ def test_agent_visited_set_prevents_reinspect(civil_code: SimpleNamespace) -> No
 
 
 # ---------------------------------------------------------------------------
+# 6c. Every wrapper: caps clamp, budget ticks, relevance is recorded
+# ---------------------------------------------------------------------------
+
+
+def test_agent_all_seven_wrappers_touch_the_budget(civil_code: SimpleNamespace) -> None:
+    # The graph reaches only some of the 7, so the rest are exercised here.
+    # Each wrapper must tick the iteration budget and record a tool_result.
+    from apps.api.agent.state import initial_state
+    from apps.api.agent.tools import TOOL_TABLE
+
+    state = initial_state("q", civil_code.doc_id)
+    state["_db_path"] = civil_code.db
+    article = "node_civil-code-public_article_1318"
+    chapter = "node_civil-code-public_chapter_2_d20"
+    calls = [
+        ("search_nodes", {"query": "requisites of contracts"}),
+        ("inspect_node", {"node_id": article}),
+        ("list_children", {"node_id": chapter}),
+        ("get_parent", {"node_id": article}),
+        ("expand_context", {"node_id": article, "radius": 1}),
+        ("follow_reference", {"reference_id": "ref_does_not_exist"}),
+        ("get_source", {"node_id": article}),
+    ]
+    for name, args in calls:
+        before = state["tool_iterations"]
+        state = TOOL_TABLE[name](state, args)
+        assert state["tool_iterations"] == before + 1, f"{name} did not tick the budget"
+        result = state["tool_results"][-1]
+        assert result["tool"] == name
+        assert "relevant" in result
+    assert len(state["tool_results"]) == 7
+    # The budget never exceeded the cap.
+    assert state["tool_iterations"] <= 12
+
+
+def test_agent_wrappers_clamp_out_of_range_args(civil_code: SimpleNamespace) -> None:
+    from apps.api.agent.state import initial_state
+    from apps.api.agent.tools import TOOL_TABLE
+
+    state = initial_state("q", civil_code.doc_id)
+    state["_db_path"] = civil_code.db
+    article = "node_civil-code-public_article_1318"
+    chapter = "node_civil-code-public_chapter_2_d20"
+
+    state = TOOL_TABLE["search_nodes"](state, {"query": "x", "top_k": 999})
+    assert state["tool_results"][-1]["args"]["top_k"] == 20
+    state = TOOL_TABLE["expand_context"](state, {"node_id": article, "radius": 99})
+    assert state["tool_results"][-1]["args"]["radius"] == 2
+    state = TOOL_TABLE["list_children"](state, {"node_id": chapter, "limit": 9999})
+    assert state["tool_results"][-1]["args"]["limit"] == 50
+
+
+def test_agent_follow_reference_unknown_edge_is_irrelevant(
+    civil_code: SimpleNamespace,
+) -> None:
+    # retrieval.md sec 7: an unresolved edge stays unresolved; the agent
+    # moves on and never invents a target.
+    from apps.api.agent.state import initial_state
+    from apps.api.agent.tools import TOOL_TABLE
+
+    state = initial_state("q", civil_code.doc_id)
+    state["_db_path"] = civil_code.db
+    state = TOOL_TABLE["follow_reference"](state, {"reference_id": "ref_does_not_exist"})
+    result = state["tool_results"][-1]
+    assert result["relevant"] is False
+    assert result["result_ids"] == []
+
+
+# ---------------------------------------------------------------------------
 # 7. Agent thinness: no banned imports
 # ---------------------------------------------------------------------------
 
