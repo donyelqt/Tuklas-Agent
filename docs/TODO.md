@@ -302,7 +302,7 @@ points at.
 
 ## Day 4 — Slice 4: Generation (LLMInterface + citations + refusal)
 
-- [ ] *Wiring (2026-10-20, Day-4):* the ask surface and the graph now default
+  - *Wiring (2026-10-20, Day-4):* the ask surface and the graph now default
   to the REAL configured generator, not the model-free stub. The stub applies
   no advice oracle and no refusal path, so a request answered through it
   would bypass the safety machinery the generation layer exists to provide.
@@ -313,7 +313,7 @@ points at.
   Verified through the DEFAULT path (no `generator=` argument): the real model
   answers, the provider's deltas stream (87 token events), the token counts
   are the provider's own, and the oracle is in force.
-- [ ] *Scope note (2026-10-20, Day-4):* ADR-004 names three backends
+  - *Scope note (2026-10-20, Day-4):* ADR-004 names three backends
   (`ollama | llamacpp | vllm`, Ollama default). Only Ollama is implemented in
   this slice. The other two are OpenAI-compatible servers, so they are a
   base_url away, but a backend that is not implemented must not be ACCEPTED
@@ -347,7 +347,7 @@ points at.
   run). Measured over three questions: prompt-v1 marked 18 of 21 factual
   sentences, prompt-v2 marked 18 of 18.
 
-- [ ] *Measured finding (2026-10-20, Day-4):* a question that NAMES a
+  - *Measured finding (2026-10-20, Day-4):* a question that NAMES a
   provision and carries other words loses the named provision from the
   evidence window. "What does article 1318 require?" retrieves article_1318 at
   rank 9 (ident=1.00, lex=0.00) behind articles 1395/1402 (lex=1.00 on the
