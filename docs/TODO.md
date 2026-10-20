@@ -302,6 +302,22 @@ points at.
 
 ## Day 4 — Slice 4: Generation (LLMInterface + citations + refusal)
 
+- [ ] *Measured (2026-10-20, Day-4):* the generation layer answers the 5 gold
+  questions against the REAL local model (`qwen2.5:3b`, ollama, temperature 0,
+  seed 42) through the full stack - retrieval, agent loop, generation. Result:
+  every factual sentence carries a `[n]` marker (21 marked claims, 0 unmarked),
+  every marker names a citation in the evidence set, and every claim is
+  verbatim from the node it cites (checked word by word against the node text:
+  e.g. "personal property is recorded in the Chattel Mortgage Register" cites
+  article 2140, which says exactly that). No advice phrasing in any answer.
+  The provider's own token counts are reported (`tokens_source: "provider"`),
+  not the Day-3 character-count estimate.
+  One prompt change came out of the measurement: the citation instruction now
+  shows the one-marker-per-sentence shape with an example, and the prompt
+  version moved `prompt-v1` -> `prompt-v2` (the prompt is part of the recorded
+  run). Measured over three questions: prompt-v1 marked 18 of 21 factual
+  sentences, prompt-v2 marked 18 of 18.
+
 - [ ] *Measured finding (2026-10-20, Day-4):* a question that NAMES a
   provision and carries other words loses the named provision from the
   evidence window. "What does article 1318 require?" retrieves article_1318 at

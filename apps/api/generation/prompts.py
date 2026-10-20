@@ -34,8 +34,14 @@ from typing import Any
 from apps.api.generation.blocklist import contains_advice
 
 #: The prompt version. Bump it whenever the rendered prompt changes: the
-#: version identifies the prompt a recorded answer was produced with.
-PROMPT_VERSION = "prompt-v1"
+#: version identifies the prompt a recorded answer was produced with, and an
+#: answer cannot be compared across two prompt versions.
+#:
+#: prompt-v2: the citation instruction now shows the one-marker-per-sentence
+#: shape with an example. Measured against the local model over three
+#: questions: prompt-v1 marked 18 of 21 factual sentences, prompt-v2 marked
+#: 18 of 18. The old wording left later sentences of a passage unmarked.
+PROMPT_VERSION = "prompt-v2"
 
 #: The persistent disclaimer, word for word as
 #: ``apps/web/src/lib/copy.ts`` line 221 states it (SPEC.md sec 7 pins the
@@ -52,8 +58,11 @@ SYSTEM_CONSTRAINTS = (
     "You are a research assistant for legal documents. Answer only from the "
     "evidence given below. Do not use prior knowledge, and do not add facts "
     "the evidence does not state. Every factual sentence must carry a "
-    "citation in square brackets naming the evidence it came from. The "
-    "evidence entries below are numbered; cite an entry by its number alone, "
+    "citation in square brackets naming the evidence it came from. Put "
+    "exactly one citation at the end of each factual sentence. Example: "
+    "'Consent of the parties is required [1]. The object must be certain "
+    "[1].' Never write several sentences and one citation for all of them. "
+    "The evidence entries below are numbered; cite an entry by its number alone, "
     "written as [1] or [2], and never by its node id. Cite only the entries "
     "that actually support the sentence, and do not cite an entry you did "
     "not use. If the evidence does not answer the question, say that the "
