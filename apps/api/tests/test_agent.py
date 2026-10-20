@@ -361,6 +361,32 @@ def test_agent_wrappers_clamp_out_of_range_args(civil_code: SimpleNamespace) -> 
     assert state["tool_results"][-1]["args"]["limit"] == 50
 
 
+def test_agent_wrappers_handle_a_missing_node(civil_code: SimpleNamespace) -> None:
+    # A missing node is a dead branch, not a crash: the wrapper records it as
+    # irrelevant and the agent moves on. An ApiError escaping a wrapper would
+    # abort the whole ask over one bad node id.
+    from apps.api.agent.state import initial_state
+    from apps.api.agent.tools import TOOL_TABLE
+
+    state = initial_state("q", civil_code.doc_id)
+    state["_db_path"] = civil_code.db
+    for name, args in (
+        ("inspect_node", {"node_id": "node_nonexistent_xyz"}),
+        ("get_source", {"node_id": "node_nonexistent_xyz"}),
+        ("get_parent", {"node_id": "node_nonexistent_xyz"}),
+        ("expand_context", {"node_id": "node_nonexistent_xyz"}),
+        ("list_children", {"node_id": "node_nonexistent_xyz"}),
+    ):
+        state = TOOL_TABLE[name](state, args)
+        result = state["tool_results"][-1]
+        assert result["relevant"] is False, f"{name} treated a missing node as relevant"
+        assert result["result_ids"] == []
+        # The error code is recorded on the trace entry for that call.
+        trace_entry = state["trace"][-1]
+        assert trace_entry["tool"] == name
+        assert trace_entry.get("error") == "NOT_FOUND"
+
+
 def test_agent_follow_reference_unknown_edge_is_irrelevant(
     civil_code: SimpleNamespace,
 ) -> None:
