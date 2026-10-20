@@ -635,8 +635,8 @@ def test_generation_blocklist_is_the_single_oracle() -> None:
         "the advice-bearing text was shipped instead of a refusal"
     )
 
-    # The refusal has the SAME shape as a gate failure (api.md sec 3): the
-    # same keys, the same empty citation list, insufficient true.
+    # The refusal has the SAME SHAPE as a gate failure (api.md sec 3): the
+    # same empty citation list, the same insufficient flag, the same wording.
     gate_failure = service.answer(
         _context(),
         "What does Article 1318 require?",
@@ -644,9 +644,24 @@ def test_generation_blocklist_is_the_single_oracle() -> None:
         _evidence(),
         gate_passed=False,
     )
-    assert set(result.keys()) == set(gate_failure.keys()), (
-        "the advice refusal does not have the same shape as the gate failure"
+    # The advice refusal additionally carries the PROVIDER'S token counts:
+    # the backend measured that run, so discarding a real measurement to
+    # publish an estimate would make the record less true than the backend's.
+    # The gate failure has no counts, because no model ran for it.
+    extra = set(result.keys()) - set(gate_failure.keys())
+    assert extra == {"prompt_tokens", "completion_tokens"}, (
+        f"the advice refusal differs from the gate failure by {extra}"
     )
+    for key in ("answer_markdown", "citations", "insufficient"):
+        assert result[key] == gate_failure[key], (
+            f"the advice refusal differs from the gate failure on {key!r}"
+        )
+    # The MODEL differs, and it must: the advice refusal came from a model
+    # that ran, so it names it; the gate failure never called a model, so it
+    # names none. A record that named a model for a run that never happened
+    # could not tell a generated answer from a canned abstention.
+    assert result["model"] == "fake-model"
+    assert gate_failure["model"] is None
     assert result["citations"] == gate_failure["citations"] == []
     assert result["insufficient"]
     assert result["answer_markdown"] == gate_failure["answer_markdown"], (

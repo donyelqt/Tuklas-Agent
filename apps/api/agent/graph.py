@@ -145,11 +145,13 @@ class StubGenerator:
         for index, part in enumerate(parts, start=1):
             node_id = str(part.get("node_id", ""))
             lines.append(f"[{index}] {node_id}: {str(part.get('text', ''))[:200]}")
-        # The citation shape is the contract's, including the page span -
-        # which lives in the EVIDENCE, not in the context parts (which carry
-        # only {node_id,text,score}). The real service assembles the same
-        # shape from the same two inputs.
-        citations = _assemble_citations(parts, evidence)
+        # The citation list comes from the ONE rule
+        # (apps/api/generation/citations.py), not from a second copy of it:
+        # two copies of the same rule are two rules that will drift, and
+        # they already had.
+        from apps.api.generation.citations import assemble_citations
+
+        citations = assemble_citations(parts, evidence)
         if not lines:
             return {
                 "answer_markdown": CANNED_ABSTENTION,
@@ -653,41 +655,6 @@ def _default_generator() -> Generator:
     from apps.api.generation.config import generator_from_env
 
     return generator_from_env()
-
-
-def _assemble_citations(
-    parts: list[dict[str, Any]], evidence: dict[str, Any]
-) -> list[dict[str, Any]]:
-    """The citation list for a set of rendered parts (api.md sec 3).
-
-    ``citations[] = [{n, node_id, label, page_start, page_end}]`` with n from
-    1, in the order the evidence was rendered. The page span comes from the
-    EVIDENCE, because the Context Builder's parts carry only
-    {node_id, text, score}. A node that is not in the evidence set gets no
-    invented span.
-
-    The real generation service assembles the same list from the same two
-    inputs; this is the agent's model-free equivalent.
-    """
-    kept_by_id = {
-        str(item.get("node_id")): item
-        for item in (evidence.get("kept", []) if isinstance(evidence, dict) else [])
-        if isinstance(item, dict)
-    }
-    citations: list[dict[str, Any]] = []
-    for index, part in enumerate(parts, start=1):
-        node_id = str(part.get("node_id", ""))
-        source = kept_by_id.get(node_id, {})
-        citations.append(
-            {
-                "n": index,
-                "node_id": node_id,
-                "label": source.get("title", node_id),
-                "page_start": source.get("page_start"),
-                "page_end": source.get("page_end"),
-            }
-        )
-    return citations
 
 
 def _generate_node_factory(generator: Generator) -> Any:

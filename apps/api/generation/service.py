@@ -78,12 +78,9 @@ class GenerationService:
     def __init__(self, llm: LLMInterface) -> None:
         """Bind the LLM interface that produces the text."""
         self.llm = llm
-        #: The last result the backend returned, with its token counts. The
-        #: answer dict carries the run parameters (ADR-004); the provider's
-        #: own prompt/completion counts live here, because the answer dict's
-        #: shape is fixed by the contract.
-        self.last_result: GenerationResult | None = None
         #: The provider's deltas for the last answer, in the backend's order.
+        #: The answer dict carries the run parameters (ADR-004) and the
+        #: provider's token counts, so the counts do not need a second home.
         self.last_chunks: list[str] = []
 
     def answer(
@@ -138,7 +135,6 @@ class GenerationService:
         else:
             result = self.llm.generate(prompt)
             self.last_chunks = [result.text] if result.text else []
-        self.last_result = result
 
         if find_advice(result.text):
             # The oracle refuses the WHOLE answer. A text that carries
@@ -151,6 +147,12 @@ class GenerationService:
                     tokens_source=self._token_source(result), result=result
                 )
             )
+            # The provider MEASURED this run, so its counts travel with the
+            # refusal: a refusal that consumed 900 prompt tokens consumed
+            # them, and discarding a real measurement to publish an estimate
+            # would make the record less true than the backend's.
+            refusal["prompt_tokens"] = result.prompt_tokens
+            refusal["completion_tokens"] = result.completion_tokens
             return refusal
 
         parts = _parts(context)
@@ -160,10 +162,15 @@ class GenerationService:
         # prompt showed for that part. The two numberings are computed from
         # the same parts, so they agree by construction - and this asserts
         # it, so a future change to either side cannot drift them apart.
-        prompt_numbers = {part.get("node_id") for part in parts if isinstance(part, dict)}
+        prompt_numbers = {
+            str(part.get("node_id")): position
+            for position, part in enumerate(parts, start=1)
+            if isinstance(part, dict)
+        }
         for citation in citations:
-            assert citation["n"] <= len(prompt_numbers), (
-                "a citation number must be a number the prompt showed"
+            assert citation["n"] == prompt_numbers.get(citation["node_id"]), (
+                "a citation number must be the number the prompt showed for "
+                "that node"
             )
         answer: dict[str, Any] = {
             "answer_markdown": result.text,
@@ -248,9 +255,13 @@ class GenerationService:
         an ask trace and an eval run can name the run that produced them.
 
         ``result`` is the backend's own record when there is one: the backend
-        reports the model it actually ran. Without a result (the gate
-        refused before any call), the interface's configured values are the
-        run that was requested.
+        reports the model it actually ran. Without a result the gate refused
+        BEFORE any call, so NO model ran - and the record says so. The
+        columns are nullable for exactly this case (the queries table's own
+        comment: "NULL when no model ran (a refusal, a model-free
+        generator)"), and a record that names a model for a run that never
+        happened would make the trace unable to tell a generated answer from
+        a canned abstention.
         """
         return {
             "tokens_source": tokens_source,
@@ -260,10 +271,10 @@ class GenerationService:
             # prompt-v3 are different events and the trace must tell them
             # apart.
             "prompt_version": PROMPT_VERSION,
-            "model": result.model if result is not None else self.llm.model,
-            "backend": result.backend if result is not None else self.llm.backend,
-            "temperature": result.temperature if result is not None else self.llm.temperature,
-            "seed": result.seed if result is not None else self.llm.seed,
+            "model": result.model if result is not None else None,
+            "backend": result.backend if result is not None else None,
+            "temperature": result.temperature if result is not None else None,
+            "seed": result.seed if result is not None else None,
         }
 
 

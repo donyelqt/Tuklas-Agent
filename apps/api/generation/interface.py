@@ -239,6 +239,11 @@ class LLMInterface:
                 data = response.json()
         except httpx.HTTPError as exc:
             raise self._unavailable(type(exc).__name__) from exc
+        except httpx.InvalidURL as exc:
+            # httpx.InvalidURL is NOT an HTTPError, so it would escape as a
+            # raw exception. A base_url that cannot be parsed means the
+            # backend is unreachable - the same condition as a closed port.
+            raise self._unavailable("invalid-url") from exc
         except ValueError as exc:
             # A non-JSON body from a healthy-looking backend is still an
             # unusable backend, not an answer.
@@ -294,6 +299,11 @@ class LLMInterface:
                         yield chunk
         except httpx.HTTPError as exc:
             raise self._unavailable(type(exc).__name__) from exc
+        except httpx.InvalidURL as exc:
+            # httpx.InvalidURL is NOT an HTTPError, so it would escape as a
+            # raw exception. A base_url that cannot be parsed means the
+            # backend is unreachable - the same condition as a closed port.
+            raise self._unavailable("invalid-url") from exc
 
     def stream_result(
         self,
@@ -335,6 +345,11 @@ class LLMInterface:
                         counts = data
         except httpx.HTTPError as exc:
             raise self._unavailable(type(exc).__name__) from exc
+        except httpx.InvalidURL as exc:
+            # httpx.InvalidURL is NOT an HTTPError, so it would escape as a
+            # raw exception. A base_url that cannot be parsed means the
+            # backend is unreachable - the same condition as a closed port.
+            raise self._unavailable("invalid-url") from exc
         if not chunks:
             # A stream that carried no text is an unusable backend, not an
             # empty answer - the same rule as the single-shot path. A body

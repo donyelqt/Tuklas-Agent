@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS queries (
     temperature REAL,
     seed INTEGER,
     prompt_version TEXT,
+    question_hash TEXT,
     iterations INTEGER,
     evidence_ids TEXT,
     tokens_in INTEGER,
