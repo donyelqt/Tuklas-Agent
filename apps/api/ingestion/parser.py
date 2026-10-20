@@ -83,9 +83,20 @@ _FUZZ_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 # Numbered regexes, tried in order. Anchored at line start, case-insensitive.
+#
+# The number must be TERMINATED by a period or the end of the line. That
+# terminator is what separates a heading from a sentence that merely names a
+# provision: "Article 1318. There is no contract..." is a heading, and
+# "the provisions of articles 226 to 228" is not. Without the terminator a
+# body-text line becomes a heading, and the heading's title then carries a
+# label that every node beneath it inherits. Measured on the Civil Code:
+# without it, 75 headings came from the near-miss path, one of them a body
+# sentence ("party regarding the solemnization of the marriage in a place
+# other than those mentioned in article 57 ...") that became a 'part' node
+# and made 402 real articles carry the label "art 57".
 _NUMBERED_RES: tuple[re.Pattern[str], ...] = tuple(
     re.compile(
-        rf"^{re.escape(f.keyword)}\.?\s+{f.number_re}\b",
+        rf"^{re.escape(f.keyword)}\.?\s+{f.number_re}\b(?=\.|\s*$)",
         re.IGNORECASE,
     )
     for f in _FAMILIES
@@ -101,6 +112,32 @@ _GENERIC_NUMBER_RE = re.compile(r"([IVXLC\d]+(?:\([a-z0-9]+\))?)\b")
 # exempt because the printed number at line start is what identifies them and
 # real extracted lines carry arbitrarily long title text on one line.
 _MAX_HEADING_LEN = 200
+
+#: A numbered heading's number must be followed by a terminator: a period, or
+#: the end of the line. A comma or a word means the number is part of a
+#: sentence, not a heading.
+_NUMBER_TERMINATOR_RE = re.compile(r"^\s*(\.|\)|$)")
+
+#: A MARGINAL NOTE: a label, a period, and then ONLY a parenthesised marker
+#: - "article 765. (n)", "article 2168. (1782)". These are the PDF's side
+#: notes pointing at a provision, not the provision itself.
+#:
+#: The Civil Code PDF prints them at the left margin, set in a line 47-62
+#: points wide, and every one of them names a provision that is printed
+#: elsewhere in full. Read as a heading, each one creates a SECOND node for a
+#: provision that already exists, and the label stops identifying anything:
+#: measured on the Civil Code, "art 765", "art 895", "art 1544", "art 1984"
+#: and "art 2168" each resolved to two nodes, so the identifier precedence
+#: could not identify any of them.
+#:
+#: The pattern is exact: label, period, one parenthesised marker, end of
+#: line. Measured over the 2583 headings the Civil Code produces, it matches
+#: exactly these 5 lines and nothing else.
+_MARGINAL_NOTE_RE = re.compile(
+    r"^(?:book|part|division|title|chapter|subchapter|section|subsection|article)"
+    r"\.?\s+[0-9]+[a-z]?\s*\.\s*\([^)]{0,12}\)\s*\.?$",
+    re.IGNORECASE,
+)
 
 
 def _fuzz_family(token: str) -> _Family | None:
@@ -139,6 +176,11 @@ def _match_heading(line: str, page_idx: int, line_idx: int) -> _Heading | None:
     if not stripped:
         return None
 
+    # A marginal note is not a heading, whatever it looks like. The check
+    # comes first so no path below can promote one to a node.
+    if _MARGINAL_NOTE_RE.match(stripped):
+        return None
+
     # Numbered families (regex first — exact forms win over fuzz).
     for family, pattern in zip(_FAMILIES, _NUMBERED_RES, strict=False):
         m = pattern.match(stripped)
@@ -170,7 +212,16 @@ def _match_heading(line: str, page_idx: int, line_idx: int) -> _Heading | None:
     rest = stripped[len(tokens[0]):].strip()
     m = _GENERIC_NUMBER_RE.search(rest)
     if m:
-        return _Heading(page_idx, line_idx, fuzz_hit, m.group(1), stripped)
+        # The number must be TERMINATED the same way a numbered heading's
+        # number is, and it must be the FIRST thing in the rest of the line.
+        # "articles 74 and 75" is a cross-reference, not a heading: its
+        # number is followed by a word. "Art. 5" and "SUBSECTION 1. Wills"
+        # are headings: the number is followed by a period.
+        if _GENERIC_NUMBER_RE.match(rest) and _NUMBER_TERMINATOR_RE.match(
+            rest[m.end():]
+        ):
+            return _Heading(page_idx, line_idx, fuzz_hit, m.group(1), stripped)
+        return None
     # Unnumbered near-miss only when the keyword ends the line ("PRELIMINARY TITEL").
     if rest and fuzz_ratio(rest.rstrip(".:"), fuzz_hit.keyword) >= 80:
         return _Heading(page_idx, line_idx, fuzz_hit, None, stripped)

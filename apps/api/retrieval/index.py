@@ -55,41 +55,56 @@ def _iter_nodes(conn: sqlite3.Connection, doc_id: str) -> Iterator[sqlite3.Row]:
     )
 
 
-def _label_index_rows(doc_id: str, nodes: list[sqlite3.Row]) -> list[tuple[str, str, str]]:
-    """(document_id, normalized_label, node_id) rows for the ident index.
+def _label_index_rows(
+    doc_id: str, nodes: list[sqlite3.Row]
+) -> list[tuple[str, str, str, float]]:
+    """(document_id, normalized_label, node_id, level) rows for the ident index.
 
-    Self labels: every label span in the node's own title, ranges expanded.
-    Container labels: every label span in each ancestor's title, so the node is
-    reachable via its chapter/title/book label too.
+    A node contributes the identity it OWNS — the label in its own heading
+    ("art 1318" for "Article 1318. There is no contract...") — at that
+    label's own level (1.0 for an article/section, 0.5 for a container).
+
+    It also inherits the identity of every ANCESTOR, always at 0.5: an
+    article inside "SECTION 1" is reachable through "sec 1", but it is not
+    itself section 1. Inheritance never raises a level, so the node that
+    OWNS an exact label is the only node at 1.0 for it.
+
+    The rule is deliberately narrower than "every label span in the title".
+    A node whose title merely CITES a provision ("Article 244. The provisions
+    of articles 226 to 228 and 235 to 236") does not own "art 226", and a
+    node whose title is body text (the parser's near-miss path can produce
+    one) owns nothing. Measured on the Civil Code: under the old rule "art 57"
+    resolved to 404 nodes and "sec 1" to 230, because a single body-text
+    heading made 402 real articles inherit a label they never owned; under
+    this rule "art 57" resolves to 1 node and "sec 1" to the 23 sections
+    actually printed as "SECTION 1".
     """
     parent_of: dict[str, str | None] = {str(r["id"]): r["parent_id"] for r in nodes}
     node_by_id: dict[str, sqlite3.Row] = {str(r["id"]): r for r in nodes}
-    labels_of: dict[str, list[tuple[str, float]]] = {}
+    own_of: dict[str, tuple[str, float] | None] = {
+        str(r["id"]): normalizer.own_identity(str(r["type"]), str(r["title"]))
+        for r in nodes
+    }
 
-    def labels_for(node_id: str) -> list[tuple[str, float]]:
-        """Memoized: own-title labels plus ancestor-title labels (root-first walk)."""
-        cached = labels_of.get(node_id)
-        if cached is not None:
-            return cached
-        row = node_by_id[node_id]
-        labels: list[tuple[str, float]] = list(normalizer.extract_labels(str(row["title"])))
-        parent = parent_of.get(node_id)
-        if parent is not None and parent in node_by_id:
-            labels = labels + labels_for(parent)
-        # Dedup by label, order stable.
-        seen: set[str] = set()
-        unique: list[tuple[str, float]] = []
-        for label, level in labels:
-            if label not in seen:
-                seen.add(label)
-                unique.append((label, level))
-        labels_of[node_id] = unique
-        return unique
-
-    rows: list[tuple[str, str, str]] = []
+    rows: list[tuple[str, str, str, float]] = []
     for row in nodes:
-        for label, _level in labels_for(str(row["id"])):
-            rows.append((doc_id, label, str(row["id"])))
+        node_id = str(row["id"])
+        levels: dict[str, float] = {}
+        own = own_of[node_id]
+        if own is not None:
+            levels[own[0]] = own[1]
+        # Ancestor identities, inherited at the container level. The walk is
+        # bounded by the tree depth and visits each ancestor once.
+        parent = parent_of.get(node_id)
+        visited: set[str] = set()
+        while parent is not None and parent in node_by_id and parent not in visited:
+            visited.add(parent)
+            inherited = own_of.get(parent)
+            if inherited is not None and levels.get(inherited[0], 0.0) < 0.5:
+                levels[inherited[0]] = 0.5
+            parent = parent_of.get(parent)
+        for label, level in levels.items():
+            rows.append((doc_id, label, node_id, level))
     return rows
 
 
@@ -126,17 +141,33 @@ def build_indexes(
         )
 
         # --- 2. Identifier index ------------------------------------------
+        # The level column records HOW the node carries the label: 1.0 when it
+        # OWNS the label (the node's own heading), 0.5 when it inherits it from
+        # an ancestor. The level is what makes "art 1318" resolve to one node
+        # at 1.0 rather than to the whole subtree under it.
         conn.execute(
             "CREATE TABLE IF NOT EXISTS ident_index ("
             "document_id TEXT NOT NULL,"
             " normalized_label TEXT NOT NULL,"
             " node_id TEXT NOT NULL,"
+            " level REAL NOT NULL DEFAULT 1.0,"
             " PRIMARY KEY (document_id, normalized_label, node_id))"
         )
+        # A pre-existing table from an earlier build has no level column; the
+        # index is rebuilt from the tree on every ingest, so migrating it in
+        # place is enough and no data can be lost.
+        columns = {
+            str(row["name"]) for row in conn.execute("PRAGMA table_info(ident_index)")
+        }
+        if "level" not in columns:
+            conn.execute(
+                "ALTER TABLE ident_index ADD COLUMN level REAL NOT NULL DEFAULT 1.0"
+            )
         conn.execute("DELETE FROM ident_index WHERE document_id = ?", (doc_id,))
         conn.executemany(
-            "INSERT OR IGNORE INTO ident_index(document_id, normalized_label, node_id)"
-            " VALUES (?, ?, ?)",
+            "INSERT OR REPLACE INTO ident_index"
+            "(document_id, normalized_label, node_id, level)"
+            " VALUES (?, ?, ?, ?)",
             _label_index_rows(doc_id, nodes),
         )
 

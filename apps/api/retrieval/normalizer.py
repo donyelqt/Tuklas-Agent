@@ -14,11 +14,19 @@ import re
 
 #: Word pattern → canonical word, longest alternatives first so "articles" is
 #: consumed before the bare "art" prefix could win.
+#:
+#: "subsection" maps to "sec" because that is how the parser TYPES it: the
+#: Civil Code prints "SUBSECTION 1. Wills in General", and the heading
+#: matcher reads that as a SECTION node (its "subchapter" family expects a
+#: roman numeral). A node typed `section` must own a "sec" label, or the
+#: 28 subsections in the Civil Code would own nothing.
 _CANON: tuple[tuple[str, str], ...] = (
     (r"articles?", "art"),
     (r"arts?", "art"),
     (r"sections?", "sec"),
     (r"secs?", "sec"),
+    (r"subsections?", "sec"),
+    (r"subsecs?", "sec"),
     (r"subchapters?", "subch"),
     (r"subchs?", "subch"),
     (r"chapters?", "ch"),
@@ -64,6 +72,40 @@ _LABEL_SPAN_RE = re.compile(
     rf"\b(?:{_CANON_ALT})\b\s*\.?\s*({_NUMBER_PATTERN}|[ivxlcdm]+)",
     re.IGNORECASE,
 )
+
+#: A COORDINATED list of numbers after a plural label word: "articles 1318,
+#: 2124 and 26". The label span above captures only the FIRST number, so
+#: without this the second and third provisions were invisible to the
+#: identifier channel - and the planner then split the question so that each
+#: part carried a bare number, which is not a label at all.
+#:
+#: The list is bounded: only numbers separated by a comma, "and", "or", or
+#: "to" may join, and at most _MAX_COORDINATED of them. A bare number that
+#: starts the list is the span's own number and is not repeated here.
+_COORDINATED_RE = re.compile(
+    r"\s*(?:,|and|or|to|&)?\s*"
+    r"(?:\d+[a-z]?(?:\([a-z0-9]+\))?|[ivxlcdm]+)"
+    r"(?:\s*(?:,|and|or|to|&)\s*"
+    r"(?:\d+[a-z]?(?:\([a-z0-9]+\))?|[ivxlcdm]+))*",
+    re.IGNORECASE,
+)
+
+#: The separator words, so a number extractor can skip them. Without this
+#: the roman-numeral alternative matched the "d" inside "and", producing a
+#: label "art d".
+_COORDINATED_SEPARATORS = frozenset({"and", "or", "to"})
+
+#: A number in a coordinated list: digits with an optional suffix, or a
+#: roman numeral. The roman form must be a REAL numeral, not the tail of an
+#: English word.
+_COORDINATED_NUMBER_RE = re.compile(
+    r"\d+[a-z]?(?:\([a-z0-9]+\))?|^[ivxlcdm]+$",
+    re.IGNORECASE,
+)
+
+#: Ceiling on how many numbers one label word may coordinate. A list longer
+#: than this is prose, not a citation.
+_MAX_COORDINATED = 8
 
 #: §-only labels: "§1318", "§§ 1318-1320".
 _SEC_SIGN_LABEL_RE = re.compile(rf"§+\s*({_NUMBER_PATTERN})")
@@ -118,6 +160,74 @@ def _canon_number(raw: str) -> str:
     return _PAREN_SUFFIX_RE.sub(r"\1", compact)
 
 
+def _coordinated_numbers(s: str, after: int) -> list[str]:
+    """The numbers in a coordinated list that follows a label word.
+
+    "articles 1318, 2124 and 26" names three provisions. The label span
+    captures only the first, so the rest are read here. The list must be a
+    genuine list of numbers joined by separators: a comma, "and", "or" or
+    "to", optionally with a trailing "and". A number that is not a real
+    number is not a number - "and" must not be read as the roman numeral
+    "d".
+
+    Returns the numbers in order, each already canonicalized.
+    """
+    tail = s[after:]
+    match = _COORDINATED_RE.match(tail)
+    if match is None:
+        return []
+    out: list[str] = []
+    for token in match.group(0).replace(",", " ").split():
+        lowered = token.lower()
+        if lowered in _COORDINATED_SEPARATORS or lowered == "&":
+            continue
+        if not _COORDINATED_NUMBER_RE.match(lowered):
+            # A word that is not a number ends the list.
+            break
+        out.append(_canon_number(lowered))
+        if len(out) >= _MAX_COORDINATED:
+            break
+    # The match starts AFTER the span's own number, so every number in it is
+    # an ADDITIONAL one. (The span's number was captured by the label span
+    # itself, and the list resumes with a separator.)
+    return out
+
+
+def _label_spans(s: str) -> list[tuple[str, float, int]]:
+    """Every label span in raw text: (label, level, start offset).
+
+    The span's start offset is what lets ``own_identity`` ask "is this
+    label at the START of the text?", which is how an owned heading is told
+    apart from a cited provision. The label grammar lives here and ONLY
+    here, so ownership and extraction cannot drift apart.
+    """
+    found: list[tuple[str, float, int]] = []
+    for m in _LABEL_SPAN_RE.finditer(s):
+        canon = _CANON_MAP[m.group(0).split()[0].strip(".").lower()]
+        number = _canon_number(m.group(1))
+        level = 0.5 if canon in _CONTAINER_WORDS else 1.0
+        found.append((f"{canon} {number}", level, m.start()))
+        for piece in expand_range(number):
+            found.append((f"{canon} {piece}", level, m.start()))
+        # A coordinated list: "articles 1318, 2124 and 26" names three
+        # provisions, and only the first was captured by the span above.
+        # Each further number in the list is a label of the same family.
+        for other in _coordinated_numbers(s, m.end()):
+            found.append((f"{canon} {other}", level, m.start()))
+            for piece in expand_range(other):
+                found.append((f"{canon} {piece}", level, m.start()))
+    for m in _SEC_SIGN_LABEL_RE.finditer(s):
+        number = _canon_number(m.group(1))
+        # A bare § sign bridges to BOTH section label families (retrieval.md
+        # §4): §-printed and word-printed provisions ("§ 101" vs
+        # "Section 101") must resolve to the same ident component.
+        for word in ("art", "sec"):
+            found.append((f"{word} {number}", 1.0, m.start()))
+            for piece in expand_range(number):
+                found.append((f"{word} {piece}", 1.0, m.start()))
+    return found
+
+
 def extract_labels(s: str) -> list[tuple[str, float]]:
     """Canonical labels inside raw text, each with its ident level.
 
@@ -130,26 +240,9 @@ def extract_labels(s: str) -> list[tuple[str, float]]:
     ("art 1318", "art 1319", "art 1320"). Letter/parenthesized suffixes are
     preserved ("art 2000a"). Duplicates removed, order stable.
     """
-    found: list[tuple[str, float]] = []
-    for m in _LABEL_SPAN_RE.finditer(s):
-        canon = _CANON_MAP[m.group(0).split()[0].strip(".").lower()]
-        number = _canon_number(m.group(1))
-        level = 0.5 if canon in _CONTAINER_WORDS else 1.0
-        found.append((f"{canon} {number}", level))
-        for piece in expand_range(number):
-            found.append((f"{canon} {piece}", level))
-    for m in _SEC_SIGN_LABEL_RE.finditer(s):
-        number = _canon_number(m.group(1))
-        # A bare § sign bridges to BOTH section label families (retrieval.md
-        # §4): §-printed and word-printed provisions ("§ 101" vs
-        # "Section 101") must resolve to the same ident component.
-        for word in ("art", "sec"):
-            found.append((f"{word} {number}", 1.0))
-            for piece in expand_range(number):
-                found.append((f"{word} {piece}", 1.0))
     seen: set[str] = set()
     out: list[tuple[str, float]] = []
-    for label, level in found:
+    for label, level, _start in _label_spans(s):
         if label not in seen:
             seen.add(label)
             out.append((label, level))
@@ -168,3 +261,79 @@ def label_tokens(s: str) -> set[str]:
     for m in _SEC_SIGN_LABEL_RE.finditer(s):
         consumed.update(_TOKEN_RE.findall(m.group(1).lower()))
     return consumed
+
+
+# ---------------------------------------------------------------------------
+# Own identity (retrieval.md §4, identity tier)
+# ---------------------------------------------------------------------------
+
+#: The canonical label family each node TYPE may own. The node type is the
+#: arbiter: only a node of the matching type may own the label, so an
+#: "article" node cannot own "ch 2" and a "chapter" node cannot own
+#: "art 1318".
+_TYPE_OWNS: dict[str, frozenset[str]] = {
+    "article": frozenset({"art"}),
+    "section": frozenset({"sec"}),
+    "subsection": frozenset({"subch"}),
+    "chapter": frozenset({"ch"}),
+    "title": frozenset({"title"}),
+    "book": frozenset({"book"}),
+    "part": frozenset({"part"}),
+    "division": frozenset({"division"}),
+}
+
+
+def own_identity(node_type: str, title: str) -> tuple[str, float] | None:
+    """The identity label a node OWNS, from its own heading, or None.
+
+    A node's identity is the label in its own heading — "Article 1318. There is
+    no contract..." owns "art 1318". Two rules make this precise:
+
+    1. The label must be the FIRST thing in the title. A node whose title
+       merely MENTIONS a provision ("the provisions of articles 226 to 228
+       and 235 to 236") does not own it; it only references it. Without this
+       rule a node inherits every provision it cites, and one label then names
+       hundreds of nodes.
+    2. The node type must match the label family. A "chapter" node cannot own
+       "art 1318"; a "part" node cannot own "ch 2".
+
+    The label grammar is NOT restated here. It is read from the same
+    ``_label_spans`` extractor that ``extract_labels`` uses, so the two can
+    never disagree about what a label is. That matters: a second regex
+    accepted only the full words ("Article") and missed the forms the
+    contract requires - "Art. 1318", "Sec. 3", "Article 2000(a)" and the
+    bare "§ 101" that U.S. Code Title 11 prints - so the ident channel was
+    DEAD on that corpus: every section query returned ident 0.0 for all 986
+    nodes.
+
+    Returns ``(label, level)`` where level is 1.0 for an article/section
+    (exact) label and 0.5 for a container (chapter/title/book) label, matching
+    the ident levels of ``extract_labels``. Returns None when the title carries
+    no own heading.
+    """
+    allowed = _TYPE_OWNS.get(node_type)
+    if allowed is None:
+        return None
+    stripped = title.lstrip()
+    lead = len(title) - len(stripped)
+    for label, level, start in _label_spans(title):
+        if start != lead:
+            # Only the FIRST label in the title can be the node's own.
+            break
+        family = label.split(" ", 1)[0]
+        if family in allowed:
+            return label, level
+        # A "§ 101" heading emits BOTH families ("art 101" and "sec 101",
+        # retrieval.md §4). A section node owns the "sec" twin; the "art" one
+        # is the same provision under its other name. So when the type's
+        # family is "sec" and the span is the "art" twin of a § heading, keep
+        # looking for the "sec" twin of the SAME number.
+        if family == "art" and "sec" in allowed:
+            number = label.split(" ", 1)[1]
+            twin = f"sec {number}"
+            for other, other_level, other_start in _label_spans(title):
+                if other == twin and other_start == lead:
+                    return twin, other_level
+            return None
+        return None
+    return None

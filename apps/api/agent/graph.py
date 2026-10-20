@@ -51,6 +51,7 @@ from apps.api.ingestion import errors
 from apps.api.retrieval.api import (
     EVIDENCE_KEEP_TOP,
     SUPPORT_THRESHOLD,
+    evidence_rank_key,
     select_evidence,
 )
 from apps.api.retrieval.context import build_context
@@ -394,7 +395,7 @@ def _select_evidence_node(state: AgentState) -> AgentState:
                 continue
             seen.add(node_id)
             kept.append(item)
-    kept.sort(key=lambda item: (-float(item.get("score", 0.0)), str(item.get("node_id"))))
+    kept.sort(key=evidence_rank_key)
     # The top-8 evidence window (retrieval.md sec 5) applies to the MERGED
     # set too: the agent assembles one context, and that context must not
     # carry more nodes than the window allows.
@@ -413,7 +414,7 @@ def _select_evidence_node(state: AgentState) -> AgentState:
     ]
     others = [item for item in kept if str(item.get("node_id")) not in supporter_ids]
     kept = (supporters_kept + others)[:EVIDENCE_KEEP_TOP]
-    kept.sort(key=lambda item: (-float(item.get("score", 0.0)), str(item.get("node_id"))))
+    kept.sort(key=evidence_rank_key)
     # The gate's supporter lists are then filtered to the kept window. Each
     # sub-question had its OWN top-8, so before this filter the supporters
     # could name nodes the merged evidence set does not carry - the gate
