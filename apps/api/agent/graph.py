@@ -718,6 +718,8 @@ def _generate_node_factory(generator: Generator) -> Any:
             state["_gen_temperature"] = result["temperature"]
         if "seed" in result:
             state["_gen_seed"] = result["seed"]
+        if "prompt_version" in result:
+            state["_gen_prompt_version"] = result["prompt_version"]
         # The provider's own token counts, when a model was called.
         if result.get("prompt_tokens") is not None:
             state["_gen_prompt_tokens"] = result["prompt_tokens"]

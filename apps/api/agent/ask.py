@@ -37,7 +37,9 @@ from apps.api.agent.graph import (
     run_agent,
 )
 from apps.api.agent.state import AgentState, initial_state
+from apps.api.agent.trace import record_ask
 from apps.api.ingestion import errors
+from apps.api.ingestion.service import DB_PATH as DEFAULT_DB_PATH
 
 #: Characters per streamed token event.
 TOKEN_CHUNK_CHARS = 80
@@ -142,15 +144,22 @@ def _build_response(
     out_chars = len(answer)
 
     source = tokens_source or state.get("_gen_tokens_source")
-    if source == TOKENS_SOURCE_PROVIDER:
+    tokens_in = state.get("_gen_prompt_tokens")
+    tokens_out = state.get("_gen_completion_tokens")
+    if source == TOKENS_SOURCE_PROVIDER and (
+        isinstance(tokens_in, int) or isinstance(tokens_out, int)
+    ):
         # The provider's own counts, recorded by the generation layer.
-        tokens_in = state.get("_gen_prompt_tokens")
-        tokens_out = state.get("_gen_completion_tokens")
         counts = {
             "in": int(tokens_in) if isinstance(tokens_in, int) else 0,
             "out": int(tokens_out) if isinstance(tokens_out, int) else 0,
         }
     else:
+        # The provider reported NO counts (a truncated stream, a backend that
+        # does not send them). Publishing zeros with tokens_source="provider"
+        # would present LOST counts as MEASURED usage, which is worse than an
+        # estimate because it looks real. Fall back to the estimate and say
+        # so.
         source = TOKENS_SOURCE_ESTIMATED
         counts = {"in": _approx_tokens(in_chars), "out": _approx_tokens(out_chars)}
 
@@ -218,7 +227,18 @@ def run_ask(
             "INTERNAL_ERROR", "internal server error", 500, {}
         ) from exc
     latency_ms = int((time.perf_counter() - start) * 1000)
-    return _build_response(cast(AgentState, final), latency_ms)
+    response = _build_response(cast(AgentState, final), latency_ms)
+    # ADR-004: the run is recorded, so a run can be named and compared.
+    # The trace is best-effort: a trace that cannot be written must not cost
+    # the caller its answer.
+    record_ask(
+        document_id,
+        question,
+        db_path=str(db_path or DEFAULT_DB_PATH),
+        state=dict(final),
+        response=response,
+    )
+    return response
 
 
 def iter_sse_events(

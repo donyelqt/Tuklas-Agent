@@ -65,6 +65,7 @@ class AgentState(TypedDict, total=False):
     _gen_backend: str
     _gen_temperature: float
     _gen_seed: int
+    _gen_prompt_version: str
     _gen_prompt_tokens: int
     _gen_completion_tokens: int
     _gen_stream: list[str]

@@ -47,7 +47,23 @@ CREATE TABLE IF NOT EXISTS queries (
     id TEXT PRIMARY KEY,
     document_id TEXT NOT NULL,
     question TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    -- ADR-004: the run record. A run cannot be compared across runs unless
+    -- the model, backend, sampling parameters and prompt version that
+    -- produced it are named, so they live with the ask, not only in the
+    -- response. NULL when no model ran (a refusal, a model-free generator).
+    model TEXT,
+    backend TEXT,
+    temperature REAL,
+    seed INTEGER,
+    prompt_version TEXT,
+    iterations INTEGER,
+    evidence_ids TEXT,
+    tokens_in INTEGER,
+    tokens_out INTEGER,
+    tokens_source TEXT,
+    latency_ms INTEGER,
+    insufficient INTEGER
 );
 CREATE TABLE IF NOT EXISTS retrieval_runs (
     id TEXT PRIMARY KEY,
