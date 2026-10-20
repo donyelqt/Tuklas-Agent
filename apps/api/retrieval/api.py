@@ -496,3 +496,18 @@ def select_evidence(
             "per_question": per_question,
         },
     }
+
+
+def identifier_labels(query: str) -> list[str]:
+    """The canonical labels a query carries (retrieval.md sec 4).
+
+    "article 1318" -> ["art 1318"]; "section 2" -> ["sec 2"]; a bare number
+    carries no label and yields [].
+
+    The broaden-retry's identifier-only query (retrieval.md sec 3) is built
+    from these. It lives here, on the retrieval surface the agent is allowed
+    to import, so the agent does not reach into the normalizer itself.
+    """
+    from apps.api.retrieval import normalizer
+
+    return [label for label, _level in normalizer.extract_labels(query)]

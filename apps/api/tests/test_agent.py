@@ -861,6 +861,32 @@ def test_agent_thinness() -> None:
             assert not pattern.match(line), f"banned import in {path}: {line}"
 
 
+def test_agent_imports_only_the_sanctioned_retrieval_surface() -> None:
+    """architecture.md sec 2 / SPEC.md sec 2 bound the agent's imports.
+
+    The agent may import "retrieval.api (tool impls ONLY)" and the retrieval
+    Context Builder. It may NOT reach into the retrieval internals - the
+    normalizer, the scorer, the index builder - the way the generation layer
+    is barred from "retrieval internals".
+    """
+    agent_dir = REPO_ROOT / "apps" / "api" / "agent"
+    allowed = {
+        "apps.api.retrieval.api",
+        "apps.api.retrieval.context",
+    }
+    pattern = re.compile(r"^\s*from\s+(apps\.api\.retrieval[\w.]*)\s+import")
+    for path in agent_dir.rglob("*.py"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = pattern.match(line)
+            if match is None:
+                continue
+            module = match.group(1)
+            assert module in allowed, (
+                f"{path.name} imports {module}; the agent may import only "
+                f"{sorted(allowed)}"
+            )
+
+
 # ---------------------------------------------------------------------------
 # 8. AskResponse shape
 # ---------------------------------------------------------------------------

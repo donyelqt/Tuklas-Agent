@@ -112,9 +112,9 @@ def identifier_query(query: str) -> str:
     Returns "" when the query carries no identifier - the caller then keeps
     the stopword-stripped form, because an empty query would match everything.
     """
-    from apps.api.retrieval.normalizer import extract_labels
+    from apps.api.retrieval.api import identifier_labels
 
-    labels = [label for label, _level in extract_labels(query)]
+    labels = identifier_labels(query)
     if not labels:
         return ""
     # Order is stable (extract_labels preserves it) and duplicates are gone.
