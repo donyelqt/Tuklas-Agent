@@ -484,8 +484,13 @@ def test_agent_ask_response_shape(civil_code: SimpleNamespace) -> None:
         "iterations",
         "latency_ms",
         "tokens",
+        "tokens_source",
         "insufficient",
     }
+    # The token counts are an estimate until the LLM backend reports real
+    # usage; the payload must say so, so no consumer can publish them as
+    # measured token usage.
+    assert response["tokens_source"] == "estimated"
     assert response["insufficient"] is False
     assert isinstance(response["iterations"], int)
     assert response["iterations"] <= MAX_TOOL_ITERATIONS
