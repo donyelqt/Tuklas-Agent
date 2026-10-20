@@ -31,7 +31,6 @@ from typing import Any, cast
 from apps.api.agent.graph import (
     CANNED_ABSTENTION,
     Generator,
-    StubGenerator,
     _validate_max_iterations,
     build_graph,
     run_agent,
@@ -180,6 +179,17 @@ def _build_response(
     return response
 
 
+def _default_generator() -> Generator:
+    """The configured generator: the real local LLM (ADR-004).
+
+    Built lazily, so importing the ask surface does not construct an HTTP
+    client, and a test that passes its own generator never pays for it.
+    """
+    from apps.api.generation.config import generator_from_env
+
+    return generator_from_env()
+
+
 def _error_event(err: errors.ApiError) -> dict[str, Any]:
     """The api.md sec 1 error body, as one terminal SSE event."""
     return {"event": "error", "error": err.body()["error"]}
@@ -200,7 +210,12 @@ def run_ask(
     becomes a 500 rather than a traceback.
     """
     start = time.perf_counter()
-    gen: Generator = generator if generator is not None else StubGenerator()
+    # The REAL generator by default. The model-free stub applies no advice
+    # oracle and no refusal path, so a request answered through it would
+    # bypass the safety machinery the generation layer exists to provide.
+    # The stub is explicit opt-in, for the tests that want a deterministic
+    # answer.
+    gen: Generator = generator if generator is not None else _default_generator()
     try:
         final = run_agent(
             document_id,
@@ -257,7 +272,12 @@ def iter_sse_events(
 
     On failure exactly one ``error`` event is yielded and iteration stops.
     """
-    gen: Generator = generator if generator is not None else StubGenerator()
+    # The REAL generator by default. The model-free stub applies no advice
+    # oracle and no refusal path, so a request answered through it would
+    # bypass the safety machinery the generation layer exists to provide.
+    # The stub is explicit opt-in, for the tests that want a deterministic
+    # answer.
+    gen: Generator = generator if generator is not None else _default_generator()
     try:
         max_iterations = _validate_max_iterations(max_iterations)
     except errors.ApiError as err:

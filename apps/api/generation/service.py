@@ -156,7 +156,17 @@ class GenerationService:
             "answer_markdown": result.text,
             "citations": citations,
             "insufficient": False,
-            "tokens_source": "provider",
+            # "provider" means the BACKEND REPORTED the counts. If it
+            # reported none, the label must not say so: the ask surface
+            # falls back to the character-count estimate and says THAT
+            # instead (api.md sec 3: a consumer must not publish estimated
+            # numbers as measured usage - and zeros labelled as measured are
+            # worse, because they look real).
+            "tokens_source": (
+                "provider"
+                if result.prompt_tokens is not None and result.completion_tokens is not None
+                else None
+            ),
             "model": result.model,
             "backend": result.backend,
             "temperature": result.temperature,
