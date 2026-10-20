@@ -31,7 +31,9 @@ from apps.api.agent.graph import (
     CANNED_ABSTENTION,
     Generator,
     StubGenerator,
+    _validate_max_iterations,
     build_graph,
+    run_agent,
 )
 from apps.api.agent.state import AgentState, initial_state
 from apps.api.ingestion import errors
@@ -135,15 +137,21 @@ def run_ask(
     """
     start = time.perf_counter()
     gen: Generator = generator if generator is not None else StubGenerator()
-    state = initial_state(question, document_id, max_iterations=max_iterations)
-    state["_db_path"] = db_path
     try:
-        compiled = build_graph(gen)
-        final = compiled.invoke(state)
+        final = run_agent(
+            document_id,
+            question,
+            max_iterations=max_iterations,
+            db_path=db_path,
+            generator=gen,
+        )
     except errors.ApiError:
         raise
-    except ValueError:
-        raise
+    except ValueError as err:
+        # A bad body is a 422, not a 500. The SSE surface already mapped it
+        # that way; the sync surface must agree, or one endpoint contract
+        # would answer the same request two different ways.
+        raise errors.validation_error(str(err)) from err
     except Exception as exc:  # pragma: no cover - defensive
         raise errors.ApiError(
             "INTERNAL_ERROR", "agent loop failed", 500, {"error": str(exc)}
@@ -170,6 +178,11 @@ def iter_sse_events(
     """
     start = time.perf_counter()
     gen: Generator = generator if generator is not None else StubGenerator()
+    try:
+        max_iterations = _validate_max_iterations(max_iterations)
+    except errors.ApiError as err:
+        yield _error_event(err)
+        return
     state = initial_state(question, document_id, max_iterations=max_iterations)
     state["_db_path"] = db_path
 
