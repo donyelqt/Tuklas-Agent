@@ -8,6 +8,16 @@ Both drive the same graph. The streaming surface drives it through LangGraph's
 for the steps to be streamed so the user can audit retrieval, not delivered in
 one batch at the end.
 
+The ``token`` events are a REPLAY, not a live feed, and the difference is
+deliberate. The advice oracle (architecture.md sec 6) refuses the WHOLE
+answer, so the text cannot be released before the whole of it has been
+checked — a stream would have to hand over advice phrasing and then retract
+it. The generation layer therefore buffers the model's deltas, checks them
+against the oracle, and the transport emits them as ``token`` events
+afterwards. The deltas are the model's own, in its order, so a client that
+joins them gets exactly the answer; but they arrive in a burst once the
+model has finished, not as it writes.
+
 Frozen event sequence (api.md sec 3)::
 
     plan{sub_questions}
@@ -31,16 +41,14 @@ from typing import Any, cast
 from apps.api.agent.graph import (
     CANNED_ABSTENTION,
     Generator,
-    StubGenerator,
     _validate_max_iterations,
     build_graph,
     run_agent,
 )
 from apps.api.agent.state import AgentState, initial_state
+from apps.api.agent.trace import record_ask
 from apps.api.ingestion import errors
-
-#: Characters per streamed token event.
-TOKEN_CHUNK_CHARS = 80
+from apps.api.ingestion.service import DB_PATH as DEFAULT_DB_PATH
 
 _LOG = logging.getLogger(__name__)
 
@@ -116,15 +124,31 @@ def _kept_node_ids(evidence: dict[str, Any]) -> list[str]:
 def _build_response(
     state: AgentState,
     latency_ms: int,
-    tokens_source: str | None = TOKENS_SOURCE_ESTIMATED,
+    tokens_source: str | None = None,
 ) -> dict[str, Any]:
-    """Assemble the AskResponse from the final graph state."""
-    evidence: dict[str, Any] = state.get("evidence", {})
+    """Assemble the AskResponse from the final graph state.
+
+    The token counts come from the BACKEND when a model was called (the
+    provider's own prompt/completion counts, ADR-004) and fall back to the
+    character-count estimate when no model ran - a refusal, or the model-free
+    stub. The ``tokens_source`` label says which, so a consumer can never
+    mistake the estimate for measured usage.
+    """
     insufficient = bool(state.get("insufficient"))
     # api.md sec 3: the abstention returns the SAME shape with
     # answer_markdown=canned text, citations=[], evidence_ids=[],
     # insufficient=true.
-    evidence_ids = [] if insufficient else _kept_node_ids(evidence)
+    #
+    # The evidence ids are the nodes the answer's CITATIONS point at - what
+    # the answer actually rests on, not the whole retrieval window. A client
+    # rendering "8 sources" for an answer that cites 2 would be reporting
+    # the window, not the grounding. The SSE `evidence` event still carries
+    # the full kept set, because that event IS the retrieval report.
+    evidence_ids = [] if insufficient else [
+        str(citation.get("node_id"))
+        for citation in (state.get("citations", []) or [])
+        if isinstance(citation, dict) and citation.get("node_id")
+    ]
     answer = state.get("answer_md", CANNED_ABSTENTION)
     if insufficient:
         answer = CANNED_ABSTENTION
@@ -132,23 +156,54 @@ def _build_response(
     context: dict[str, Any] = state.get("context", {})
     parts = context.get("parts", []) if isinstance(context, dict) else []
     in_chars = sum(len(str(part.get("text", ""))) for part in parts if isinstance(part, dict))
+    out_chars = len(answer)
+
+    source = tokens_source or state.get("_gen_tokens_source")
+    tokens_in = state.get("_gen_prompt_tokens")
+    tokens_out = state.get("_gen_completion_tokens")
+    if source == TOKENS_SOURCE_PROVIDER and (
+        isinstance(tokens_in, int) and isinstance(tokens_out, int)
+    ):
+        # The provider's own counts, recorded by the generation layer. BOTH
+        # must be present: a provider that reported only one of them left the
+        # other side unknown, and publishing a hard 0 for it under a
+        # "provider" label would present a fabricated zero as measured usage.
+        counts = {"in": int(tokens_in), "out": int(tokens_out)}
+    else:
+        # The provider reported NO counts (a truncated stream, a backend that
+        # does not send them). Publishing zeros with tokens_source="provider"
+        # would present LOST counts as MEASURED usage, which is worse than an
+        # estimate because it looks real. Fall back to the estimate and say
+        # so.
+        source = TOKENS_SOURCE_ESTIMATED
+        counts = {"in": _approx_tokens(in_chars), "out": _approx_tokens(out_chars)}
+
     response: dict[str, Any] = {
         "answer_markdown": answer,
         "citations": citations,
         "evidence_ids": evidence_ids,
         "iterations": int(state.get("tool_iterations", 0)),
         "latency_ms": latency_ms,
-        "tokens": {"in": _approx_tokens(in_chars), "out": _approx_tokens(len(answer))},
+        "tokens": counts,
         "insufficient": insufficient,
     }
-    # The label is present exactly when it is needed: the Day-3 generator
-    # calls no model, so the counts are a character-count heuristic and a
-    # consumer could otherwise publish them as measured usage. It is an
-    # OPTIONAL field (api.md sec 5), so a client built against the 7-key
-    # shape still validates.
-    if tokens_source is not None:
-        response["tokens_source"] = tokens_source
+    # The label is present exactly when it is needed, and it is an OPTIONAL
+    # field (api.md sec 5), so a client built against the 7-key shape still
+    # validates.
+    if source is not None:
+        response["tokens_source"] = source
     return response
+
+
+def _default_generator() -> Generator:
+    """The configured generator: the real local LLM (ADR-004).
+
+    Built lazily, so importing the ask surface does not construct an HTTP
+    client, and a test that passes its own generator never pays for it.
+    """
+    from apps.api.generation.config import generator_from_env
+
+    return generator_from_env()
 
 
 def _error_event(err: errors.ApiError) -> dict[str, Any]:
@@ -171,7 +226,25 @@ def run_ask(
     becomes a 500 rather than a traceback.
     """
     start = time.perf_counter()
-    gen: Generator = generator if generator is not None else StubGenerator()
+    # The REAL generator by default. The model-free stub applies no advice
+    # oracle and no refusal path, so a request answered through it would
+    # bypass the safety machinery the generation layer exists to provide.
+    # The stub is explicit opt-in, for the tests that want a deterministic
+    # answer.
+    try:
+        gen: Generator = (
+            generator if generator is not None else _default_generator()
+        )
+    except ValueError as err:
+        # A MISCONFIGURED backend is a server fault, not a bad body: the
+        # caller sent a fine request and the server cannot serve it. It must
+        # not escape as a raw ValueError (the app's catch-all would turn it
+        # into a 500 with a traceback-free body, but the typed error is
+        # clearer about what went wrong).
+        _LOG.error("the configured LLM backend is unusable: %s", err)
+        raise errors.ApiError(
+            "INTERNAL_ERROR", "internal server error", 500, {}
+        ) from err
     try:
         final = run_agent(
             document_id,
@@ -198,7 +271,18 @@ def run_ask(
             "INTERNAL_ERROR", "internal server error", 500, {}
         ) from exc
     latency_ms = int((time.perf_counter() - start) * 1000)
-    return _build_response(cast(AgentState, final), latency_ms)
+    response = _build_response(cast(AgentState, final), latency_ms)
+    # ADR-004: the run is recorded, so a run can be named and compared.
+    # The trace is best-effort: a trace that cannot be written must not cost
+    # the caller its answer.
+    record_ask(
+        document_id,
+        question,
+        db_path=str(db_path or DEFAULT_DB_PATH),
+        state=dict(final),
+        response=response,
+    )
+    return response
 
 
 def iter_sse_events(
@@ -217,7 +301,27 @@ def iter_sse_events(
 
     On failure exactly one ``error`` event is yielded and iteration stops.
     """
-    gen: Generator = generator if generator is not None else StubGenerator()
+    # The REAL generator by default. The model-free stub applies no advice
+    # oracle and no refusal path, so a request answered through it would
+    # bypass the safety machinery the generation layer exists to provide.
+    # The stub is explicit opt-in, for the tests that want a deterministic
+    # answer.
+    try:
+        gen: Generator = (
+            generator if generator is not None else _default_generator()
+        )
+    except ValueError as err:
+        # A misconfigured backend is a server fault, not a bad body.
+        _LOG.error("the configured LLM backend is unusable: %s", err)
+        yield {
+            "event": "error",
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "internal server error",
+                "details": {},
+            },
+        }
+        return
     try:
         max_iterations = _validate_max_iterations(max_iterations)
     except errors.ApiError as err:
@@ -321,18 +425,42 @@ def iter_sse_events(
         "insufficient": insufficient,
     }
 
-    # token{text}* — only a real answer streams tokens.
+    # token{text}* — only a real answer carries tokens.
+    #
+    # The deltas are the PROVIDER'S, recorded by the generation layer in the
+    # order the backend emitted them - not a slicing of a finished string.
+    # (The Day-3 implementation cut the finished answer into 80-character
+    # pieces, which looked streamed but was not.)
+    #
+    # They arrive in a BURST, not live: the advice oracle has to see the whole
+    # text before any of it can be released, so the generation layer buffers
+    # the deltas. See the module docstring.
     answer = final_state.get("answer_md", CANNED_ABSTENTION)
     if not insufficient and answer and answer != CANNED_ABSTENTION:
-        for start_index in range(0, len(answer), TOKEN_CHUNK_CHARS):
-            yield {
-                "event": "token",
-                "text": answer[start_index : start_index + TOKEN_CHUNK_CHARS],
-            }
+        chunks = list(final_state.get("_gen_stream", []) or [])
+        if not chunks:
+            # No provider deltas were recorded (a model-free generator): fall
+            # back to the answer as one delta, so the client still receives the
+            # text and the concatenation is still the answer.
+            chunks = [answer]
+        for chunk in chunks:
+            if chunk:
+                yield {"event": "token", "text": str(chunk)}
 
     # The measured latency is the time the AGENT spent, not the time the
     # consumer took to read the stream: a slow client must not inflate the
     # system's reported latency (evaluation.md sec 5 reports latency as a
     # system metric). The clock stops when the graph does.
     latency_ms = agent_elapsed_ms
-    yield {"event": "done", "ask_response": _build_response(final_state, latency_ms)}
+    response = _build_response(final_state, latency_ms)
+    # ADR-004: the run is recorded in EVERY ask trace, and the SSE surface
+    # is the path the product uses (PLAN.md Day 5 builds the web client on
+    # /v1/ask/stream). The trace is best-effort: it cannot fail the stream.
+    record_ask(
+        document_id,
+        question,
+        db_path=str(db_path or DEFAULT_DB_PATH),
+        state=dict(final_state),
+        response=response,
+    )
+    yield {"event": "done", "ask_response": response}

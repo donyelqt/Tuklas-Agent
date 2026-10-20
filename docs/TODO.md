@@ -302,20 +302,112 @@ points at.
 
 ## Day 4 — Slice 4: Generation (LLMInterface + citations + refusal)
 
+- [ ] *Wiring (2026-10-20, Day-4):* the ask surface and the graph now default
+  to the REAL configured generator, not the model-free stub. The stub applies
+  no advice oracle and no refusal path, so a request answered through it
+  would bypass the safety machinery the generation layer exists to provide.
+  The stub is explicit opt-in, for tests that want a deterministic answer.
+  The backend is selected by config (`apps/api/generation/config.py`:
+  `TUKLAS_LLM_BACKEND` / `_MODEL` / `_BASE_URL` / `_TEMPERATURE` / `_SEED` /
+  `_TIMEOUT`), which is what ADR-004 asks for - "Backend selected by config".
+  Verified through the DEFAULT path (no `generator=` argument): the real model
+  answers, the provider's deltas stream (87 token events), the token counts
+  are the provider's own, and the oracle is in force.
+- [ ] *Scope note (2026-10-20, Day-4):* ADR-004 names three backends
+  (`ollama | llamacpp | vllm`, Ollama default). Only Ollama is implemented in
+  this slice. The other two are OpenAI-compatible servers, so they are a
+  base_url away, but a backend that is not implemented must not be ACCEPTED
+  and then fail at the first request - the constructor rejects an unimplemented
+  backend by name, and the recorded `backend` field names the one that
+  actually ran, so a recorded run is never confused across backends.
+  Adding the other two is a Day-6 concern (the eval runner must record the
+  backend, and a two-backend parity check is a stronger test of the seam than
+  one).
+
+- [x] *Measured (2026-10-20, Day-4):* the generation layer answers the 5 gold
+  questions against the REAL local model (`qwen2.5:3b`, ollama, temperature 0,
+  seed 42) through the full stack - retrieval, agent loop, generation.
+  **Reproducible:** `python -m scripts.measure_generation` (from the repo
+  root) - the harness is committed, so this is a re-runnable record rather
+  than a remembered number.
+  (It needs the corpus, which is gitignored per ADR-002, and a running local
+  LLM; it skips with a clear message when the corpus is absent.)
+  Result: **0 unmarked claims, 0 unresolved markers, 0 advice phrasing**
+  across the five. Every factual sentence carries a `[n]` marker, and every
+  marker names a citation in the answer's citation list. The harness also
+  reports a conservative "unsupported" signal - a content word of the sentence
+  is in none of the cited nodes - which is paraphrase-sensitive, not a verdict:
+  reading the sentence against the cited node shows the substance is verbatim
+  (article 19: "Every person must, in the exercise of his rights ... act with
+  justice", cited [1]). The token counts reported are the provider's own, not
+  the Day-3 character-count estimate.
+  One prompt change came out of the measurement: the citation instruction now
+  shows the one-marker-per-sentence shape with an example, and the prompt
+  version moved `prompt-v1` -> `prompt-v2` (the prompt is part of the recorded
+  run). Measured over three questions: prompt-v1 marked 18 of 21 factual
+  sentences, prompt-v2 marked 18 of 18.
+
+- [ ] *Measured finding (2026-10-20, Day-4):* a question that NAMES a
+  provision and carries other words loses the named provision from the
+  evidence window. "What does article 1318 require?" retrieves article_1318 at
+  rank 9 (ident=1.00, lex=0.00) behind articles 1395/1402 (lex=1.00 on the
+  word "require"), and the top-8 cut drops article_1318 entirely — so the
+  model answers about the word-match ("The article 1318 requires the
+  contracting party ... to ratify") and cites article_1395, a DIFFERENT
+  provision. Measured across forms: "article 1318" alone -> the named article
+  is rank 0; "What is article 1318?" -> rank 5, in the window; "What does
+  article 1318 require?" -> rank 9, OUT of the window; "What does article 2124
+  provide?" -> not retrieved at all.
+  This is a RETRIEVAL-layer ranking defect, not a generation one: the
+  identifier signal cannot compete with the lexical signal in the
+  score-ordered top-8 cut. It directly undermines PRD US-2 ("every legal
+  claim has a citation so I can verify it") — the citation is valid, but it
+  points at the source of words the model was given, while the answer's
+  SUBJECT is a provision that was never in the evidence.
+  Not changed from the Day-4 slice: `retrieval.md` §3 is frozen, the window is
+  retrieval-owned, and a fix changes the retrieval contract (it needs a
+  recorded tuning run, like every other weight or normalisation change).
+  Recorded against the Day-4 slice and raised for the retrieval tuning run.
+
 **Targets:** `apps/api/generation/`. **Depends on:** Days 2 + 3.
 
-- [ ] `LLMInterface.generate()` + `.generate_stream()` (ADR-004): ollama default,
+- [x] `LLMInterface.generate()` + `.generate_stream()` (ADR-004): ollama default,
   `temperature=0`, seed pinned.
-- [ ] Renders opaque `PromptContext` — never reorders or truncates evidence (that is the
+  - *Done (2026-10-20):* `apps/api/generation/interface.py`. One `_options()` builder
+    feeds every call path, so the two methods cannot diverge; the HTTP layer is
+    covered against a real socket (`tests/test_generation_http.py`): the seed and
+    temperature go in `options` where the backend reads them, the stream flag is
+    set, and the single-shot and streaming calls send identical parameters.
+- [x] Renders opaque `PromptContext` — never reorders or truncates evidence (that is the
   Context Builder's job; the contract test catches violations).
-- [ ] Citation assembly: `citations[] = [{n, node_id, label, page_start, page_end}]`.
-- [ ] Advice blocklist post-generation: rejects "you should", "I advise", "your case",
+  - *Done (2026-10-20):* `apps/api/generation/prompts.py`. The contract test asserts
+    every part's FULL text is present, in order, including a part longer than any
+    plausible cap.
+- [x] Citation assembly: `citations[] = [{n, node_id, label, page_start, page_end}]`.
+  - *Done (2026-10-20):* `apps/api/generation/citations.py`. The page span comes from
+    the EVIDENCE (the context parts carry only {node_id,text,score}), and a node
+    outside the evidence set produces no citation at all.
+- [x] Advice blocklist post-generation: rejects "you should", "I advise", "your case",
   "you must" (single oracle shared with `architecture.md` §6 / PRD US-2).
-- [ ] Refusal path: gate failure → canned abstention string (pin the exact wording) +
+  - *Done (2026-10-20):* `apps/api/generation/blocklist.py` is the single oracle; the
+    prompt states the rule as framing WITHOUT the phrases (CONSTRAINTS.md forbids
+    advice phrasing IN prompts) and asserts its own text against the oracle at import
+    time. The matcher permits the plural and the no-apostrophe contraction, so
+    "your cases" and "you shouldnt" cannot slip through.
+- [x] Refusal path: gate failure → canned abstention string (pin the exact wording) +
   `citations: []` + `insufficient: true`. Never a fabricated answer.
+  - *Done (2026-10-20):* `apps/api/generation/service.py`. The refusal keys on the
+    GATE VERDICT, the abstention string is imported from the agent (not re-spelled),
+    and a tripped advice oracle refuses the WHOLE answer with the same shape.
   - *Acceptance (PLAN.md Day 4):* 5 gold questions pass an arm-blinded LLM judge with
     100% of factual claims cited; builder spot-checks all 5. Advice blocklist unit test
     green.
+  - *Acceptance status:* the CITATION half is measured and reproducible (the
+    harness above). The **LLM-judge half is NOT done**: the blinded,
+    versioned judge prompt is Day 6's `evaluation_runs` work, and
+    `evaluation.md` §4 requires it then. The harness's claim check is
+    mechanical word-overlap against the cited node, not a judge. So the
+    acceptance line stays open until the judge runs.
 
 ---
 

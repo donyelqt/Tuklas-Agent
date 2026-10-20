@@ -14,7 +14,7 @@ Base path `/v1`. JSON request/response; streaming over SSE. Uniform error shape 
   | `PARSE_FAILED` | 422 | PyMuPDF cannot open/extract at all (corrupt, encrypted-unreadable) |
   | `NOT_FOUND` | 404 | unknown document/node/evaluation id |
   | `CONFLICT` | 409 | identical `file_hash` re-upload, or duplicate `slug` (hash and slug conflicts live ONLY here) |
-  | `LLM_UNAVAILABLE` | 503 | backend down/timeout |
+  | `LLM_UNAVAILABLE` | 503 | backend down/timeout. Raised by `apps/api/generation/interface.py` when the local LLM backend cannot be reached, times out, or returns an unusable body (ADR-004: LLM-down degrades to this 503, never to a fake answer). `details` carries the reason, never a traceback (api.md §1: "no traceback leaks"). |
   | `EVAL_FAILED` | 500 | runner crash, invalid config |
   | `INTERNAL_ERROR` | 500 | unhandled server fault. `details` is always EMPTY: the internal exception is logged, never returned (api.md §1: "no traceback leaks"). The app-level handler in `apps/api/api/app.py` emits this code too, so the table lists it rather than leaving a code clients have no arm for. |
 - Pagination: `GET /v1/documents?page=1&pageSize=20` (defaults 1/20, max `pageSize` 100, 1-indexed) → `{ data, pagination: { page, pageSize, totalItems, totalPages } }`.
@@ -83,6 +83,13 @@ Every `tool_call` is immediately followed by its `tool_result`, in the order the
 tools ran. `token` events appear only when the gate passed; an abstention
 streams `plan → … → evidence → done` with no `token` event. The `error` event
 is terminal: it is the last event of the stream.
+
+The `token` events are a REPLAY of the model's deltas, not a live feed: the
+advice oracle refuses the WHOLE answer, so no text can be released before the
+whole of it has been checked. The deltas are the model's own, in the model's
+order, so a client that joins them receives exactly the answer — but they
+arrive in a burst once the model has finished. The `plan` / `tool_call` /
+`tool_result` / `evidence` events ARE live.
 
 ## 4. Evaluation (typed)
 

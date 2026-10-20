@@ -85,12 +85,32 @@ INSPECT_TOP_N = 3
 
 @runtime_checkable
 class Generator(Protocol):
-    """Generation seam (architecture.md sec 4, Generation column)."""
+    """Generation seam (architecture.md sec 4, Generation column).
+
+    The seam carries three things the generation layer needs and the agent
+    holds:
+
+    - the OPAQUE PromptContext (the Context Builder's product);
+    - the EVIDENCE, because a citation's page span lives in the kept set and
+      not in the context parts (which carry only {node_id,text,score});
+    - the GATE VERDICT, because the refusal path keys on it (SPEC.md sec 6:
+      insufficiency is the gate verdict, NOT "are there kept nodes").
+
+    The result is the generation service's answer dict:
+    {answer_markdown, citations, insufficient, tokens_source, model,
+     backend, temperature, seed}.
+    """
 
     def generate(
-        self, context: dict[str, Any], question: str, sub_questions: list[str]
-    ) -> tuple[str, list[dict[str, Any]]]:
-        """Return (answer_markdown, citations). Citations may be empty."""
+        self,
+        context: dict[str, Any],
+        question: str,
+        sub_questions: list[str],
+        evidence: dict[str, Any],
+        *,
+        gate_passed: bool,
+    ) -> dict[str, Any]:
+        """Return the generation service's answer dict."""
         ...
 
 
@@ -103,18 +123,46 @@ class StubGenerator:
     """
 
     def generate(
-        self, context: dict[str, Any], question: str, sub_questions: list[str]
-    ) -> tuple[str, list[dict[str, Any]]]:
+        self,
+        context: dict[str, Any],
+        question: str,
+        sub_questions: list[str],
+        evidence: dict[str, Any],
+        *,
+        gate_passed: bool,
+    ) -> dict[str, Any]:
+        # The gate decides sufficiency, NOT the presence of evidence
+        # (SPEC.md sec 6). The stub honours it exactly as the real service
+        # does: a failed gate refuses, and no answer is produced.
+        if not gate_passed:
+            return {
+                "answer_markdown": CANNED_ABSTENTION,
+                "citations": [],
+                "insufficient": True,
+            }
         parts = context.get("parts", []) if isinstance(context, dict) else []
         lines: list[str] = []
-        citations: list[dict[str, Any]] = []
         for index, part in enumerate(parts, start=1):
             node_id = str(part.get("node_id", ""))
             lines.append(f"[{index}] {node_id}: {str(part.get('text', ''))[:200]}")
-            citations.append({"n": index, "node_id": node_id})
+        # The citation list comes from the ONE rule
+        # (apps/api/generation/citations.py), not from a second copy of it:
+        # two copies of the same rule are two rules that will drift, and
+        # they already had.
+        from apps.api.generation.citations import assemble_citations
+
+        citations = assemble_citations(parts, evidence)
         if not lines:
-            return CANNED_ABSTENTION, []
-        return "\n".join(lines), citations
+            return {
+                "answer_markdown": CANNED_ABSTENTION,
+                "citations": [],
+                "insufficient": True,
+            }
+        return {
+            "answer_markdown": "\n".join(lines),
+            "citations": citations,
+            "insufficient": False,
+        }
 
 
 def _validate_max_iterations(max_iterations: int) -> int:
@@ -597,50 +645,71 @@ def _build_context_node(state: AgentState) -> AgentState:
     return state
 
 
+def _default_generator() -> Generator:
+    """The configured generator: the real local LLM (ADR-004).
+
+    Imported lazily so the agent module does not depend on the generation
+    package at import time, and so a caller that passes its own generator
+    never pays for constructing one.
+    """
+    from apps.api.generation.config import generator_from_env
+
+    return generator_from_env()
+
+
 def _generate_node_factory(generator: Generator) -> Any:
     def _generate(state: AgentState) -> AgentState:
-        # The gate verdict decides sufficiency — NOT the presence of kept
-        # nodes. A query with no lexical match can still leave score-0 nodes
-        # in the kept set; answering from those would fabricate.
-        if not state.get("_gate_passed"):
-            state["answer_md"] = CANNED_ABSTENTION
-            state["insufficient"] = True
-            state["citations"] = []
-            state["evidence_ids"] = []
-            return state
+        # The generator owns the refusal path (architecture.md sec 6: the
+        # refusal is the generation layer's, and the advice oracle is enforced
+        # there). The agent hands it the gate verdict and the evidence, and
+        # records what comes back.
         evidence = state.get("evidence", {})
-        kept = evidence.get("kept", []) if isinstance(evidence, dict) else []
         context = state.get("context", {})
-        answer_md, citations = generator.generate(
-            context, state["question"], state.get("sub_questions", [])
+        result = generator.generate(
+            context,
+            state["question"],
+            state.get("sub_questions", []),
+            evidence,
+            gate_passed=bool(state.get("_gate_passed")),
         )
-        state["answer_md"] = answer_md
-        state["insufficient"] = False
-        # Citations carry the page span; the context parts do not (retrieval
-        # context is {node_id,text,score}), so the page span comes from the
-        # kept evidence the citation was built from.
-        kept_by_id = {
-            str(item.get("node_id")): item
-            for item in kept
-            if isinstance(item, dict)
-        }
-        resolved: list[dict[str, Any]] = []
-        for citation in citations:
-            node_id = str(citation.get("node_id", ""))
-            source = kept_by_id.get(node_id, {})
-            resolved.append(
-                {
-                    "n": citation.get("n"),
-                    "node_id": node_id,
-                    "label": source.get("title", node_id),
-                    "page_start": source.get("page_start"),
-                    "page_end": source.get("page_end"),
-                }
-            )
-        state["citations"] = resolved
+        state["answer_md"] = str(result.get("answer_markdown", CANNED_ABSTENTION))
+        state["insufficient"] = bool(result.get("insufficient", False))
+        citations = result.get("citations", [])
+        state["citations"] = list(citations) if isinstance(citations, list) else []
+        # The evidence ids are the cited nodes: what the answer actually rests
+        # on, not every kept node.
         state["evidence_ids"] = [
-            str(item.get("node_id")) for item in kept if isinstance(item, dict)
+            str(citation.get("node_id"))
+            for citation in state["citations"]
+            if isinstance(citation, dict) and citation.get("node_id")
         ]
+        # ADR-004: the model id, backend, temperature and seed are recorded
+        # with the ask, so a run can name the run that produced it. The keys
+        # are written literally: a TypedDict cannot take a computed key, and
+        # a computed key would not be a channel either.
+        if "tokens_source" in result:
+            state["_gen_tokens_source"] = result["tokens_source"]
+        if "model" in result:
+            state["_gen_model"] = result["model"]
+        if "backend" in result:
+            state["_gen_backend"] = result["backend"]
+        if "temperature" in result:
+            state["_gen_temperature"] = result["temperature"]
+        if "seed" in result:
+            state["_gen_seed"] = result["seed"]
+        if "prompt_version" in result:
+            state["_gen_prompt_version"] = result["prompt_version"]
+        # The provider's own token counts, when a model was called.
+        if result.get("prompt_tokens") is not None:
+            state["_gen_prompt_tokens"] = result["prompt_tokens"]
+        if result.get("completion_tokens") is not None:
+            state["_gen_completion_tokens"] = result["completion_tokens"]
+        # The provider's real deltas, when the generator produced them. The SSE
+        # surface streams THESE, not a slicing of the finished answer, so the
+        # client sees the answer arrive.
+        stream = result.get("stream")
+        if isinstance(stream, list):
+            state["_gen_stream"] = [str(chunk) for chunk in stream]
         return state
 
     return _generate
@@ -653,7 +722,11 @@ def build_graph(generator: Generator | None = None) -> CompiledStateGraph:
     select_evidence, sufficiency_gate, broaden_search, build_context, generate.
     """
     graph = StateGraph(AgentState)
-    gen: Generator = generator if generator is not None else StubGenerator()
+    # The REAL generator by default, for the same reason as the ask surface:
+    # the stub applies no advice oracle and no refusal path. A caller that
+    # wants the deterministic model-free answer passes StubGenerator
+    # explicitly.
+    gen: Generator = generator if generator is not None else _default_generator()
 
     graph.add_node("query_plan", _query_plan_node)
     graph.add_node("search", _search_node)
