@@ -632,6 +632,95 @@ def test_agent_ask_response_shape(civil_code: SimpleNamespace) -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_ask_stream_order(civil_code: SimpleNamespace) -> None:
+    """The frozen SSE event order (api.md sec 3), pinned exactly.
+
+    CONSTRAINTS.md:32 names this contract test: "SSE contract | Event order
+    pinned incl. zero-tool-call + error cases | contract test
+    `test_ask_stream_order` | CI".
+
+    The order is asserted as a WHOLE sequence, not by membership. Asserting
+    "plan first, done last, evidence between them, tool_call adjacent to its
+    tool_result" would still accept
+    ``plan -> tool_call -> tool_result -> evidence -> tool_call ->
+    tool_result -> token -> done`` — an `evidence` event in the middle of the
+    tool stream and `token` before `evidence`. A client built against the
+    frozen sequence (PLAN.md Day 5) would break on that.
+    """
+    events = list(
+        iter_sse_events(
+            civil_code.doc_id,
+            "What are the requisites of contracts?",
+            db_path=civil_code.db,
+        )
+    )
+    types = [event["event"] for event in events]
+
+    tool_pairs = len([t for t in types if t == "tool_call"])
+    token_count = len([t for t in types if t == "token"])
+    expected = (
+        ["plan"]
+        + ["tool_call", "tool_result"] * tool_pairs
+        + ["evidence"]
+        + ["token"] * token_count
+        + ["done"]
+    )
+    assert types == expected, f"the frozen event order changed:\n{types}\n!=\n{expected}"
+
+    # The payload of each event carries the contract fields (api.md sec 3).
+    for event in events:
+        if event["event"] == "plan":
+            assert set(event.keys()) == {"event", "sub_questions"}
+        elif event["event"] == "tool_call":
+            assert set(event.keys()) == {"event", "tool", "args"}
+        elif event["event"] == "tool_result":
+            assert set(event.keys()) == {"event", "tool", "result_ids", "relevant"}
+        elif event["event"] == "evidence":
+            assert set(event.keys()) == {"event", "evidence_ids", "insufficient"}
+        elif event["event"] == "token":
+            assert set(event.keys()) == {"event", "text"}
+        elif event["event"] == "done":
+            assert set(event.keys()) == {"event", "ask_response"}
+    # A passing run streams tokens.
+    assert token_count > 0
+
+
+def test_ask_stream_order_zero_tool_call(civil_code: SimpleNamespace) -> None:
+    """The zero-tool-call case of the same contract (api.md sec 3).
+
+    "zero-tool-call runs legal: plan -> evidence(empty) -> done(insufficient
+    ask_response)".
+    """
+    events = list(
+        iter_sse_events(civil_code.doc_id, "", db_path=civil_code.db)
+    )
+    types = [event["event"] for event in events]
+    assert types == ["plan", "evidence", "done"]
+    assert events[1]["evidence_ids"] == []
+    assert events[1]["insufficient"] is True
+    assert events[2]["ask_response"]["insufficient"] is True
+    assert events[2]["ask_response"]["citations"] == []
+
+
+def test_ask_stream_order_error_is_terminal(civil_code: SimpleNamespace) -> None:
+    """The error-terminal case of the same contract (api.md sec 3).
+
+    "The `error` event is terminal: it is the last event of the stream."
+    """
+    events = list(
+        iter_sse_events(
+            civil_code.doc_id,
+            "What are the requisites of contracts?",
+            db_path=str(Path(civil_code.db).parent / "missing.db"),
+        )
+    )
+    types = [event["event"] for event in events]
+    assert types[-1] == "error"
+    assert types.count("error") == 1
+    assert "done" not in types
+    assert set(events[-1]["error"].keys()) == {"code", "message", "details"}
+
+
 def test_agent_sse_event_sequence(civil_code: SimpleNamespace) -> None:
     events = list(
         iter_sse_events(
