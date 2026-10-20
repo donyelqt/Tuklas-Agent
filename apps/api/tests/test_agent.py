@@ -606,6 +606,41 @@ def test_agent_trace_carries_fallback_true_on_a_flat_document(
         )
 
 
+def test_agent_supporter_sets_do_not_cross_subquestions(
+    civil_code: SimpleNamespace,
+) -> None:
+    """A sub-question's supporters must come from ITS OWN hits.
+
+    A hit's lex score is relative to the query that retrieved it. Pooling the
+    hits of every sub-question into one list and asking about them together
+    lets one sub-question's nodes satisfy another sub-question's support
+    check: a node retrieved for A carries lex > 0 relative to A, and the
+    supporter rule accepts lex > 0 for ANY sub-question.
+    """
+    first = "What is succession?"
+    second = "What is the registration of chattel mortgages?"
+    state = run_agent(
+        civil_code.doc_id, f"{first} {second}", db_path=civil_code.db
+    )
+    per_question = state["evidence"]["gate"]["per_question"]
+    by_question = state.get("_hits_by_question", {})
+    # The planner strips the trailing "?" from a split part, so the
+    # sub-questions are the two parts without it.
+    assert set(per_question) == {first.rstrip("?"), second.rstrip("?")}
+    for sub_question, supporters in per_question.items():
+        own = {
+            str(hit.node_id) for hit in by_question.get(sub_question, [])
+        }
+        assert supporters, f"no supporters for {sub_question!r}"
+        # Every supporter was retrieved for THIS sub-question.
+        assert set(supporters) <= own, (
+            f"{sub_question!r} is supported by nodes retrieved for another "
+            f"sub-question: {sorted(set(supporters) - own)}"
+        )
+    # The merged evidence set still respects the top-8 window.
+    assert len(state["evidence"]["kept"]) <= 8
+
+
 def test_agent_gate_fails_closed_for_an_unsearched_subquestion(
     civil_code: SimpleNamespace,
 ) -> None:

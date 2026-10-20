@@ -1,0 +1,30 @@
+fix: a sub-question's supporters must come from ITS OWN hits
+
+The SPEC-CONFORMANCE review lens found that select_evidence was fed the hits
+of ALL sub-questions pooled into one list, and asked about all of them
+together.
+
+A hit's lex score is relative to the query that retrieved it. So a node
+retrieved for sub-question A carries lex > 0 relative to A - and the
+supporter rule (retrieval.md sec 3: score >= 0.15 AND (lex > 0 OR
+identifier-hit)) accepts lex > 0 for ANY sub-question. Pooling therefore let
+one sub-question's nodes satisfy another sub-question's support check: the
+gate could pass for a question whose own hits supported nothing.
+
+Measured on two sub-questions with DISJOINT top-10 hits ("What is
+succession?" and "What is the registration of chattel mortgages?"): 3 of the
+second sub-question's 8 supporters came from the FIRST sub-question's hits.
+After the fix: 8 of 8 supporters of each sub-question come from its own hits.
+
+The hits are now recorded per sub-question, and select_evidence is called
+per sub-question with that sub-question's own hits; the verdicts are merged.
+The retrieval contract is untouched - select_evidence still evaluates
+whatever hits it is given, and the agent now asks the right question of it.
+
+The merged kept set is also cut to the top-8 evidence window
+(retrieval.md sec 5): the agent assembles ONE context, and without the cut
+the merged set would carry 16 nodes - double the window - inflating the
+prompt. The gate's supporters are never dropped by the cut; only
+non-supporting nodes are.
+
+75 passed; ruff clean; mypy clean on 28 files; check_no_vectors.py OK.
