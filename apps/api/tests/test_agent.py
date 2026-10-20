@@ -524,6 +524,32 @@ def test_agent_sse_streams_incrementally(civil_code: SimpleNamespace) -> None:
         agent_graph.TOOL_TABLE["search_nodes"] = original
 
 
+def test_agent_sse_emits_every_trace_entry_exactly_once(
+    civil_code: SimpleNamespace,
+) -> None:
+    # The SSE layer walks the trace with a cursor across streamed node updates.
+    # A cursor bug would duplicate or drop tool events, and the sequence would
+    # still look plausible - so compare the streamed tools against the trace.
+    from apps.api.agent.graph import run_agent
+
+    for question in (
+        "What are the requisites of contracts?",
+        "What is succession? What is the registration of chattel mortgages?",
+        "qqzz wumpus frobnicatex",
+    ):
+        state = run_agent(civil_code.doc_id, question, db_path=civil_code.db)
+        trace_tools = [
+            entry["tool"] for entry in state.get("trace", []) if entry.get("tool")
+        ]
+        events = list(
+            iter_sse_events(civil_code.doc_id, question, db_path=civil_code.db)
+        )
+        calls = [e["tool"] for e in events if e["event"] == "tool_call"]
+        results = [e["tool"] for e in events if e["event"] == "tool_result"]
+        assert calls == trace_tools, f"tool_call stream differs from the trace: {question}"
+        assert results == trace_tools, f"tool_result stream differs: {question}"
+
+
 def test_agent_sse_zero_tool_call_is_legal(civil_code: SimpleNamespace) -> None:
     # An invalid plan (the planner emits zero sub-questions) is the legal
     # zero-tool-call run: api.md sec 3 "zero-tool-call runs legal: plan ->
