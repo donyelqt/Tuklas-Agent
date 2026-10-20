@@ -212,7 +212,20 @@ def run_ask(
     # bypass the safety machinery the generation layer exists to provide.
     # The stub is explicit opt-in, for the tests that want a deterministic
     # answer.
-    gen: Generator = generator if generator is not None else _default_generator()
+    try:
+        gen: Generator = (
+            generator if generator is not None else _default_generator()
+        )
+    except ValueError as err:
+        # A MISCONFIGURED backend is a server fault, not a bad body: the
+        # caller sent a fine request and the server cannot serve it. It must
+        # not escape as a raw ValueError (the app's catch-all would turn it
+        # into a 500 with a traceback-free body, but the typed error is
+        # clearer about what went wrong).
+        _LOG.error("the configured LLM backend is unusable: %s", err)
+        raise errors.ApiError(
+            "INTERNAL_ERROR", "internal server error", 500, {}
+        ) from err
     try:
         final = run_agent(
             document_id,
@@ -274,7 +287,22 @@ def iter_sse_events(
     # bypass the safety machinery the generation layer exists to provide.
     # The stub is explicit opt-in, for the tests that want a deterministic
     # answer.
-    gen: Generator = generator if generator is not None else _default_generator()
+    try:
+        gen: Generator = (
+            generator if generator is not None else _default_generator()
+        )
+    except ValueError as err:
+        # A misconfigured backend is a server fault, not a bad body.
+        _LOG.error("the configured LLM backend is unusable: %s", err)
+        yield {
+            "event": "error",
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "internal server error",
+                "details": {},
+            },
+        }
+        return
     try:
         max_iterations = _validate_max_iterations(max_iterations)
     except errors.ApiError as err:
