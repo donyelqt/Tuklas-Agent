@@ -16,7 +16,12 @@ from typing import Any
 
 import pytest
 from apps.api.agent.ask import CANNED_ABSTENTION, iter_sse_events, run_ask
-from apps.api.agent.graph import MAX_TOOL_ITERATIONS, build_graph, run_agent
+from apps.api.agent.graph import (
+    MAX_SUB_QUESTIONS,
+    MAX_TOOL_ITERATIONS,
+    build_graph,
+    run_agent,
+)
 from apps.api.agent.stoplist import STOPLIST, broaden
 from apps.api.ingestion.service import ingest_pdf
 from apps.api.retrieval.index import build_indexes
@@ -137,6 +142,23 @@ def test_agent_sufficiency_gate_pass(civil_code: SimpleNamespace) -> None:
     for sub_question in state.get("sub_questions", []):
         assert per_question.get(sub_question), f"no supporter for {sub_question!r}"
     assert state["answer_md"] != CANNED_ABSTENTION
+    # The AGENT's verdict, not just retrieval's payload: the gate passes only
+    # if every planned sub-question has a supporter that is actually in the
+    # kept set. Asserting on retrieval's own per_question map would not catch
+    # an agent that ignored the verdict and decided on "kept is non-empty" -
+    # the exact bug that let a score-0 kept set produce a fabricated answer.
+    assert state["_gate_passed"] is True
+    assert state["_gate_missing"] == []
+    kept_ids = {
+        str(item.get("node_id")) for item in kept if isinstance(item, dict)
+    }
+    for sub_question in state.get("sub_questions", []):
+        supporters = [
+            node_id
+            for node_id in per_question.get(sub_question, [])
+            if node_id in kept_ids
+        ]
+        assert supporters, f"the agent saw no supporter in the kept set for {sub_question!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -198,10 +220,17 @@ def test_agent_broaden_retry_only_touches_failing_subquestions(
     for entry in broaden_entries:
         missing = entry.get("missing_sub_questions", [])
         queries = entry.get("broadened_queries", [])
-        if queries:
-            assert len(queries) == len(missing)
-            for query in queries:
-                assert query in missing or query == broaden(query)
+        if not queries:
+            # The retry was skipped (the stoplist could not reduce the
+            # query). That is a valid outcome, but then there is nothing to
+            # assert about the query set - so assert the skip itself.
+            assert entry.get("result") == "skipped_no_reduction"
+            continue
+        # Every broadened query belongs to a sub-question that FAILED, and
+        # there is exactly one broadened query per failed sub-question.
+        assert len(queries) == len(missing)
+        for query in queries:
+            assert query in {broaden(sub) for sub in missing}
 
 
 # ---------------------------------------------------------------------------
@@ -229,9 +258,12 @@ def test_agent_multi_hop_trace_abandoned_branch(civil_code: SimpleNamespace) -> 
     for branch in branches:
         assert branch.get("branch_id")
     # The abandoned branch's node ids never enter the kept evidence set.
+    # (The `or not relevant` form this replaced was a tautology: every member
+    # of `abandoned` has relevant False, so it was always True and could not
+    # fail. The contract is the intersection, stated directly.)
     for result in abandoned:
-        assert not set(result.get("result_ids", [])) & kept_ids or not result.get(
-            "relevant"
+        assert not set(result.get("result_ids", [])) & kept_ids, (
+            "an abandoned branch must contribute zero evidence nodes"
         )
     # >= 2 inspect/expand calls before the answer.
     inspect_expand = [
@@ -267,6 +299,39 @@ def test_agent_search_that_matches_nothing_is_irrelevant(
     for search in searches:
         assert search["relevant"] is False, "a non-matching search must be irrelevant"
         assert search["result_ids"] == [], "a non-matching search matched nothing"
+
+
+def test_agent_relevance_ignores_a_hier_only_score(
+    civil_code: SimpleNamespace,
+) -> None:
+    # The `hier` component scores 1.0 for any node sharing a parent with a
+    # lex-top-3 node, so a structural sibling carries a full point with
+    # lex=0.00, ident=0.00, title=0.00. Treating that as a query match would
+    # make a search branch look relevant when the query matched nothing of
+    # substance. The gate accepts exactly two signals: lex > 0 or ident > 0.
+    from apps.api.agent.tools import _hit_matched
+
+    class _Hit:
+        def __init__(self, score: float, components: dict) -> None:
+            self.score = score
+            self.components = components
+
+    # hier-only: a full total score, no lexical or identifier match.
+    assert not _hit_matched(
+        _Hit(1.0, {"lex": 0.0, "ident": 0.0, "title": 0.0, "ref": 0.0, "hier": 1.0})
+    )
+    # A lexical match is a match.
+    assert _hit_matched(
+        _Hit(2.0, {"lex": 1.0, "ident": 0.0, "title": 0.0, "ref": 0.0, "hier": 1.0})
+    )
+    # An identifier match is a match.
+    assert _hit_matched(
+        _Hit(1.0, {"lex": 0.0, "ident": 1.0, "title": 0.0, "ref": 0.0, "hier": 0.0})
+    )
+    # Nothing fired.
+    assert not _hit_matched(
+        _Hit(0.0, {"lex": 0.0, "ident": 0.0, "title": 0.0, "ref": 0.0, "hier": 0.0})
+    )
 
 
 def test_agent_search_that_matches_is_relevant(civil_code: SimpleNamespace) -> None:
@@ -432,7 +497,7 @@ def test_agent_all_seven_wrappers_touch_the_budget(civil_code: SimpleNamespace) 
         assert state["tool_iterations"] == before + 1, f"{name} did not tick the budget"
         result = state["tool_results"][-1]
         assert result["tool"] == name
-        assert "relevant" in result
+        assert isinstance(result["relevant"], bool)
     assert len(state["tool_results"]) == 7
     # The budget never exceeded the cap.
     assert state["tool_iterations"] <= 12
@@ -542,10 +607,24 @@ def test_agent_ask_response_shape(civil_code: SimpleNamespace) -> None:
     assert set(response["tokens"].keys()) == {"in", "out"}
     # Every citation points at a kept evidence node and carries a page span.
     kept_ids = set(response["evidence_ids"])
-    for citation in response["citations"]:
+    assert response["citations"], "a passing ask must cite something"
+    for index, citation in enumerate(response["citations"], start=1):
         assert citation["node_id"] in kept_ids
         assert citation["page_start"] is not None
         assert citation["page_end"] is not None
+        # api.md sec 3: citations[] = [{n, node_id, label, page_start, page_end}]
+        assert set(citation.keys()) == {
+            "n",
+            "node_id",
+            "label",
+            "page_start",
+            "page_end",
+        }
+        assert citation["n"] == index
+        assert citation["label"]
+        # The answer's inline [n] marker must correspond to citation n:
+        # architecture.md sec 6 - "every factual sentence carries [n]".
+        assert f"[{citation['n']}]" in response["answer_markdown"]
 
 
 # ---------------------------------------------------------------------------
@@ -619,6 +698,15 @@ def test_agent_sse_streams_incrementally(civil_code: SimpleNamespace) -> None:
         assert types[-1] == "done"
         assert types.count("error") == 0
         assert calls, "the search should have run while draining"
+
+        # The decisive property: the tool_call event was yielded BEFORE the
+        # search it reports had run. A batch implementation would have run the
+        # search first and replayed it afterwards, so the tool_call would
+        # arrive with the search already counted.
+        tool_call_index = next(
+            index for index, event in enumerate([first] + rest) if event["event"] == "tool_call"
+        )
+        assert tool_call_index == 1, "the tool_call must be the second event"
     finally:
         agent_graph.TOOL_TABLE["search_nodes"] = original
 
@@ -702,7 +790,10 @@ def test_agent_planner_bounds(civil_code: SimpleNamespace) -> None:
         "What are the requisites of contracts? What is the statute of frauds?",
         db_path=civil_code.db,
     )
-    assert 1 <= len(state["sub_questions"]) <= 4
+    # The question has four parts, so the cap of 4 is exactly reached: the
+    # upper bound is meaningful, not vacuous.
+    assert len(state["sub_questions"]) == 4
+    assert len(state["sub_questions"]) <= MAX_SUB_QUESTIONS
 
 
 def test_agent_planner_single_question(civil_code: SimpleNamespace) -> None:
