@@ -84,6 +84,13 @@ tools ran. `token` events appear only when the gate passed; an abstention
 streams `plan → … → evidence → done` with no `token` event. The `error` event
 is terminal: it is the last event of the stream.
 
+The `token` events are a REPLAY of the model's deltas, not a live feed: the
+advice oracle refuses the WHOLE answer, so no text can be released before the
+whole of it has been checked. The deltas are the model's own, in the model's
+order, so a client that joins them receives exactly the answer — but they
+arrive in a burst once the model has finished. The `plan` / `tool_call` /
+`tool_result` / `evidence` events ARE live.
+
 ## 4. Evaluation (typed)
 
 ```text

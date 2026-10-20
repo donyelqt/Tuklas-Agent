@@ -63,10 +63,10 @@ def record_ask(
         with ingestion_db.connect(db_path) as conn:
             conn.execute(
                 "INSERT INTO queries (id, document_id, question, created_at, model,"
-                " backend, temperature, seed, prompt_version, iterations,"
-                " evidence_ids, tokens_in, tokens_out, tokens_source, latency_ms,"
-                " insufficient)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " backend, temperature, seed, prompt_version, question_hash,"
+                " iterations, evidence_ids, tokens_in, tokens_out, tokens_source,"
+                " latency_ms, insufficient)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     query_id,
                     document_id,
@@ -77,6 +77,7 @@ def record_ask(
                     state.get("_gen_temperature"),
                     state.get("_gen_seed"),
                     state.get("_gen_prompt_version"),
+                    question_hash(question),
                     int(response.get("iterations", 0)),
                     json.dumps(list(evidence_ids)),
                     int(tokens.get("in", 0)) if isinstance(tokens, dict) else None,

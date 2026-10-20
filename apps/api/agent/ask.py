@@ -8,6 +8,16 @@ Both drive the same graph. The streaming surface drives it through LangGraph's
 for the steps to be streamed so the user can audit retrieval, not delivered in
 one batch at the end.
 
+The ``token`` events are a REPLAY, not a live feed, and the difference is
+deliberate. The advice oracle (architecture.md sec 6) refuses the WHOLE
+answer, so the text cannot be released before the whole of it has been
+checked — a stream would have to hand over advice phrasing and then retract
+it. The generation layer therefore buffers the model's deltas, checks them
+against the oracle, and the transport emits them as ``token`` events
+afterwards. The deltas are the model's own, in its order, so a client that
+joins them gets exactly the answer; but they arrive in a burst once the
+model has finished, not as it writes.
+
 Frozen event sequence (api.md sec 3)::
 
     plan{sub_questions}
@@ -124,12 +134,21 @@ def _build_response(
     stub. The ``tokens_source`` label says which, so a consumer can never
     mistake the estimate for measured usage.
     """
-    evidence: dict[str, Any] = state.get("evidence", {})
     insufficient = bool(state.get("insufficient"))
     # api.md sec 3: the abstention returns the SAME shape with
     # answer_markdown=canned text, citations=[], evidence_ids=[],
     # insufficient=true.
-    evidence_ids = [] if insufficient else _kept_node_ids(evidence)
+    #
+    # The evidence ids are the nodes the answer's CITATIONS point at - what
+    # the answer actually rests on, not the whole retrieval window. A client
+    # rendering "8 sources" for an answer that cites 2 would be reporting
+    # the window, not the grounding. The SSE `evidence` event still carries
+    # the full kept set, because that event IS the retrieval report.
+    evidence_ids = [] if insufficient else [
+        str(citation.get("node_id"))
+        for citation in (state.get("citations", []) or [])
+        if isinstance(citation, dict) and citation.get("node_id")
+    ]
     answer = state.get("answer_md", CANNED_ABSTENTION)
     if insufficient:
         answer = CANNED_ABSTENTION
@@ -406,13 +425,16 @@ def iter_sse_events(
         "insufficient": insufficient,
     }
 
-    # token{text}* — only a real answer streams tokens.
+    # token{text}* — only a real answer carries tokens.
     #
     # The deltas are the PROVIDER'S, recorded by the generation layer in the
     # order the backend emitted them - not a slicing of a finished string.
     # (The Day-3 implementation cut the finished answer into 80-character
-    # pieces, which looked streamed but was not: the model had already
-    # finished before the first token event was produced.)
+    # pieces, which looked streamed but was not.)
+    #
+    # They arrive in a BURST, not live: the advice oracle has to see the whole
+    # text before any of it can be released, so the generation layer buffers
+    # the deltas. See the module docstring.
     answer = final_state.get("answer_md", CANNED_ABSTENTION)
     if not insufficient and answer and answer != CANNED_ABSTENTION:
         chunks = list(final_state.get("_gen_stream", []) or [])
@@ -430,4 +452,15 @@ def iter_sse_events(
     # system's reported latency (evaluation.md sec 5 reports latency as a
     # system metric). The clock stops when the graph does.
     latency_ms = agent_elapsed_ms
-    yield {"event": "done", "ask_response": _build_response(final_state, latency_ms)}
+    response = _build_response(final_state, latency_ms)
+    # ADR-004: the run is recorded in EVERY ask trace, and the SSE surface
+    # is the path the product uses (PLAN.md Day 5 builds the web client on
+    # /v1/ask/stream). The trace is best-effort: it cannot fail the stream.
+    record_ask(
+        document_id,
+        question,
+        db_path=str(db_path or DEFAULT_DB_PATH),
+        state=dict(final_state),
+        response=response,
+    )
+    yield {"event": "done", "ask_response": response}
