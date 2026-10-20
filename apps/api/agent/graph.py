@@ -48,7 +48,11 @@ from apps.api.agent.stoplist import broaden as _broaden
 from apps.api.agent.stoplist import identifier_query as _identifier_query
 from apps.api.agent.tools import TOOL_TABLE, budget_left
 from apps.api.ingestion import errors
-from apps.api.retrieval.api import select_evidence
+from apps.api.retrieval.api import (
+    EVIDENCE_KEEP_TOP,
+    SUPPORT_THRESHOLD,
+    select_evidence,
+)
 from apps.api.retrieval.context import build_context
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -62,12 +66,15 @@ CANNED_ABSTENTION = (
 #: architecture.md sec 4 budget.
 MAX_TOOL_ITERATIONS = 12
 
-#: architecture.md sec 4: the gate threshold. select_evidence applies the same
-#: number to the support check; the agent only reads the verdict.
-GATE_THRESHOLD = 0.15
-
-#: retrieval.md sec 5: the evidence window is 8 nodes.
-_EVIDENCE_KEEP_TOP = 8
+#: The gate threshold and the evidence window are RETRIEVAL'S, not the
+#: agent's. retrieval.md sec 3 makes the threshold explicitly tunable (a
+#: recorded tuning run changes it) and sec 5 makes the window
+#: retrieval-owned, so a second copy here would drift: a tuned threshold
+#: would leave the agent reporting the old one, and
+#: apps/api/retrieval/context.py reads evidence["gate"] to decide which nodes
+#: are never dropped from the prompt - so the context builder's protection
+#: would be derived from a stale threshold. The agent reads the numbers
+#: retrieval used, never its own.
 
 #: PLAN.md Day 3: the planner emits 1-4 sub-questions.
 MAX_SUB_QUESTIONS = 4
@@ -321,7 +328,7 @@ def _select_evidence_node(state: AgentState) -> AgentState:
     per_question: dict[str, list[str]] = {}
     kept: list[dict[str, Any]] = []
     seen: set[str] = set()
-    threshold = GATE_THRESHOLD
+    threshold = SUPPORT_THRESHOLD
     for sub_question in asked:
         hits = by_question.get(sub_question)
         if hits is None:
@@ -357,7 +364,7 @@ def _select_evidence_node(state: AgentState) -> AgentState:
         item for item in kept if str(item.get("node_id")) in supporter_ids
     ]
     others = [item for item in kept if str(item.get("node_id")) not in supporter_ids]
-    kept = (supporters_kept + others)[:_EVIDENCE_KEEP_TOP]
+    kept = (supporters_kept + others)[:EVIDENCE_KEEP_TOP]
     kept.sort(key=lambda item: (-float(item.get("score", 0.0)), str(item.get("node_id"))))
     # The gate's supporter lists are then filtered to the kept window. Each
     # sub-question had its OWN top-8, so before this filter the supporters
@@ -377,9 +384,19 @@ def _select_evidence_node(state: AgentState) -> AgentState:
         for node_id in node_ids:
             if node_id not in gate_ids:
                 gate_ids.append(node_id)
+    # The insufficiency verdict is over EVERY PLANNED sub-question - the
+    # same set the gate uses. Computed over the searched ones only, a
+    # truncated search would report insufficient=false while the gate failed
+    # and the run abstained: the trace would then contradict itself.
+    planned = list(state.get("sub_questions", []))
+    missing = [
+        sub_question
+        for sub_question in planned
+        if not per_question.get(sub_question)
+    ]
     evidence = {
         "kept": kept,
-        "insufficient": any(not supporters for supporters in per_question.values()),
+        "insufficient": bool(missing) or not kept,
         "gate": {
             "threshold": threshold,
             "node_ids": gate_ids,

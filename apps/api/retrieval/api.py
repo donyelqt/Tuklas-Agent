@@ -41,9 +41,19 @@ _EXPAND_NODE_MAX = 5
 _EXPAND_NODE_TEXT_MAX = 2000
 
 #: select_evidence gates (retrieval.md §5, architecture.md §4).
-_EVIDENCE_KEEP_TOP = 8
-_EVIDENCE_MIN_TEXT_CHARS = 50
-_SUPPORT_THRESHOLD = 0.15
+#:
+#: The threshold and the evidence window are PUBLIC: the agent reads the
+#: numbers retrieval used rather than keeping its own copy, so a recorded
+#: tuning run that changes the threshold cannot leave the agent reporting a
+#: stale one.
+EVIDENCE_KEEP_TOP = 8
+EVIDENCE_MIN_TEXT_CHARS = 50
+SUPPORT_THRESHOLD = 0.15
+
+#: Internal aliases, unchanged.
+_EVIDENCE_KEEP_TOP = EVIDENCE_KEEP_TOP
+_EVIDENCE_MIN_TEXT_CHARS = EVIDENCE_MIN_TEXT_CHARS
+_SUPPORT_THRESHOLD = SUPPORT_THRESHOLD
 
 _NODE_COLUMNS = (
     "id, document_id, parent_id, type, title, text, page_start, page_end, depth, position"
