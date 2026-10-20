@@ -549,6 +549,63 @@ def test_agent_broaden_retry_inspects_its_hits(
     assert "inspect_node" in tool_order[1:], "inspection must follow the retry's search"
 
 
+def test_agent_trace_carries_fallback_true_on_a_flat_document(
+    tmp_path: Path,
+) -> None:
+    """The contract's exact scenario (SPEC.md sec 6, retrieval.md sec 6).
+
+    A document with no headings parses with parse_confidence < 0.5, so the
+    tree is flat (page nodes only) and ident/title/hier are all 0 - the
+    retrieval is lex-only. The trace must carry `fallback: true` so a
+    consumer can tell that the run answered from a flat page-only tree, in
+    which an identifier-hit support could never have fired.
+    """
+    import fitz
+    from apps.api.ingestion.service import ingest_pdf
+    from apps.api.retrieval.index import build_indexes
+
+    pdf_path = tmp_path / "flat.pdf"
+    document = fitz.open()
+    for index in range(3):
+        page = document.new_page()
+        page.insert_text(
+            (72, 72),
+            f"Page {index + 1} of a document with no headings whatsoever. "
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed "
+            "do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
+            "Ut enim ad minim veniam, quis nostrud exercitation ullamco "
+            "laboris nisi ut aliquip ex ea commodo consequat.",
+            fontsize=11,
+        )
+    document.save(str(pdf_path))
+    document.close()
+
+    db_path = str(tmp_path / "flat.db")
+    uploaded = ingest_pdf(str(pdf_path), slug="flat-doc", db_path=db_path)
+    assert uploaded.parse_confidence < 0.5, "the fixture must be a flat fallback"
+    build_indexes(db_path, uploaded.id, index_root=str(tmp_path / "idx"))
+
+    import apps.api.retrieval.scoring as _scoring
+
+    original_root = _scoring.INDEX_ROOT
+    _scoring.INDEX_ROOT = tmp_path / "idx"
+    try:
+        state = run_agent(uploaded.id, "What does this document say?", db_path=db_path)
+    finally:
+        _scoring.INDEX_ROOT = original_root
+
+    searches = [
+        entry
+        for entry in state.get("trace", [])
+        if entry.get("tool") == "search_nodes"
+    ]
+    assert searches
+    for entry in searches:
+        assert entry.get("fallback") is True, (
+            "a flat-fallback document must be marked in the trace"
+        )
+
+
 def test_agent_gate_fails_closed_for_an_unsearched_subquestion(
     civil_code: SimpleNamespace,
 ) -> None:
