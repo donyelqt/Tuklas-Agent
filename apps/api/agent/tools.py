@@ -63,6 +63,28 @@ def _evidence_eligible(node: Any) -> bool:
     return node.get("page_start") is not None
 
 
+def _hit_matched(hit: Any) -> bool:
+    """True when a scored hit actually matched the query.
+
+    ``search_nodes`` returns the document's top-k nodes regardless of whether
+    the query matched them; a non-matching query comes back with every score
+    at 0.0. A hit counts as a match when the LEXICAL or IDENTIFIER component
+    fired — the same two signals the sufficiency gate accepts (retrieval.md
+    §3: "score >= 0.15 AND (lex > 0 OR identifier-hit)").
+
+    The total score alone is NOT enough. The ``hier`` component scores 1.0 for
+    any node that shares a parent with a lex-top-3 node, so a structural
+    sibling can carry a full point without matching a single query term.
+    Treating that as a match would make a search branch look relevant when
+    the query matched nothing of substance.
+    """
+    components = getattr(hit, "components", None) or {}
+    return bool(
+        float(components.get("lex", 0.0) or 0.0) > 0.0
+        or float(components.get("ident", 0.0) or 0.0) > 0.0
+    )
+
+
 def _node_ids(nodes: Any) -> list[str]:
     """Node ids from a list of node dicts."""
     if not isinstance(nodes, list):
@@ -124,7 +146,18 @@ def budget_left(state: AgentState) -> int:
 
 
 def agent_search_nodes(state: AgentState, args: dict[str, Any]) -> AgentState:
-    """search_nodes — default 10, hard max 20 (retrieval.md sec 5)."""
+    """search_nodes — default 10, hard max 20 (retrieval.md sec 5).
+
+    Relevance: a search branch is relevant only if the retrieval actually
+    matched something. ``search_nodes`` returns the top-k NODES of the
+    document, so a query that matches nothing still comes back with ten
+    results — every one of them at score 0.0, because the min-max
+    normalization in scoring.py maps an all-zero lex layer to all-zero
+    scores. Counting those as a hit would make every search branch
+    relevant and hide the dead end the trace is supposed to show.
+    A hit is a match when its score is above zero, or when it carries an
+    identifier or title match (either can carry the answer on its own).
+    """
     query = str(args["query"])
     raw_top_k = int(args.get("top_k", 10))
     top_k = min(20, max(1, raw_top_k))
@@ -136,7 +169,8 @@ def agent_search_nodes(state: AgentState, args: dict[str, Any]) -> AgentState:
         **_db_kwarg(state),
     )
     latency = (time.perf_counter() - start) * 1000.0
-    hit_ids = [str(hit.node_id) for hit in hits]
+    matched = [hit for hit in hits if _hit_matched(hit)]
+    hit_ids = [str(hit.node_id) for hit in matched]
     # The scored hits feed select_evidence (retrieval-owned) later.
     state.setdefault("_hits", []).extend(hits)
     state.setdefault("_searched", []).append(query)
