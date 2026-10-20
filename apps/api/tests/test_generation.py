@@ -1105,6 +1105,54 @@ def test_generation_the_service_never_returns_an_empty_answer() -> None:
         )
 
 
+def test_generation_a_partial_token_count_is_not_published_as_measured() -> None:
+    """A provider that reported only ONE of the counts gets no "provider" label.
+
+    The missing side is unknown, not zero. Publishing a hard 0 for it under a
+    "provider" label presents a fabricated zero as measured usage - worse
+    than an estimate, because it looks real.
+    """
+    from apps.api.generation.interface import GenerationResult
+    from apps.api.generation.service import GenerationService
+
+    class _HalfReportingLLM:
+        model = "m"
+        backend = "ollama"
+        temperature = 0.0
+        seed = 42
+
+        def generate(
+            self,
+            prompt: str,
+            stop: list[str] | None = None,
+            max_tokens: int | None = None,
+        ) -> GenerationResult:
+            return GenerationResult(
+                text="Answer [1].",
+                model="m",
+                backend="ollama",
+                temperature=0.0,
+                seed=42,
+                prompt_tokens=None,  # the backend reported none
+                completion_tokens=12,  # but it reported this one
+            )
+
+    service = GenerationService(cast("LLMInterface", _HalfReportingLLM()))
+    result = service.answer(
+        {"parts": [{"node_id": "n1", "text": "x" * 100, "score": 1.0}]},
+        "q",
+        ["q"],
+        {"kept": [{"node_id": "n1", "title": "t", "page_start": 1, "page_end": 1}]},
+        gate_passed=True,
+    )
+    # Not "provider": the counts are incomplete, so the label must not claim
+    # the backend reported them.
+    assert result["tokens_source"] != "provider"
+    # And the counts are not published as a hard zero.
+    assert result["prompt_tokens"] is None
+    assert result["completion_tokens"] == 12
+
+
 def test_generation_never_degrades_to_a_fake_answer() -> None:
     """The service raises on a dead backend; it never returns a canned answer.
 
