@@ -15,11 +15,29 @@ The join is the acceptance criterion ("``retrieval_runs`` +
 ``evaluation_runs`` rows joinable per question per arm"), so the join keys
 are COLUMNS and not something a reader has to parse out of a JSON blob.
 
-The write is ONE transaction per evaluation: the run row and all its
-per-question rows land together, so a reader never sees a run whose
-metrics exist but whose questions do not, and never sees questions
-without a run. A half-written evaluation is worse than no evaluation: it
-looks reportable.
+**The write is INCREMENTAL, and the run row lands LAST.** The runner
+writes one ``retrieval_runs`` row per question per arm AS the question is
+produced, and writes the ``evaluation_runs`` row - with the run's
+metrics - at the END of the run. Two consequences follow, and both are
+properties of the code rather than intentions:
+
+* an INTERRUPTED run leaves its per-question rows in the store with NO
+  run row, because the run row is written last. A reader who finds
+  ``retrieval_runs`` rows for an ``evaluation_id`` that has no
+  ``evaluation_runs`` row is looking at an interrupted run, and those
+  rows carry no run-level metrics;
+* a COMPLETED run has both, and the two join on
+  ``(evaluation_id, question_id, arm)``.
+
+This is the opposite of a single-transaction write, and the difference is
+deliberate: a 72-question split over two arms runs for a long time, and a
+write-at-the-end policy would lose every finished question to an
+interruption. The cost of the incremental write is that the store can
+hold the rows of a run that never completed, so a reader has to check for
+the run row before treating a set of rows as a reportable run. The
+function that reads a run back, :func:`load_evaluation`, is the join: it
+returns ``None`` for an unknown evaluation, and a run whose run row is
+absent is an unknown evaluation.
 """
 
 from __future__ import annotations

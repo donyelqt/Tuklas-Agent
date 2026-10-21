@@ -7,21 +7,71 @@ The reports of the evaluation runs, one file per run.
   temperature 0, seed 42, judge prompt `judge-v1-batch`. `v1-test.json`
   is the same run's aggregates in machine-readable form.
 
-A report publishes both arms' numbers and NO verdict. It states the arms'
-asymmetry before it prints a number - the vectorless arm applies
-identifier precedence (ADR-005) and has an `ident` scoring component,
-and the dense arm has neither, so the `direct-lookup` category is not a
-like-for-like result - and it names the measured limitations, including
-the three that change what the numbers mean:
+A report publishes both arms' numbers and NO verdict. It states what a
+reader needs BEFORE it prints a number:
 
-- the `ref` scoring component is 0 for every node on this corpus, because
-  ingestion does not populate the `references_` table;
-- the abstention score measures the ability to refuse a question whose
-  VOCABULARY is absent, which is a lower bound rather than a measurement
-  of refusal quality;
-- the dense arm's sufficiency gate cannot fail on lexical grounds, so its
-  abstention score is STRUCTURALLY 0 - a property of the arm's ranking,
-  not a measurement of it.
+- **each arm's SCOPE** - how many nodes it ranks, how large the
+  vectorless arm's lexical corpus is, and what SURFACE it scores. The
+  vectorless arm ranks the document's whole node set; the dense arm
+  embeds the lexical node set, and the two score DIFFERENT surfaces over
+  that corpus;
+- **the arms' CHANNEL asymmetry** - THREE of the vectorless arm's five
+  scoring components are channels the dense arm structurally cannot have:
+  `ident` (ADR-005's identifier precedence), `title` (Jaccard overlap with
+  the node's heading) and `hier` (the node shares a parent with a
+  lex-top-3 node). The dense arm's `title` and `hier` are 0.0 for every
+  node by construction. The last two are not a corner case: the
+  vectorless arm's `title` fires on 96.5% of its hits and its `hier` on
+  97.8%, and zeroing both changes the top-10 order on 21 of 23 dev
+  questions and 40 of 41 test questions. The `direct-lookup` category is
+  therefore not a like-for-like result;
+- **the units of work the two latencies measure** - the dense arm's is a
+  matrix product over a PRE-BUILT index, the vectorless arm's is a
+  full-document BM25 RE-SCORE per query, and neither includes the build
+  of its own index.
+
+And after the numbers:
+
+- **the spot check's METHOD** - the harness's default is a MECHANICAL
+  re-judge (the same versioned prompt, the same backend, the same
+  evidence), which measures the judge's SELF-CONSISTENCY. It is NOT the
+  builder's human re-score that `evaluation.md` §4 asks for, and the
+  report says so in those words. A reader who saw "disagreement: 0.017"
+  without the method would reasonably assume a human had validated the
+  judge;
+- **`n_judged`** next to `faithfulness`, because the two differ: a
+  refusal carries no claim to judge;
+- the measured limitations, including the ones that change what the
+  numbers mean:
+  - the `ref` scoring component is 0 for every node on this corpus, because
+    ingestion does not populate the `references_` table;
+  - the abstention score measures the ability to refuse a question whose
+    VOCABULARY is absent, which is a lower bound rather than a measurement
+    of refusal quality;
+  - the two arms' abstention scores are MEASURED COUNTS of the unanswerable
+    questions each arm refused, not constants of the arm - the report
+    prints the count beside the ratio. The dense arm's gate cannot fail on
+    the LEXICAL condition, so most of the difference between the two arms'
+    scores is the gate's TRIGGER rather than the model's willingness to
+    answer; but the dense arm's gate is not unconditional, and it can fail
+    on a non-lexical one - the evidence gate's 50-character length floor
+    (which empties the kept set when the cosine ranks short SECTION nodes
+    at the top) and the top-8 evidence window (which can evict every
+    supporter of one sub-question);
+  - `citation_accuracy` is a MEASUREMENT OF A PAIR - the model's citations
+    AND the support rule's sensitivity. A score below 1.0 has two possible
+    causes the number does not separate: the SCORER is strict (the cited
+    node is on topic and the sentence's content words are in it, but the
+    model wrote legalese and no string rule can match a paraphrase to a
+    provision), or the MODEL cited badly (the cited node is off the
+    sentence's topic). A third mode is neither: the model wrote a
+    STATUTORY ARTICLE NUMBER in square brackets, the marker convention
+    reads it as a citation marker, and no such citation exists. The number
+    is a LOWER BOUND on citation quality, not a measurement of it;
+  - the GENERATION half of the reproducibility acceptance ("generation
+    within ±5pp", `evaluation.md` §8) is UNCHECKED by anything in this
+    repository: it needs a live local model backend, and the report says
+    so rather than letting the reader assume the whole acceptance was met.
 
 **The outcome of the vectorless-versus-dense comparison is not claimed
 here.** The numbers are what was measured; what they mean is a reading.

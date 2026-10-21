@@ -378,6 +378,71 @@ def validate_no_overlap(dev: Dataset, test: Dataset) -> None:
     )
 
 
+def gold_overlap(dev: Dataset, test: Dataset) -> dict[str, Any]:
+    """The gold provisions the two splits SHARE, and what it costs.
+
+    evaluation.md §1 says the dev split is for "weight tuning +
+    iteration" and the test split is "touched once per frozen config", and
+    that "tuning on test invalidates the run". A SHARED GOLD PROVISION
+    breaks that: the dev split's tuning has already seen the test
+    split's answer key for that provision, so the test split is no longer
+    untouched.
+
+    The check on question ids and question text is not enough. Two
+    questions can ask about the same provision in different words, and
+    that is the case that matters.
+
+    This does NOT raise. The shared golds are a property of the frozen
+    split, and the frozen split is an artifact: raising here would make
+    the dataset unbuildable without a rebuild. So the overlap is MEASURED
+    and RETURNED, the dataset's own notes and the run report carry it,
+    and the report's effective-n figure accounts for it.
+    """
+    dev_golds = {gold for question in dev.questions for gold in question.gold_nodes}
+    test_golds = {gold for question in test.questions for gold in question.gold_nodes}
+    shared = sorted(dev_golds & test_golds)
+    tainted = [
+        question.id
+        for question in test.questions
+        if question.gold_nodes and set(question.gold_nodes) <= dev_golds
+    ]
+    answerable = [question for question in test.questions if question.answerable]
+    distinct = {gold for question in answerable for gold in question.gold_nodes}
+    return {
+        "shared_gold_nodes": shared,
+        "n_shared_gold_nodes": len(shared),
+        "n_test_gold_nodes": len(test_golds),
+        "shared_fraction_of_test_golds": len(shared) / max(1, len(test_golds)),
+        "test_questions_fully_contained_in_dev": tainted,
+        "n_test_questions": len(test.questions),
+        "n_test_answerable": len(answerable),
+        "n_distinct_test_gold_provisions": len(distinct),
+    }
+
+
+def effective_n(test: Dataset) -> int:
+    """The number of INDEPENDENT measurements in the test split.
+
+    The report says n=41, and 41 is the number of answerable test
+    questions. It is not the number of independent observations: six gold
+    provisions are used by more than one question, so a single retrieval
+    success on one of them moves several rows at once, and the reported
+    per-category gaps move in steps of 1/n that are larger than they look.
+
+    This returns the number of DISTINCT gold provisions among the
+    answerable questions, so a reader can see the effective sample size
+    next to the nominal one.
+    """
+    return len(
+        {
+            gold
+            for question in test.questions
+            if question.answerable
+            for gold in question.gold_nodes
+        }
+    )
+
+
 def validate_unanswerable_count(dev: Dataset, test: Dataset) -> int:
     """At least 5 unanswerable rows across the whole dataset (§8)."""
     count = sum(

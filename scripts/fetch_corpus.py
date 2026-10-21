@@ -43,6 +43,17 @@ SECONDARY = (
     "5a66d81044b5909739f1f232bcaa610ea02dbdc2eff6a1b5e12aa903a445cfa4",
 )
 
+#: The User-Agent the fetches are sent with.
+#:
+#: urllib sends NO User-Agent of its own, and the ICNL host answers that
+#: (and the "Python-urllib/3.x" default) with a 403, while every other
+#: User-Agent is served the file. The corpus PDFs are behind a CDN that
+#: refuses unidentified clients, so a fetch without a User-Agent is a hard
+#: 403 on a CI runner and the corpus never arrives. Naming a client is what
+#: every other HTTP client does, and the checksum check below is what
+#: actually guarantees the artifact is the one docs/CORPUS.md records.
+USER_AGENT = "tuklas-agent-corpus-fetcher/1.0 (+https://github.com/donyelqt/Tuklas-Agent)"
+
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -65,8 +76,9 @@ def fetch(name: str, url: str, expected: str) -> bool:
 
     DOCUMENTS.mkdir(parents=True, exist_ok=True)
     print(f"fetching: {url}")
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
-        with urllib.request.urlopen(url, timeout=300) as response:
+        with urllib.request.urlopen(request, timeout=300) as response:
             payload = response.read()
     except OSError as exc:
         print(f"fetch_corpus: cannot fetch {name}: {exc}", file=sys.stderr)

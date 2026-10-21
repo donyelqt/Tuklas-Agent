@@ -138,8 +138,10 @@ heading match) → tree → SQLite nodes + references`.
 - **Reference graph:** `references` edges from regex + RapidFuzz title fallback;
   unresolved targets stored with `target_node_id NULL`.
 - **Scoring:** `score = w_lex*lex + w_ident*ident + w_title*title + w_ref*ref + w_hier*hier`,
-  disjoint inputs (lex sees body text only; title sees headings only; ident sees identifier
-  tokens only — a heading term fires in exactly one component).
+  disjoint inputs on the QUERY side (the query's identifier tokens are removed from the lex
+  and title inputs, so an IDENTIFIER term fires in exactly one component). On the DOCUMENT
+  side the heading line is part of a node's stored body text, so a heading's ordinary words
+  are lexical surface too and can fire in `lex` and `title` together (ADR-007).
   - `lex`: BM25 over body, min-max normalized per query → [0,1].
   - `ident`: 1.0 exact normalized article id, 0.5 chapter/title-level id, else 0.
   - `title`: heading token overlap (Jaccard) → [0,1].

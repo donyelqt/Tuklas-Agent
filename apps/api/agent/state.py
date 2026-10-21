@@ -70,6 +70,7 @@ class AgentState(TypedDict, total=False):
     _gen_completion_tokens: int
     _gen_stream: list[str]
     _db_path: str | None
+    _weights: dict[str, float] | None
     _searched: list[str]
     _visited: list[str]
     _expanded: list[str]
@@ -80,8 +81,17 @@ def initial_state(
     document_id: str,
     *,
     max_iterations: int = 12,
+    weights: dict[str, float] | None = None,
 ) -> AgentState:
-    """The entry state for ``run_agent`` — deterministic, no RNG."""
+    """The entry state for ``run_agent`` — deterministic, no RNG.
+
+    ``weights`` is the retrieval.md §3 weight vector the agent's own
+    retrieval is scored with. It is ``None`` here, which means the
+    retrieval layer's defaults, so a caller that pins no weights keeps the
+    behaviour it had. It travels in the state because the tool wrapper is
+    the only place that knows the vector at query time, and a pinned weight
+    that never reaches the scorer is a value that controls nothing.
+    """
     return AgentState(
         question=question,
         document_id=document_id,
@@ -101,4 +111,5 @@ def initial_state(
         error="",
         _hits=[],
         _inspected=[],
+        _weights=dict(weights) if weights is not None else None,
     )

@@ -17,7 +17,7 @@
 - **Identifier index:** normalized article/section labels → node ids. Normalizer §4.
 - **Reference graph:** `references` edges from regex + RapidFuzz title fallback; unresolved targets stored with `target_node_id NULL`.
 
-## 3. Scoring — tunable defaults, disjoint components, two-pass order
+## 3. Scoring — tunable defaults, query-side disjointness, two-pass order
 
 Per candidate node `n` for query `q`:
 
@@ -25,9 +25,45 @@ Per candidate node `n` for query `q`:
 score(n, q) = w_lex*lex + w_ident*ident + w_title*title + w_ref*ref + w_hier*hier
 ```
 
-**Disjoint inputs (no triple-counting):** `lex` sees body text only (titles stripped before BM25); `title` sees title/heading only; `ident` sees identifier tokens only (removed from both other inputs). A heading term fires in exactly one component.
+**Disjoint inputs, on the QUERY side (no triple-counting).** The rule is
+about the QUERY, and it is enforced there: the tokens an identifier label
+consumes are removed from the query before it reaches the `lex` and
+`title` components, so an IDENTIFIER term fires in exactly one component,
+`ident`.
 
-- `lex`: BM25 over body, min-max normalized per query → [0,1].
+```text
+lex_tokens  = tokens(query) - identifier_tokens(query)
+title_tokens = tokens(query) - identifier_tokens(query)
+```
+
+**The DOCUMENT side is different, and the difference is deliberate
+(ADR-007).** The parser stores a node's heading line at the START of that
+node's body text, so the heading's ordinary words are lexical surface as
+well: they are BM25 terms in the document's corpus AND heading tokens in
+the `title` component. A heading's ordinary word therefore CAN fire in
+both `lex` and `title`.
+
+This is not a bug that was left in: the heading line is often the
+PROVISION ITSELF. Measured on the Civil Code, 317 of the 2,392 corpus
+nodes have no body text at all once the heading line is removed — for
+those, the heading IS the provision ("Article 1433. Estoppel may in pais
+or by deed."), and stripping it would delete the provision's only text
+from the corpus. Stripping the heading before BM25 costs 37.9% of the
+Civil Code's lexical tokens and drops dev Recall@5 from 0.717 to 0.435.
+ADR-007 records the measurement and the decision.
+
+So the two rules are:
+
+* an **identifier** term fires in exactly one component (`ident`), because
+  the query's identifier tokens are stripped from the other two; and
+* a **heading's ordinary words** may fire in two (`lex` and `title`),
+  because the heading line is part of the stored body text.
+
+The title component is NOT redundant with lex: it is a bounded
+heading-overlap measure, while lex is a min-maxed BM25 over a document's
+corpus, and the two rank differently.
+
+- `lex`: BM25 over the document's body corpus (leaf-node bodies + section-intro texts; the heading line is part of a node's body), min-max normalized per query → [0,1].
 - `ident`: 1.0 exact normalized article id, 0.5 chapter/title-level id, else 0. No depth prior, no classifier — v1 has no query classifier; lookup-vs-comparison handling is future work, not a silent keyword set.
 - `title`: heading token overlap (Jaccard) → [0,1].
 - `ref`: 1.0 if reachable within 2 hops from a pass-1 lex-top-5 node, else 0.
@@ -129,3 +165,4 @@ Fallback detected by `parse_confidence < 0.5` (stored on document). Then: `ident
 
 - [x] Golden: 10-question smoke set — every gold_node in top-5 (the reported primary K; top-8 evidence window is a superset, so top-5 pass implies top-8 containment).
 - [ ] Weights + normalization snapshot in every `retrieval_runs` row (schema has the columns).
+- [x] **The §3 disjointness rule is the IMPLEMENTED rule** (ADR-007) — `apps/api/tests/test_retrieval_contract.py` pins both directions: the query's identifier tokens are stripped from the lex and title inputs, and the heading line stays in the corpus. The same file asserts that this section and `SPEC.md` §5 state the rule the code implements, so a change to either side without the other fails the suite.
