@@ -34,10 +34,18 @@ What surprises people:
 - No unimplemented stubs: `raise NotImplementedError`, `...`, `pass`-only handlers, empty `catch {}`.
 - No secrets in source. No absolute private paths.
 - No skipped or deleted tests without a reason in the commit message.
-- Vectorless quarantine: `apps/api/{ingestion,retrieval,agent,generation}/` must not import
+- Vectorless quarantine: `apps/api/{ingestion,retrieval,agent,generation,api}/` must not import
   `sentence_transformers`, `faiss`, `chromadb`, `qdrant_client`, `pgvector`, and
   `cosine_similarity` must not appear in `apps/api/retrieval/`. Only
-  `apps/api/evaluation/` may import `experiments/vector/`.
+  `apps/api/evaluation/` may import `experiments/vector/`. The scope includes
+  `apps/api/api/`: `CONSTRAINTS.md` names it, and `CONSTRAINTS.md` is the binding
+  file when the two disagree.
+- Vector machinery is barred from the quarantined directories too, not only the
+  five named packages: `fastembed`, `onnxruntime` and `numpy` are the runtime the
+  dense arm is built on, so allowing them would let a vector implementation into
+  the vectorless arm wearing a different hat. `numpy` in particular is not named
+  in `CONSTRAINTS.md`, and the `cosine_similarity` grep cannot see a cosine
+  written as `np.dot(a, b) / (norm(a) * norm(b))`.
 - Agent thinness: `apps/api/agent/` accesses nodes only through the seven tools and must
   not import `sqlite3`, `sqlalchemy`, or `apps.api.models`.
 

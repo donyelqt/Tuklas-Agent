@@ -1039,7 +1039,9 @@ def civil_code(tmp_path_factory: pytest.TempPathFactory) -> Any:
     _scoring.INDEX_ROOT = original_root
 
 
-def test_generation_ask_trace_records_the_run(civil_code: SimpleNamespace) -> None:
+def test_generation_ask_trace_records_the_run(
+    civil_code: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """ADR-004: the run is recorded, so a run can be named and compared.
 
     "Model id + backend + temperature + seed recorded in every ask trace and
@@ -1049,7 +1051,18 @@ def test_generation_ask_trace_records_the_run(civil_code: SimpleNamespace) -> No
     """
     import sqlite3
 
+    from apps.api.agent import ask as ask_module
+    from apps.api.agent import graph as graph_module
     from apps.api.agent.ask import run_ask
+
+    # The model-free stub, so the test exercises the TRACE and needs no
+    # model. Without this the ask resolves the real local backend, and the
+    # test then fails with a 503 LLM_UNAVAILABLE wherever no ollama is
+    # running -- which is every CI runner. The test's own comment below
+    # already says the run parameters are absent "the model-free generator
+    # runs no model", so the stub is what this test was written against.
+    monkeypatch.setattr(ask_module, "_default_generator", StubGenerator)
+    monkeypatch.setattr(graph_module, "_default_generator", StubGenerator)
 
     response = run_ask(
         civil_code.doc_id,
