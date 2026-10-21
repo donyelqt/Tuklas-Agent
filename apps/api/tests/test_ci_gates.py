@@ -44,9 +44,11 @@ import shutil
 import subprocess
 import sys
 import threading
+import urllib.error
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from email.message import Message
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -56,6 +58,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 NO_VECTORS = REPO_ROOT / "scripts" / "check_no_vectors.py"
 EVAL_CONFIG = REPO_ROOT / "scripts" / "check_eval_config.py"
+FETCH_CORPUS = REPO_ROOT / "scripts" / "fetch_corpus.py"
 EXAMPLE_CONFIG = REPO_ROOT / "scripts" / "fixtures" / "example-run-config.json"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
@@ -74,6 +77,18 @@ def _load_module(name: str, path: Path) -> ModuleType:
 
 
 _check_eval_config = _load_module("tuklas_check_eval_config", EVAL_CONFIG)
+#: The corpus fetcher, loaded so its retry loop and its exit statuses can be
+#: driven directly (section 6). Loading it has no side effects: it parses
+#: arguments and touches the network only under `main()`.
+_fetch_corpus = _load_module("tuklas_fetch_corpus", FETCH_CORPUS)
+
+#: The fetcher's three outcomes, in typed names: the module is loaded
+#: dynamically, so its attributes are `Any` and a test that RETURNS one
+#: cannot be annotated. The values are its own, not copies: a test that
+#: asserts on FETCH_UNREACHABLE asserts on what the script exits with.
+FETCH_OK: int = _fetch_corpus.OK
+FETCH_INTEGRITY_FAILURE: int = _fetch_corpus.INTEGRITY_FAILURE
+FETCH_UNREACHABLE: int = _fetch_corpus.UNREACHABLE
 
 check_run_config = _check_eval_config.check_run_config
 config_payload = _check_eval_config.config_payload
@@ -650,6 +665,10 @@ src="${STAGING_DIR}/$(basename "$out")"
 [ -f "$src" ] || exit 22
 cat "$src" > "$out"
 pwd > "${RECORD_DIR}/download_dir.txt"
+# The arguments are recorded too, so a test can assert what the step ASKED
+# curl to do (for example that a transient download failure is retried)
+# without reading the script as text.
+printf '%s\\n' "$@" >> "${RECORD_DIR}/curl_args.txt"
 """
 
 #: `sudo install` is the privileged part of the step; the test does not need
@@ -849,6 +868,17 @@ def test_the_gitleaks_step_passes_when_the_checksums_file_lists_the_archive(
         "the checksum must have been verified:\n" + result.stdout
     )
     assert "installed: gitleaks 8.30.1" in result.stdout
+    # The downloads ask curl to retry a TRANSIENT failure. That is not the
+    # corpus step's degrade-and-warn treatment and must not become it: the
+    # scanner IS a gate, so a binary that never arrives has to fail, and a
+    # release that does not exist has to fail on the first attempt too.
+    curl_args = (Path(result.sandbox) / "record" / "curl_args.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "--retry" in curl_args, (
+        "a transient download failure must be retried:\n" + curl_args
+    )
+    assert "--retry-delay" in curl_args, curl_args
 
 
 def test_the_gitleaks_step_rejects_a_binary_that_reports_another_version(
@@ -899,3 +929,685 @@ def test_the_gitleaks_step_downloads_outside_the_checkout_and_cleans_up(
     assert not result.dir_exists(download_dir), (
         f"the download directory {download_dir} must be removed again"
     )
+
+
+# ---------------------------------------------------------------------------
+# 6. the corpus fetch, EXECUTED against a stubbed network
+# ---------------------------------------------------------------------------
+
+#: The bytes the stubbed network serves for a successful download. They are
+#: NOT a real PDF: what is under test is the retry, the classification and
+#: the checksum check, and the sha256 the script is handed is computed from
+#: these bytes, so the check is exercised for real.
+_STUB_PDF = b"%PDF-1.4 corpus bytes served by the stub\n"
+
+
+class _StubResponse:
+    """The part of an http.client response the fetch script uses."""
+
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+
+    def read(self) -> bytes:
+        return self.payload
+
+    def __enter__(self) -> _StubResponse:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        # Nothing is swallowed: an exception inside the `with` belongs to the
+        # code under test, not to the stub.
+        return None
+
+
+@dataclass
+class _FetchRun:
+    """What driving the fetch script's `fetch` produced."""
+
+    status: int
+    attempts: int
+    sleeps: list[float]
+    target: Path
+
+
+def _run_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    fail_times: int,
+    code: int | None = 522,
+    body: bytes = _STUB_PDF,
+    expected: str | None = None,
+    already_present: bool = False,
+) -> _FetchRun:
+    """Drive the REAL `fetch` with a stubbed network layer.
+
+    `fail_times` requests fail before the host starts answering, and `code` is
+    the HTTP status they fail with (None is a URLError: a connection that
+    never got a status at all). `time.sleep` is stubbed and its arguments
+    recorded, so the backoff is asserted without the test spending 155
+    seconds asleep, and the delay is the REAL one from the module.
+
+    Stubbing the network here is the point: the retry loop, the decision of
+    whether a failure is worth retrying, and the checksum check are all the
+    production ones.
+    """
+    documents = tmp_path / "documents"
+    monkeypatch.setattr(_fetch_corpus, "DOCUMENTS", documents)
+    digest = expected if expected is not None else hashlib.sha256(body).hexdigest()
+    name, url, _ = _fetch_corpus.PRIMARY
+    if already_present:
+        documents.mkdir(parents=True, exist_ok=True)
+        (documents / name).write_bytes(body)
+
+    attempts: list[int] = []
+    sleeps: list[float] = []
+
+    def fake_urlopen(request: Any, timeout: float = 0.0) -> _StubResponse:
+        attempts.append(1)
+        if len(attempts) <= fail_times:
+            if code is None:
+                raise urllib.error.URLError("timed out")
+            raise urllib.error.HTTPError(
+                url, code, "<none>", hdrs=Message(), fp=None
+            )
+        return _StubResponse(body)
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(_fetch_corpus.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(_fetch_corpus.time, "sleep", fake_sleep)
+
+    status = _fetch_corpus.fetch(name, url, digest)
+    return _FetchRun(
+        status=status,
+        attempts=len(attempts),
+        sleeps=sleeps,
+        target=documents / name,
+    )
+
+
+def test_the_fetch_retries_a_transient_failure_and_verifies_the_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A 522 is retried with growing backoff, and the artifact still lands.
+
+    The defect this pins: the download was ONE request, so a 522 from
+    Cloudflare -- the CDN reporting that the origin, in another country, on
+    somebody else's infrastructure, timed out -- failed the whole build, even
+    though the next request is answered.
+    """
+    run = _run_fetch(monkeypatch, tmp_path, fail_times=2)
+    captured = capsys.readouterr()
+
+    assert run.status == FETCH_OK, captured.out + captured.err
+    assert run.attempts == 3, "the third request must have been made"
+    assert run.sleeps == [5, 15], "the wait must grow, and must be the real schedule"
+    assert run.target.read_bytes() == _STUB_PDF, "the artifact must land"
+    assert hashlib.sha256(run.target.read_bytes()).hexdigest() == hashlib.sha256(
+        _STUB_PDF
+    ).hexdigest(), "and it must be the bytes the checksum was computed over"
+    # Each attempt is surfaced, with its number and the URL it asked for.
+    assert "attempt 1/5" in captured.out, captured.out
+    assert "attempt 2/5" in captured.out, captured.out
+    assert _fetch_corpus.PRIMARY[1] in captured.out, captured.out
+    assert "retrying in 5s" in captured.err, captured.err
+    assert "sha256 matches" in captured.out, captured.out
+
+
+def test_the_fetch_gives_up_loudly_after_the_full_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Every attempt failing is the UNREACHABLE outcome, and nothing is written.
+
+    The line this prints is the one the CI step quotes in its warning, so it
+    has to name the artifact, the URL, the error and the number of attempts:
+    that is what tells a reader a host was down rather than a download was
+    broken.
+    """
+    run = _run_fetch(monkeypatch, tmp_path, fail_times=99)
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+
+    assert run.status == FETCH_UNREACHABLE, combined
+    assert run.attempts == 5, "four retries after the first attempt"
+    assert run.sleeps == [5, 15, 45, 90], "the real schedule, in order"
+    assert not run.target.exists(), "nothing that arrived may be left behind"
+    assert "fetch_corpus: UNREACHABLE:" in combined, combined
+    assert _fetch_corpus.PRIMARY[0] in combined, combined
+    assert _fetch_corpus.PRIMARY[1] in combined, combined
+    assert "522" in combined, combined
+    assert "after 5 attempts" in combined, combined
+
+
+def test_the_fetch_does_not_retry_a_status_the_host_chose(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A 403 is the host's own answer, so asking again is just hammering it.
+
+    The ICNL CDN refuses an unidentified client with 403 on purpose. Four more
+    requests would get four more 403s, and the delay would be spent for
+    nothing.
+    """
+    run = _run_fetch(monkeypatch, tmp_path, fail_times=99, code=403)
+    captured = capsys.readouterr()
+
+    assert run.status == FETCH_UNREACHABLE, captured.out
+    assert run.attempts == 1, "a refusal must not be retried"
+    assert run.sleeps == [], "and it must not wait"
+
+
+def test_the_fetch_does_not_retry_a_checksum_mismatch_and_writes_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The case that must stay HARD: the host answered with the wrong bytes.
+
+    A corpus that is not the one docs/CORPUS.md records invalidates every gold
+    node id, so this is not a third-party uptime problem and must not be
+    tolerated, retried, or softened. The wrong bytes are never written.
+    """
+    recorded = hashlib.sha256(b"the artifact docs/CORPUS.md records").hexdigest()
+    run = _run_fetch(
+        monkeypatch,
+        tmp_path,
+        fail_times=0,
+        body=b"%PDF-1.4 somebody else's file",
+        expected=recorded,
+    )
+    captured = capsys.readouterr()
+
+    assert run.status == FETCH_INTEGRITY_FAILURE, captured.err
+    assert run.status != FETCH_UNREACHABLE, (
+        "a mismatch is not the unreachable outcome, so the CI step cannot "
+        "treat it as a degraded run"
+    )
+    assert run.attempts == 1, "a mismatch must not be retried"
+    assert run.sleeps == []
+    assert not run.target.exists(), "the wrong bytes must not be left on disk"
+    assert recorded in captured.err, captured.err
+    assert "NOT written" in captured.err, captured.err
+
+
+def test_the_fetch_keeps_an_artifact_that_is_already_the_recorded_one(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An artifact that is already there is not downloaded again."""
+    run = _run_fetch(
+        monkeypatch,
+        tmp_path,
+        fail_times=99,
+        already_present=True,
+    )
+    captured = capsys.readouterr()
+
+    assert run.status == FETCH_OK, captured.out + captured.err
+    assert run.attempts == 0, "a matching file must not be fetched again"
+    assert "present:" in captured.out, captured.out
+    assert run.target.read_bytes() == _STUB_PDF
+
+
+def test_the_script_attempts_every_named_artifact_whatever_the_other_did(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Neither corpus's failure may prevent the other's attempt.
+
+    The defect this pins: the step ran the primary and the secondary from one
+    shell under `set -e`, so the primary's failure aborted the step and the
+    secondary was never attempted -- or, in the other order, the secondary's
+    failure would have hidden a working primary.
+    """
+    primary = _fetch_corpus.PRIMARY[0]
+    secondary = _fetch_corpus.SECONDARY[0]
+    calls: list[str] = []
+    statuses: dict[str, int] = {primary: FETCH_UNREACHABLE, secondary: FETCH_OK}
+
+    def fake_fetch(name: str, url: str, expected: str) -> int:
+        calls.append(name)
+        return statuses[name]
+
+    monkeypatch.setattr(_fetch_corpus, "fetch", fake_fetch)
+    monkeypatch.setattr(sys, "argv", ["fetch_corpus", "--corpus", "all"])
+
+    # The primary is unreachable: the secondary is still attempted, and the
+    # run reports the degraded status rather than a red one.
+    assert _fetch_corpus.main() == FETCH_UNREACHABLE
+    assert calls == [primary, secondary]
+
+    # The reverse: the secondary is unreachable and the primary is fine.
+    calls.clear()
+    statuses = {primary: FETCH_OK, secondary: FETCH_UNREACHABLE}
+    assert _fetch_corpus.main() == FETCH_UNREACHABLE
+    assert calls == [primary, secondary]
+
+    # And an integrity failure outranks an unreachable host, whatever order
+    # they are in: a corpus that is not the recorded one is a fact about the
+    # corpus, while an unreachable host is a fact about the network.
+    calls.clear()
+    statuses = {
+        primary: FETCH_UNREACHABLE,
+        secondary: FETCH_INTEGRITY_FAILURE,
+    }
+    assert _fetch_corpus.main() == FETCH_INTEGRITY_FAILURE
+    assert calls == [primary, secondary]
+
+
+def test_the_script_fetches_only_the_corpus_it_was_asked_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The selector the CI step uses to keep the two outcomes apart.
+
+    Both artifacts in one invocation would put them back under one exit
+    status, which is exactly the coupling the step exists to remove.
+    """
+    primary = _fetch_corpus.PRIMARY[0]
+    secondary = _fetch_corpus.SECONDARY[0]
+    calls: list[str] = []
+
+    def fake_fetch(name: str, url: str, expected: str) -> int:
+        calls.append(name)
+        return FETCH_OK
+
+    monkeypatch.setattr(_fetch_corpus, "fetch", fake_fetch)
+
+    monkeypatch.setattr(sys, "argv", ["fetch_corpus", "--corpus", "primary"])
+    assert _fetch_corpus.main() == FETCH_OK
+    assert calls == [primary]
+
+    calls.clear()
+    monkeypatch.setattr(sys, "argv", ["fetch_corpus", "--corpus", "secondary"])
+    assert _fetch_corpus.main() == FETCH_OK
+    assert calls == [secondary]
+
+
+# ---------------------------------------------------------------------------
+# 7. the corpus fetch and the pytest step, EXECUTED as the runner runs them
+# ---------------------------------------------------------------------------
+
+#: A `poetry` that plays a plan instead of running the real fetch script. The
+#: plan is one exit status per invocation, consumed in order, which is enough
+#: to drive every branch of the step's policy in any order -- and the order is
+#: what makes the independence of the two artifacts observable.
+_POETRY_FETCH_STUB = """#!/usr/bin/env bash
+record="${RECORD_DIR}"
+printf '%s\\n' "$*" >> "${record}/calls.txt"
+count="$(wc -l < "${record}/calls.txt" | tr -d ' ')"
+code="$(awk -v n="${count}" 'NR == n { print }' "${FAKE_FETCH_PLAN}")"
+if [ -z "${code}" ]; then
+  echo "poetry stub: the plan has no status for invocation ${count}" >&2
+  exit 99
+fi
+corpus=""
+prev=""
+for arg in "$@"; do
+  if [ "${prev}" = "--corpus" ]; then corpus="${arg}"; fi
+  prev="${arg}"
+done
+if [ "${corpus}" = "primary" ]; then
+  name="${FAKE_PRIMARY_NAME}"
+  url="${FAKE_PRIMARY_URL}"
+else
+  name="${FAKE_SECONDARY_NAME}"
+  url="${FAKE_SECONDARY_URL}"
+fi
+case "${code}" in
+  0)
+    echo "fetching: ${url} (attempt 1/5)"
+    echo "fetched: ${name} (sha256 matches)"
+    exit 0
+    ;;
+  3)
+    echo "fetching: ${url} (attempt 1/5)"
+    echo "fetch_corpus: ${name} attempt 1/5 failed: HTTP Error 522: <none>; retrying in 5s" >&2
+    echo "fetch_corpus: UNREACHABLE: ${name}: ${url}: HTTP Error 522: <none> (after 5 attempts)" >&2
+    exit 3
+    ;;
+  *)
+    echo "fetch_corpus: ${name} has sha256 deadbeef, expected cafe" >&2
+    exit "${code}"
+    ;;
+esac
+"""
+
+#: A `poetry` that plays a canned pytest run: the text it prints and the
+#: status it exits with are the test's, so a green run, a degraded run and a
+#: red run can all be put through the step's own reporting.
+_POETRY_PYTEST_STUB = """#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "${RECORD_DIR}/calls.txt"
+cat "${STAGING_DIR}/pytest-output.txt"
+exit "$(cat "${STAGING_DIR}/pytest-status.txt")"
+"""
+
+
+@dataclass
+class _ScriptedStepRun:
+    """What running a workflow step against a scripted stub produced."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+    #: One line per invocation of the stubbed command, as its own `"$*"`.
+    calls: list[str]
+
+    @property
+    def output(self) -> str:
+        return self.stdout + self.stderr
+
+
+@dataclass
+class _Sandbox:
+    """A bash sandbox with a stubbed `poetry` first on the PATH."""
+
+    bash: str
+    sandbox: Path
+    staging: Path
+
+    def run(self, step_name: str, extra_env: dict[str, str]) -> _ScriptedStepRun:
+        """Run the named step's REAL `run:` block, with `bash -e`.
+
+        `bash -e` is how the runner runs a `run:` block (`bash -e {0}`), so
+        the step is executed under the same flag it meets in CI: a step that
+        inherits `-e` and does not turn it off dies at the first failure it
+        was written to tolerate, and nothing but running it can show that.
+        """
+        script = _step_script(_workflow(), step_name)
+        step_file = self.sandbox / "step.sh"
+        step_file.write_text(script, encoding="utf-8", newline="\n")
+        env = dict(os.environ)
+        env.update(extra_env)
+        wrapper = (
+            'cd "$1" && export PATH="$PWD/bin:$PATH" '
+            '&& export RECORD_DIR="$PWD/record" '
+            '&& export STAGING_DIR="$PWD/staging" '
+            '&& exec bash -e "$2"'
+        )
+        result = subprocess.run(
+            [self.bash, "-c", wrapper, "_", str(self.sandbox), str(step_file)],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        calls_file = self.sandbox / "record" / "calls.txt"
+        calls = (
+            calls_file.read_text(encoding="utf-8").splitlines()
+            if calls_file.is_file()
+            else []
+        )
+        return _ScriptedStepRun(
+            returncode=result.returncode,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            calls=calls,
+        )
+
+
+def _start_sandbox(tmp_path: Path, stub: str) -> _Sandbox:
+    """A sandbox holding the stub, with the directories the step writes into."""
+    bash = _git_bash() or shutil.which("bash")
+    if bash is None:
+        pytest.skip("no bash on PATH to execute the workflow's steps with")
+    sandbox = tmp_path / "sandbox"
+    bin_dir = sandbox / "bin"
+    staging = sandbox / "staging"
+    for directory in (bin_dir, staging, sandbox / "record"):
+        directory.mkdir(parents=True, exist_ok=True)
+    stub_path = bin_dir / "poetry"
+    stub_path.write_text(stub, encoding="utf-8", newline="\n")
+    # The stub is EXECUTED, so it needs the execute bit: a file written on
+    # Windows carries none, and the step would then find the real `poetry` (or
+    # nothing) instead, which quietly makes the test assert the wrong thing.
+    stub_path.chmod(0o755)
+    return _Sandbox(bash=bash, sandbox=sandbox, staging=staging)
+
+
+def _fetched_names() -> dict[str, str]:
+    """The stub's canned artifact names and URLs, which are the real ones."""
+    return {
+        "FAKE_PRIMARY_NAME": _fetch_corpus.PRIMARY[0],
+        "FAKE_PRIMARY_URL": _fetch_corpus.PRIMARY[1],
+        "FAKE_SECONDARY_NAME": _fetch_corpus.SECONDARY[0],
+        "FAKE_SECONDARY_URL": _fetch_corpus.SECONDARY[1],
+    }
+
+
+def _run_fetch_step(tmp_path: Path, plan: str) -> _ScriptedStepRun:
+    """Run the workflow's `Fetch the benchmark corpus` step against the stub.
+
+    `plan` is one exit status per invocation, space separated: "3 0" is "the
+    primary is unreachable, the secondary verifies".
+    """
+    sandbox = _start_sandbox(tmp_path, _POETRY_FETCH_STUB)
+    plan_file = sandbox.sandbox / "plan.txt"
+    # One status per LINE: the stub's awk picks the Nth record, so a plan on
+    # one line would hand the whole line to `exit` as the status.
+    plan_file.write_text("\n".join(plan.split()) + "\n", encoding="utf-8", newline="\n")
+    extra_env = _fetched_names()
+    # A relative path: the step's working directory IS the sandbox.
+    extra_env["FAKE_FETCH_PLAN"] = "plan.txt"
+    return sandbox.run("Fetch the benchmark corpus", extra_env)
+
+
+def _requested(calls: list[str], corpus: str) -> bool:
+    """Whether one of the step's calls asked for that corpus, by selector."""
+    return any(line.endswith(f"--corpus {corpus}") for line in calls)
+
+
+def test_the_fetch_step_degrades_and_still_exits_zero_when_a_host_never_answers(
+    tmp_path: Path,
+) -> None:
+    """The step must warn and pass, and must still attempt the other artifact.
+
+    The defect this pins, exactly as CI hit it: the primary's 522 failed the
+    step under `set -e`, so the secondary was never attempted and a CDN in
+    another country decided the build was red.
+
+    This FAILS against the old step for two independent reasons: the old run
+    block has no warning at all, and it exits 1 on the same stub.
+    """
+    result = _run_fetch_step(tmp_path, "3 0")
+
+    assert result.returncode == 0, (
+        "an unanswered host must not fail the build:\n" + result.output
+    )
+    assert "::warning" in result.output, result.output
+    assert "the primary corpus could not be fetched" in result.output, result.output
+    assert _fetch_corpus.PRIMARY[1] in result.output, (
+        "the warning must name the URL that did not answer:\n" + result.output
+    )
+    assert "HTTP Error 522" in result.output, (
+        "the warning must name the HTTP error:\n" + result.output
+    )
+    assert "the primary corpus is ABSENT in this run" in result.output, result.output
+    assert "SKIPS instead of running" in result.output, (
+        "the warning must name the consequence:\n" + result.output
+    )
+    assert _requested(result.calls, "primary"), result.calls
+    assert _requested(result.calls, "secondary"), (
+        "the secondary must still be attempted when the primary fails:\n"
+        + str(result.calls)
+    )
+    # And the summary must not claim everything arrived.
+    assert "every requested artifact is present" not in result.output, result.output
+    assert "fetch_corpus: DEGRADED:" in result.output, result.output
+
+
+def test_the_fetch_step_degrades_when_only_the_secondary_is_unreachable(
+    tmp_path: Path,
+) -> None:
+    """The other direction: a working primary is reported as verified.
+
+    The primary matters far more than the secondary, and a degraded secondary
+    must not be reported as if the primary had failed.
+    """
+    result = _run_fetch_step(tmp_path, "0 3")
+
+    assert result.returncode == 0, result.output
+    assert "::warning" in result.output, result.output
+    assert "the secondary corpus could not be fetched" in result.output, result.output
+    assert "the secondary corpus is ABSENT in this run" in result.output, result.output
+    assert "the primary corpus is present and its sha256 matches" in result.output, (
+        result.output
+    )
+    assert _requested(result.calls, "primary") and _requested(result.calls, "secondary")
+
+
+def test_the_fetch_step_warns_once_per_artifact_when_neither_host_answers(
+    tmp_path: Path,
+) -> None:
+    """Both artifacts degrade independently, and both are reported."""
+    result = _run_fetch_step(tmp_path, "3 3")
+
+    assert result.returncode == 0, result.output
+    assert "the primary corpus is ABSENT in this run" in result.output, result.output
+    assert "the secondary corpus is ABSENT in this run" in result.output, result.output
+    assert result.output.count("::warning") == 2, result.output
+    assert result.output.count("fetch_corpus: DEGRADED:") == 1, result.output
+    assert "every requested artifact is present" not in result.output, result.output
+
+
+def test_the_fetch_step_fails_hard_on_a_checksum_mismatch_and_still_attempts_both(
+    tmp_path: Path,
+) -> None:
+    """The hard outcome stays hard, and does not stop the other attempt.
+
+    A checksum mismatch is the case that must NOT be softened: the step must
+    fail on it. It must also still attempt the secondary, because the primary
+    being the wrong artifact says nothing about the secondary.
+    """
+    result = _run_fetch_step(tmp_path, "1 0")
+
+    assert result.returncode != 0, (
+        "a corpus that is not the recorded one must fail the step:\n" + result.output
+    )
+    assert "::error" in result.output, result.output
+    assert "not the recorded artifact" in result.output, result.output
+    assert _requested(result.calls, "primary"), result.calls
+    assert _requested(result.calls, "secondary"), (
+        "a hard failure of the primary must not prevent the secondary's attempt:\n"
+        + str(result.calls)
+    )
+
+
+def test_the_fetch_step_still_attempts_the_primary_when_the_secondary_fails_hard(
+    tmp_path: Path,
+) -> None:
+    """The reverse direction of the same rule."""
+    result = _run_fetch_step(tmp_path, "0 1")
+
+    assert result.returncode != 0, result.output
+    assert "the primary corpus is present and its sha256 matches" in result.output, (
+        result.output
+    )
+    assert "The secondary corpus is not the recorded artifact" in result.output, (
+        result.output
+    )
+    assert _requested(result.calls, "primary") and _requested(result.calls, "secondary")
+
+
+def test_the_fetch_step_passes_with_no_warning_when_both_artifacts_verify(
+    tmp_path: Path,
+) -> None:
+    """A step that warns about everything is not a check either."""
+    result = _run_fetch_step(tmp_path, "0 0")
+
+    assert result.returncode == 0, result.output
+    assert "::warning" not in result.output, result.output
+    assert "::error" not in result.output, result.output
+    assert "every requested artifact is present and its sha256 matches" in result.output
+
+
+def test_the_pytest_step_reports_the_skips_and_names_the_corpus_ones(
+    tmp_path: Path,
+) -> None:
+    """A skipped test must not be invisible in a green build.
+
+    The canned run below is the real pytest short-summary format, and the
+    counts are what make the report a report: 15 tests skipped, 14 of them
+    because a corpus file is missing, and one -- the opt-in live-LLM test --
+    that is NOT corpus-dependent and must not be counted as if it were.
+    """
+    sandbox = _start_sandbox(tmp_path, _POETRY_PYTEST_STUB)
+    (sandbox.staging / "pytest-output.txt").write_text(
+        "SKIPPED [10] apps\\api\\tests\\test_retrieval.py:761: corpus file missing: civil-code-ra386-icnl.pdf\n"
+        "SKIPPED [4] apps\\api\\tests\\test_retrieval.py:797: corpus file missing: civil-code-ra386-icnl.pdf\n"
+        "SKIPPED [1] apps\\api\\tests\\test_generation.py:1270: live local LLM test: set TUKLAS_LIVE_LLM=1 to run it\n"
+        "232 passed, 15 skipped, 6 warnings in 55.00s\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (sandbox.staging / "pytest-status.txt").write_text("0\n", encoding="utf-8")
+
+    result = sandbox.run("pytest (apps/api)", {})
+
+    assert result.returncode == 0, result.output
+    assert "pytest: 15 test(s) skipped in this run, 14 of them because the corpus is absent." in result.output, result.output
+    assert "::warning" in result.output, result.output
+    assert "The corpus-dependent tests did not run" in result.output, result.output
+    assert any("-rs" in line for line in result.calls), (
+        "the step must ask pytest for the skip reasons:\n" + str(result.calls)
+    )
+
+
+def test_the_pytest_step_does_not_call_a_non_corpus_skip_a_corpus_skip(
+    tmp_path: Path,
+) -> None:
+    """The discrimination, from the other side.
+
+    The suite has skips that have nothing to do with the corpus (the opt-in
+    live-LLM test). Reporting those as corpus-dependent would make the warning
+    noise, and a warning that fires on a healthy run is a warning nobody
+    reads.
+    """
+    sandbox = _start_sandbox(tmp_path, _POETRY_PYTEST_STUB)
+    (sandbox.staging / "pytest-output.txt").write_text(
+        "SKIPPED [1] apps\\api\\tests\\test_generation.py:1270: live local LLM test: set TUKLAS_LIVE_LLM=1 to run it\n"
+        "246 passed, 1 skipped in 55.00s\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (sandbox.staging / "pytest-status.txt").write_text("0\n", encoding="utf-8")
+
+    result = sandbox.run("pytest (apps/api)", {})
+
+    assert result.returncode == 0, result.output
+    assert "pytest: 1 test(s) skipped in this run, 0 of them because the corpus is absent." in result.output, result.output
+    assert "no skipped test needed the corpus" in result.output, result.output
+    assert "::warning" not in result.output, result.output
+
+
+def test_the_pytest_step_still_reports_the_skips_when_the_suite_is_red(
+    tmp_path: Path,
+) -> None:
+    """The report must survive a failing suite, and the gate must not move.
+
+    The step exits with pytest's own status, so a red suite stays red; the
+    difference is that the log also says how much of the suite did not run.
+    """
+    sandbox = _start_sandbox(tmp_path, _POETRY_PYTEST_STUB)
+    (sandbox.staging / "pytest-output.txt").write_text(
+        "FAILED apps\\api\\tests\\test_retrieval.py:100: assert 0\n"
+        "SKIPPED [4] apps\\api\\tests\\test_retrieval.py:797: corpus file missing: civil-code-ra386-icnl.pdf\n"
+        "1 failed, 245 passed, 4 skipped in 55.00s\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (sandbox.staging / "pytest-status.txt").write_text("1\n", encoding="utf-8")
+
+    result = sandbox.run("pytest (apps/api)", {})
+
+    assert result.returncode == 1, (
+        "the step must keep pytest's status:\n" + result.output
+    )
+    assert "pytest: 4 test(s) skipped in this run, 4 of them because the corpus is absent." in result.output, result.output
+    assert "::warning" in result.output, result.output
