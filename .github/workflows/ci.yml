@@ -163,8 +163,20 @@ jobs:
           work_dir="$(mktemp -d)"
           trap 'rm -rf "${work_dir}"' EXIT
           cd "$work_dir"
-          curl -sSfL "$url" -o "$archive"
-          curl -sSfL \
+          # Both downloads ask curl to retry a TRANSIENT failure (5xx, 408,
+          # 429, a reset connection, a timeout) four times, 5 seconds apart.
+          # This is a retry and NOT the corpus step's degrade-and-warn
+          # treatment, and the difference is the point: the scanner IS a gate
+          # (CONSTRAINTS.md: "Secrets: No findings"), so there is nothing a
+          # missing binary could degrade to. Warning here would either fail
+          # in the NEXT step anyway, when `gitleaks detect` finds no binary,
+          # or -- worse -- delete the scan, which is the one outcome a gate
+          # must never have. A release that does not exist is also not the
+          # same failure as a release that is slow: curl retries 5xx and
+          # connection failures, and a 404 stays a 404 and fails on the first
+          # attempt. The checksum check below stays hard either way.
+          curl -sSfL --retry 4 --retry-delay 5 "$url" -o "$archive"
+          curl -sSfL --retry 4 --retry-delay 5 \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" \
             -o checksums.txt
           # The checksums line is read into a variable, not piped straight
@@ -230,10 +242,119 @@ jobs:
       # live model: the tests that want a corpus skip themselves with a clear
       # message when the file is absent. Fetching it here means those tests
       # RUN in CI instead of skipping.
+      #
+      # That makes this step an ENABLER, not a gate on the code under test,
+      # and an enabler whose only failure mode is "a host in another country
+      # did not answer" must not decide whether the build is green. So:
+      #
+      #   * the download RETRIES with growing backoff, inside the script:
+      #     four retries at 5/15/45/90 seconds. A 522 is Cloudflare saying
+      #     the ORIGIN timed out, which is a statement about the host and
+      #     not about the artifact, and a single attempt turns that into a
+      #     red build;
+      #   * if the host is still unreachable the step WARNS and exits 0. The
+      #     artifact is absent, the corpus-dependent tests SKIP themselves,
+      #     and the pytest step below reports that count explicitly, so a
+      #     green build cannot hide that those tests did not run;
+      #   * a checksum MISMATCH is still FATAL: the script exits 1 there and
+      #     this step fails on any status that is neither "verified" nor
+      #     "host unreachable". Only a host that never answered degrades;
+      #   * the primary (Civil Code) and the secondary (U.S. Code Title 11)
+      #     are fetched INDEPENDENTLY: the primary matters far more, and
+      #     neither artifact's outcome may prevent the other's attempt. The
+      #     step therefore runs with `-e` OFF and exits with the worst
+      #     outcome once BOTH have been attempted.
       - name: Fetch the benchmark corpus
         run: |
-          poetry run python -m scripts.fetch_corpus
-          poetry run python -m scripts.fetch_corpus --secondary
+          # `-e` is off deliberately, and stated rather than left to the
+          # runner's default (`bash -e {0}`): a step whose job is to
+          # tolerate ONE class of failure cannot be written under a flag
+          # that turns every failure into an exit. Every command below is
+          # checked by the code that handles it, rather than by the shell.
+          set +e
+          set -u
+          set -o pipefail
+
+          # The script's three outcomes, as exit statuses. They are a
+          # contract, so the numbers are named here instead of spelled
+          # inline: 0 verified, 1 the bytes are not the recorded artifact,
+          # 3 the host never answered.
+          verified_status=0
+          integrity_status=1
+          unreachable_status=3
+
+          hard_failure=0
+          degraded=0
+
+          fetch_one() {
+            local label="$1"
+            local log_file status reason outcome
+            shift
+            echo "fetch_corpus: requesting the ${label} corpus"
+            log_file="$(mktemp)"
+            # The script's output is streamed, so a reader watching the run
+            # sees each attempt as it happens rather than a silent block
+            # during the backoff, AND kept, so the warning below can quote
+            # the script's own failure line -- which names the URL and the
+            # HTTP error -- inside the annotation.
+            poetry run python -m scripts.fetch_corpus "$@" 2>&1 | tee "${log_file}"
+            # `tee` succeeds whoever wins the pipe, so the status is read
+            # from PIPESTATUS immediately after the pipeline.
+            status="${PIPESTATUS[0]}"
+
+            outcome="${verified_status}"
+            if [ "${status}" -eq "${verified_status}" ]; then
+              echo "fetch_corpus: the ${label} corpus is present and its sha256 matches"
+            elif [ "${status}" -eq "${unreachable_status}" ]; then
+              # The one soft outcome. `awk`, not `grep`, for the same reason
+              # the gitleaks step uses it: `grep` exits 1 when it matches
+              # nothing, and under `-e` that would abort the shell -- here it
+              # would abort the very branch that reports the degradation.
+              reason="$(awk '/^fetch_corpus: UNREACHABLE/ { last = $0 } END { print last }' "${log_file}")"
+              if [ -z "${reason}" ]; then
+                reason="fetch_corpus: UNREACHABLE: the ${label} corpus could not be fetched"
+              fi
+              echo "::warning title=Degraded run: the ${label} corpus could not be fetched::${reason}"
+              echo "WARNING: the ${label} corpus is ABSENT in this run, so every test that needs it SKIPS instead of running."
+              echo "WARNING: nothing about this repository is broken -- the host did not answer. Re-run once the host is back to run those tests."
+              degraded=1
+            else
+              # Every other status is the hard case: the host ANSWERED, and
+              # what came back is not the artifact docs/CORPUS.md records.
+              # That is not somebody else's uptime, so it is not tolerated.
+              echo "::error title=The ${label} corpus is not the recorded artifact::the fetch script exited ${status}; only ${verified_status} (verified) and ${unreachable_status} (host unreachable) are tolerated. A corpus that is not the one docs/CORPUS.md records invalidates every gold node id."
+              outcome="${status}"
+            fi
+
+            rm -f "${log_file}"
+            return "${outcome}"
+          }
+
+          # Both artifacts are attempted whatever the other one did, and the
+          # primary is first because it is the artifact the retrieval tests
+          # need. A failing `fetch_one` records the failure; it does not stop
+          # the step.
+          if ! fetch_one primary --corpus primary; then
+            hard_failure=1
+          fi
+          if ! fetch_one secondary --corpus secondary; then
+            hard_failure=1
+          fi
+
+          if [ "${hard_failure}" -ne 0 ]; then
+            echo "fetch_corpus: FAILED: an artifact that arrived is not the one docs/CORPUS.md records (see the errors above)." >&2
+            exit "${integrity_status}"
+          fi
+
+          # The summary says which of the two tolerated outcomes this was: a
+          # step that printed "everything is present" after a warning would be
+          # the log lying about the run.
+          if [ "${degraded}" -ne 0 ]; then
+            echo "fetch_corpus: DEGRADED: at least one corpus was not fetched, so the tests that need it SKIP (see the warnings above). The gates on this repository's code ran in full."
+            exit "${verified_status}"
+          fi
+
+          echo "fetch_corpus: every requested artifact is present and its sha256 matches"
 
       - name: Vectorless quarantine scan
         run: poetry run python scripts/check_no_vectors.py
@@ -260,8 +381,51 @@ jobs:
       # ------------------------------------------------------------------
       # 6. pytest -- green
       # ------------------------------------------------------------------
+      # A skipped test is invisible in a green build, and the corpus-dependent
+      # tests are exactly the ones that skip when the fetch step above
+      # degraded. So the skips are COUNTED and reported after the suite, and a
+      # corpus-dependent skip is named explicitly: a reader of a green build
+      # can then see that the corpus tests did NOT run, instead of reading the
+      # green as "everything passed".
+      #
+      # The step still exits with pytest's own status, so the gate itself is
+      # unchanged: this adds a report, not a tolerance.
       - name: pytest (apps/api)
-        run: poetry run python -m pytest apps/api/tests -q
+        run: |
+          # `-e` is off so the report below is still printed when the suite
+          # is RED. The step exits with pytest's status either way.
+          set +e
+          set -u
+          set -o pipefail
+          report="$(mktemp)"
+          trap 'rm -f "${report}"' EXIT
+          # `-rs` is what makes the skip REASONS visible; without it a skipped
+          # test is only a number in the summary line, and "which skip needed
+          # the corpus" is not observable at all.
+          poetry run python -m pytest apps/api/tests -q -rs | tee "${report}"
+          # `tee` succeeds whoever wins the pipe, so the status is read from
+          # PIPESTATUS immediately after the pipeline.
+          status="${PIPESTATUS[0]}"
+
+          # The total is read from pytest's own summary line ("232 passed,
+          # 86 skipped in 55.00s"), the corpus-dependent ones from the
+          # `SKIPPED [n] <path>: <reason>` lines. Every corpus-dependent skip
+          # in this suite says so in its reason -- "corpus file missing:
+          # ..." or "a corpus PDF is missing" -- which is what makes the
+          # distinction observable rather than guessed. The `[n]` is the
+          # number of tests that skip for that one reason, so the corpus
+          # count is the sum of those, not the number of lines.
+          skipped="$(awk 'match($0, /[0-9]+ skipped/) { count = substr($0, RSTART, RLENGTH) } END { sub(/ skipped/, "", count); print (count == "" ? 0 : count) }' "${report}")"
+          corpus_skipped="$(awk 'tolower($0) ~ /^skipped/ && tolower($0) ~ /corpus/ { count = $2; gsub(/[^0-9]/, "", count); total += count } END { print total + 0 }' "${report}")"
+
+          echo "pytest: ${skipped} test(s) skipped in this run, ${corpus_skipped} of them because the corpus is absent."
+          if [ "${corpus_skipped}" -gt 0 ]; then
+            echo "::warning title=The corpus-dependent tests did not run::${corpus_skipped} test(s) skipped themselves because the corpus artifact is absent, so this build did NOT exercise them. The fetch step above says why the artifact is missing."
+          else
+            echo "pytest: no skipped test needed the corpus, so this run exercised every corpus-dependent test."
+          fi
+
+          exit "${status}"
 
       # ------------------------------------------------------------------
       # 7. diff-cover -- >= 80% on changed lines
