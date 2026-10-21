@@ -23,9 +23,28 @@ from typing import Any, ParamSpec, TypeVar
 
 from apps.api.ingestion import db, errors
 from apps.api.ingestion.service import DB_PATH as _INGEST_DB_PATH
-from apps.api.retrieval.scoring import ScoredNode, score_nodes
+from apps.api.retrieval.scoring import ScoredNode, evidence_rank_key, score_nodes
 
 _LOG = logging.getLogger(__name__)
+
+#: The retrieval layer's single ordering (identified first, then score desc).
+#: Re-exported here because architecture.md §2 lets the agent import
+#: `retrieval.api` and nothing else of the retrieval internals, and the agent
+#: needs the SAME order when it merges several sub-questions' evidence sets.
+__all__ = [
+    "EVIDENCE_KEEP_TOP",
+    "SUPPORT_THRESHOLD",
+    "evidence_rank_key",
+    "expand_context",
+    "follow_reference",
+    "get_parent",
+    "get_source",
+    "identifier_labels",
+    "inspect_node",
+    "list_children",
+    "search_nodes",
+    "select_evidence",
+]
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
@@ -437,7 +456,14 @@ def select_evidence(
             if document_id is None:
                 document_id = str(row["document_id"])
             text = str(row["text"])
-            if len(text) < _EVIDENCE_MIN_TEXT_CHARS or row["page_start"] is None:
+            # The length floor exists to drop page-span nodes whose text is
+            # not a provision. The IDENTIFIED node is the provision the user
+            # named, so the floor does not apply to it: article 1433 is 48
+            # characters long, and dropping it made the model answer about a
+            # DIFFERENT article while the query named this one.
+            if row["page_start"] is None:
+                continue
+            if len(text) < _EVIDENCE_MIN_TEXT_CHARS and not hit.identified:
                 continue
             kept.append(
                 {
@@ -451,17 +477,15 @@ def select_evidence(
                     "page_end": row["page_end"],
                     "depth": hit.depth,
                     "position": hit.position,
+                    "identified": hit.identified,
                 }
             )
 
-        kept.sort(
-            key=lambda item: (
-                -float(item["score"]),
-                int(item["depth"]),
-                int(item["position"]),
-                str(item["node_id"]),
-            )
-        )
+        # The same order the retrieval ranking uses (scoring.evidence_rank_key):
+        # the node the query identifies comes first, then score desc. The
+        # top-8 cut is what decides what the model sees, so the identified
+        # node has to be inside it before the cut, not after.
+        kept.sort(key=evidence_rank_key)
         kept = kept[:_EVIDENCE_KEEP_TOP]
 
         # 5. Per-sub-question support check.
