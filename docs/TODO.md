@@ -983,6 +983,59 @@ slices 1–5.
     what it PRINTS: the missing archive is named, the happy path still
     passes, a binary reporting another version is rejected, and the
     download lands outside the checkout and is cleaned up.
+  - *A FOURTH CI-BLOCKING defect: the corpus fetch made a third party's
+    uptime decide the build (2026-10-22).* The "Fetch the benchmark
+    corpus" step failed intermittently with
+    `fetch_corpus: cannot fetch civil-code-ra386-icnl.pdf: HTTP Error 522`
+    — Cloudflare reporting that `www.icnl.org`'s ORIGIN timed out.
+    Reproduced with a plain `curl` from a developer machine, so it was
+    the host and not the repo or the runners; it passed on an earlier run
+    and failed on four consecutive later ones, and it blocked PR #35 from
+    merging. Four things were wrong, and the fix addresses each:
+    1. **One request, no retry.** A 522 is transient by definition, and
+       the download was a single `urlopen`. The fetch now retries four
+       times with growing delays (5/15/45/90s) and prints each attempt.
+       A status the host CHOSE (403, 404) is not retried, because four
+       more requests would get four identical answers.
+    2. **A soft failure was a hard build failure.** This step is an
+       ENABLER, not a gate: the corpus-dependent tests skip themselves
+       when the PDF is absent, so the step exists to make them RUN. A
+       host that never answers now warns (naming the artifact, the URL,
+       the HTTP error and the consequence) and exits 0; the artifact is
+       absent and those tests skip.
+    3. **The degradation was invisible downstream.** A skipped test is
+       invisible in a green build, so the pytest step now runs with `-rs`,
+       counts the skips, and reports how many of them skipped because the
+       corpus is absent, with a warning annotation when any did. The step
+       still exits with pytest's own status.
+    4. **The primary and the secondary were coupled.** They ran in one
+       shell under `set -e`, so the primary's 522 aborted the step and the
+       secondary was never attempted. Each is now fetched by its own
+       script invocation (`--corpus primary`, `--corpus secondary`) and
+       the step exits with the worst outcome after BOTH were attempted.
+    What did NOT soften: the checksum. `scripts/fetch_corpus.py` now
+    reports three outcomes as exit statuses — 0 verified, 1 the host
+    ANSWERED with bytes that are not the recorded artifact, 3 the host
+    never answered — and only 3 is tolerated by the step. A mismatch is
+    still fatal, and the wrong bytes are never written to disk, because a
+    corpus that is not the one `docs/CORPUS.md` records invalidates every
+    gold node id. The per-attempt timeout also came down from 300s to
+    60s: five attempts at 300s would have spent 25 minutes and turned the
+    degradation path itself into a job-timeout failure.
+    The gitleaks download got a bounded `curl --retry` at the same time,
+    and NOT the corpus step's treatment: the scanner IS a gate, so a
+    missing binary has nothing to degrade to (it would either fail in the
+    next step or delete the scan), and a release that does not exist is a
+    different failure from a release that is slow — curl retries 5xx and
+    connection failures and leaves a 404 alone.
+    `apps/api/tests/test_ci_gates.py` pins the behaviour, not the text: it
+    drives the real `fetch` against a stubbed network (attempts, backoff,
+    the 403 no-retry, the mismatch not being retried and not being
+    written) and EXECUTES both steps' real `run:` blocks with `bash -e`,
+    as the runner does, against a scripted `poetry` — the degraded run
+    exits 0 with the warning, a hard failure exits non-zero while still
+    attempting the other artifact, and the pytest step's skip report is
+    asserted against real pytest short-summary text.
 - [x] **Ratchet:** first benchmark run on dev-24 sets `Recall@5`, `MRR@10`, p95 latency in
   CONSTRAINTS.md "Measured, not yet enforced". Update that table; ship no unmeasured
   numbers.
