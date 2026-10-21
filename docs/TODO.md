@@ -415,31 +415,69 @@ points at.
 
 **Targets:** `apps/web/src/app/app/` (new route), new components. **Depends on:** Day 4.
 
-- [ ] Three panes: tree / source / answer at `/app/*`.
+- [x] Three panes: tree / source / answer at `/app/*`.
 - [x] SSE event payload schemas spec'd in `api.md` §3 **before** this slice (PLAN.md gap
   #18 — closed by the Day-3 slice: the schemas and the pinned abstention string are in
   api.md, with the Day-3 contract test pinning the order).
-- [ ] Client built against the frozen sequence: `plan → tool_call → tool_result →
+- [x] Client built against the frozen sequence: `plan → tool_call → tool_result →
   (repeat) → evidence → token* → done | error`.
-- [ ] Citation click → `GET /v1/nodes/{id}/source` → source pane renders
+- [x] Citation click → `GET /v1/nodes/{id}/source` → source pane renders
   `text + page + hierarchy_path`.
-- [ ] Persistent disclaimer banner (answer pane) — worded exactly as `copy.ts` line 221;
+- [x] Persistent disclaimer banner (answer pane) — worded exactly as `copy.ts` line 221;
   persists across answer interactions, does not scroll away.
-- [ ] Explorer runtime boundary (`architecture.md` §7): calls the local API at
+- [x] Explorer runtime boundary (`architecture.md` §7): calls the local API at
   `NEXT_PUBLIC_API_BASE_URL` (default `http://127.0.0.1:8000`) via `site.ts`; API
   unreachable → fail loud, never fabricate.
-- [ ] Web conventions (`SPEC.md` §12): `copy.ts` is the only source of marketing copy; no
+- [x] Web conventions (`SPEC.md` §12): `copy.ts` is the only source of marketing copy; no
   inline strings in JSX; `@theme` tokens in `globals.css`; icons from
   `@phosphor-icons/react/ssr`; radius 0 / no shadows; ASCII hyphens only on the marketing
   route; `text-ink-5` never on readable strings; `accent-2` only in
   `comparison-arms.tsx`.
-- [ ] `"use client"` boundary: SSE consumer + disclaimer state are client components;
+- [x] `"use client"` boundary: SSE consumer + disclaimer state are client components;
   tree + source panes server-rendered. No blanket `"use client"` on the page.
   - *Acceptance (AGENTS.md pre-flight):* `npx tsc --noEmit -p tsconfig.json` clean;
     `npm run lint` zero warnings; `npm run build` clean. Browser test: SSE events render
     in order; citation click opens source; disclaimer stays visible during stream.
     Marketing-route pre-flight per `docs/landing-page/DESIGN.md` §13 if the landing page
     is touched.
+
+  - *Done (2026-10-21), verified in a real browser against the running API:*
+    the route loads at `/app`; the three panes render; the disclaimer carries
+    the exact PRD US-2 wording, is visible before any question and after the
+    answer arrives, and is a sibling of the scroll container rather than
+    inside it (so it does not scroll away); the document picker lists both
+    ingested corpora; the tree renders 1395 nodes for the Civil Code; the SSE
+    steps render in the received order (plan, then each tool_call paired with
+    its tool_result, then evidence); a real answer came back from the local
+    model with citation buttons; clicking citation [1] fetched
+    `GET /v1/nodes/{id}/source` and the source pane showed the node id, the
+    page range and the hierarchy path, and the tree marked the node
+    `aria-current`; with the API forced unreachable the page shows a
+    `role="alert"` and a disabled Ask button, and no fake empty result. Zero
+    page errors, empty console.
+
+  - *The explorer needed the five frozen API routes, which did not exist.*
+    `apps/api/api/routes.py` registered only the four document routes; the
+    logic for `POST /v1/search`, `POST /v1/ask`, `POST /v1/ask/stream`,
+    `GET /v1/nodes/{id}` and `GET /v1/nodes/{id}/source` already existed in
+    `retrieval/api.py` and `agent/ask.py` but was never wired to HTTP. They
+    are wired now, per `api.md` §3, with a malformed body mapped to the
+    frozen error body (FastAPI's default `{"detail": [...]}` shape has no arm
+    in a client written against `api.md` §1). 28 new tests in
+    `apps/api/tests/test_api_routes.py`, including one that FAILS against a
+    batch/replay SSE implementation.
+
+  - *A pre-existing bug was found and fixed: the build emitted NO Tailwind
+    utilities.* Commit `5e16463` (the static-export commit) dropped the
+    `turbopack.rules` block that routes `*.css` through
+    `@tailwindcss/turbopack`. There is no `postcss.config.mjs` and no
+    `@tailwindcss/postcss` dependency in this package, so the loader IS the
+    pipeline. `next build` still reported success, so every gate passed
+    while the page rendered unstyled - including the MARKETING route, which
+    had no Tailwind CSS at all. Measured: the built stylesheet was 9,413
+    bytes with zero utility classes; with the loader restored it is 37,095
+    bytes with them. The loader is restored, with the reason recorded in
+    `next.config.ts` so the next person does not remove it again.
 
 ---
 
