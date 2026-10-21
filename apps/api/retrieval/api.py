@@ -236,7 +236,7 @@ def search_nodes(
     if top_k > 20 or top_k < 1:
         raise ValueError(f"top_k must be in [1, 20], got {top_k}")
     effective = dict(WEIGHT_DEFAULTS) if weights is None else dict(weights)
-    hits = score_nodes(db_path, document_id, query, weights=effective)
+    hits, _lex_path_info = score_nodes(db_path, document_id, query, weights=effective)
     return hits[:top_k]
 
 

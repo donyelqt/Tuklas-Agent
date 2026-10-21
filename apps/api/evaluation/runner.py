@@ -36,6 +36,7 @@ from apps.api.evaluation.arms import (
     ARM_NAMES,
     ARM_TUKLAS,
     ARM_VECTOR,
+    RETRIEVAL_INSTRUMENT_ANSWER_NODE_UNION,
     AnswerResult,
     Arm,
     RetrievalResult,
@@ -463,6 +464,27 @@ class Runner:
         )
         return retrieval_row, generation_row, system_row, store_row
 
+    def _observed_lex_paths(self, results: dict[str, list[ArmResult]]) -> list[str]:
+        """The lex paths the run's retrieval calls ACTUALLY took, deduped.
+
+        Each entry is the rendered form the retrieval layer itself
+        reported for one ``search_nodes`` call, carried on the arm's
+        result. The runner does NOT re-derive the choice (a re-stat of
+        ``bm25.json`` could disagree with what ran); it deduplicates the
+        layer's own reports into the distinct set the run row records.
+
+        An EMPTY list means no search reported a lex path — which for a
+        run recorded before this field existed is the only honest value —
+        and the store records that as not-recorded, never as a guess.
+        """
+        paths: list[str] = []
+        for arm_results in results.values():
+            for result in arm_results:
+                for path in result.retrieval.lex_paths:
+                    if path not in paths:
+                        paths.append(path)
+        return paths
+
     def run(
         self,
         dataset: Dataset,
@@ -545,6 +567,8 @@ class Runner:
             k=list(self.config.k),
             status="done",
             metrics=aggregates,
+            retrieval_instrument=RETRIEVAL_INSTRUMENT_ANSWER_NODE_UNION,
+            lex_paths=self._observed_lex_paths(results),
         )
         # The per-question rows were ALREADY written, one question at a
         # time, so this writes the run row and its metrics only. Writing
