@@ -139,14 +139,23 @@ jobs:
       - name: Install gitleaks
         run: |
           set -euo pipefail
-          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -sSfL "$url" -o gitleaks.tar.gz
+          # The archive is downloaded under the name the release's own
+          # checksums file lists it under, because `sha256sum --check` looks
+          # up the file by the NAME in the checksums line. Downloading it as
+          # `gitleaks.tar.gz` and then checking the name
+          # `gitleaks_<version>_linux_x64.tar.gz` makes sha256sum look for a
+          # file that does not exist under the name it is checking, and the
+          # step fails with "FAILED open or read" before the scan ever runs.
+          # The archive's own name is the one that verifies.
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          curl -sSfL "$url" -o "$archive"
           curl -sSfL \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" \
             -o checksums.txt
-          grep "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" checksums.txt \
+          grep "$archive" checksums.txt \
             | sha256sum --check --strict
-          tar -xzf gitleaks.tar.gz gitleaks
+          tar -xzf "$archive" gitleaks
           sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
           gitleaks version
 
