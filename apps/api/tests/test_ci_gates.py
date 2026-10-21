@@ -21,6 +21,12 @@ What it pins:
    id in a config file is the one its own content derives. This is what
    makes "re-run with the same config id" a checkable statement rather than
    a convention.
+4. The CI WORKFLOW's own steps are checked for the class of defect that
+   made the workflow red twice: a step that verifies a file under one name
+   while downloading it under another, a step that needs a tool or a model
+   the runner does not have, and a step whose gate can be satisfied by
+   accident. These are read out of `.github/workflows/ci.yml` itself, so
+   the workflow file and this test cannot drift.
 
 The corpus is NOT needed: nothing here touches the ingestion, the retrieval
 engine, or a live model. The fixtures are synthetic JSON written into
@@ -32,6 +38,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 import threading
@@ -47,6 +54,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 NO_VECTORS = REPO_ROOT / "scripts" / "check_no_vectors.py"
 EVAL_CONFIG = REPO_ROOT / "scripts" / "check_eval_config.py"
 EXAMPLE_CONFIG = REPO_ROOT / "scripts" / "fixtures" / "example-run-config.json"
+WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
 
 def _load_module(name: str, path: Path) -> ModuleType:
@@ -444,3 +452,176 @@ def test_both_derivations_change_when_the_config_changes() -> None:
     changed["config"]["fuzzy_threshold"] = 86
     assert derive_config_id(changed) != derive_config_id(base)
     assert runner.derive_config_id(changed) == derive_config_id(changed)
+
+
+# ---------------------------------------------------------------------------
+# 4. the CI WORKFLOW's own steps
+# ---------------------------------------------------------------------------
+
+
+def _workflow() -> dict[str, Any]:
+    """The parsed workflow, or a skip if PyYAML is not installed."""
+    yaml = pytest.importorskip("yaml", reason="PyYAML is needed to read the workflow")
+    parsed = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    assert isinstance(parsed, dict)
+    return parsed
+
+
+def _step_script(workflow: dict[str, Any], name: str) -> str:
+    """The `run:` block of the named step."""
+    for step in workflow["jobs"]["ci"]["steps"]:
+        if step.get("name") == name:
+            script = step.get("run")
+            assert isinstance(script, str), f"the step {name!r} has no run: block"
+            return script
+    raise AssertionError(f"the workflow has no step named {name!r}")
+
+
+def test_the_gitleaks_archive_is_downloaded_under_the_name_the_checksum_lists() -> None:
+    """The archive's name on disk must be the name in the checksums line.
+
+    The defect this pins: the archive was downloaded as `gitleaks.tar.gz`
+    while the checksums file lists it as
+    `gitleaks_<version>_linux_x64.tar.gz`, and `sha256sum --check`
+    resolves the file by the NAME IN THE CHECKSUM LINE. The step therefore
+    died with "FAILED open or read" before the scan ever ran.
+
+    The check is on the SHAPE, not on a literal: the archive is written
+    under a variable, and that variable is what both the download and the
+    checksum lookup name.
+    """
+    workflow = _workflow()
+    script = _step_script(workflow, "Install gitleaks")
+
+    assert 'archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"' in script, (
+        "the archive name must be the one the release's checksums file lists"
+    )
+    # The download writes THAT name, not a generic one.
+    assert '-o "$archive"' in script, "the download must write the archive under $archive"
+    # And the checksum check is driven by the same name.
+    assert 'grep -F " ${archive}" checksums.txt' in script, (
+        "the checksum lookup must select the line for $archive"
+    )
+    # The old failure mode: a hardcoded generic name on disk.
+    assert '-o gitleaks.tar.gz' not in script, (
+        "the archive must not be downloaded under a name the checksums file does not list"
+    )
+
+
+def test_the_gitleaks_step_fails_closed_when_the_checksum_is_wrong() -> None:
+    """The gate must still be a gate.
+
+    Two things have to hold at once: the bytes must match the checksum,
+    and the version the binary REPORTS must be the pinned one. A checksum
+    alone proves the bytes are the ones the release published; it does not
+    prove the release is the one the workflow asked for.
+    """
+    workflow = _workflow()
+    script = _step_script(workflow, "Install gitleaks")
+
+    assert "sha256sum --check --strict" in script, "the checksum check must stay"
+    # The checksum line is SELECTED first, so a missing entry fails loudly
+    # instead of producing an empty checksum list.
+    assert 'if [ -z "$expected_line" ]' in script, (
+        "a checksums file that does not list the archive must fail by name"
+    )
+    # The version the binary reports is checked against the pin.
+    assert 'installed_version="$(gitleaks version)"' in script
+    assert 'if [ "$installed_version" != "${GITLEAKS_VERSION}" ]' in script, (
+        "the version the binary reports must be checked against the pinned version"
+    )
+
+
+def test_the_gitleaks_download_stays_out_of_the_checkout() -> None:
+    """The scan step must scan the repository, not the download directory.
+
+    The `gitleaks` step runs `gitleaks detect --source .` in the
+    checkout. The install step used to drop the archive and the
+    checksums file into that same tree, so the scan's input was not the
+    repository. The download goes to its own directory instead.
+    """
+    workflow = _workflow()
+    script = _step_script(workflow, "Install gitleaks")
+
+    assert 'work_dir="$(mktemp -d)"' in script, (
+        "the download must go to its own directory, not into the checkout"
+    )
+    assert 'cd "$work_dir"' in script
+
+
+def test_the_reproducibility_gate_does_not_need_a_model_backend() -> None:
+    """The reproducibility gate must not need a live LLM.
+
+    The defect this pins: the script's ARMS pass built the arms WITHOUT a
+    generator, so each arm fell back to `generator_from_env()` -- the real
+    local model -- and the pass died with `LLM_UNAVAILABLE` on a CI
+    runner that has no model backend, before it compared anything.
+
+    The script is checked here on its own terms: it must build the arms
+    with the deterministic stub, and the stub must be the model's
+    generator, not the environment's.
+    """
+    script = (REPO_ROOT / "scripts" / "check_reproducibility.py").read_text(
+        encoding="utf-8"
+    )
+    assert "StubGenerator" in script, (
+        "the arms pass must use the model-free stub, not the configured LLM"
+    )
+    assert "generator=generator" in script, (
+        "both arms must be given the stub explicitly"
+    )
+    # The arms must not be built bare: a bare arm falls back to the LLM.
+    assert "TuklasArm(db_path, document.id)," not in script, (
+        "an arm built without a generator falls back to the real local LLM"
+    )
+    assert "VectorArm(db_path, document.id)," not in script, (
+        "an arm built without a generator falls back to the real local LLM"
+    )
+
+
+def test_the_workflow_file_is_valid_yaml_and_every_run_block_is_valid_bash(
+    tmp_path: Path,
+) -> None:
+    """The workflow must parse, and every `run:` block must be valid bash.
+
+    A workflow that does not parse never runs; a `run:` block with a bash
+    syntax error fails at the point of the error rather than at review.
+
+    The block is handed to bash as a FILE, not on stdin: the `bash` on a
+    Windows host is the WSL launcher, and it does not read a script from
+    its standard input the way a Linux bash does.
+    """
+    workflow = _workflow()
+    steps = workflow["jobs"]["ci"]["steps"]
+    assert steps, "the workflow has no steps"
+
+    bash = _git_bash() or shutil.which("bash")
+    if bash is None:
+        pytest.skip("no bash on PATH to syntax-check the run: blocks with")
+
+    for index, step in enumerate(steps):
+        script = step.get("run")
+        if not script:
+            continue
+        block = tmp_path / f"step{index:02d}.sh"
+        block.write_text(script, encoding="utf-8")
+        result = subprocess.run(
+            [bash, "-n", str(block)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, (
+            f"the run: block of {step.get('name')!r} is not valid bash:\n{result.stderr}"
+        )
+
+
+def _git_bash() -> str | None:
+    """Git Bash, on a Windows host that has no bash on PATH."""
+    for candidate in (
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files\Git\usr\bin\bash.exe",
+    ):
+        if Path(candidate).is_file():
+            return candidate
+    return None
