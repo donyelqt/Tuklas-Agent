@@ -926,6 +926,63 @@ slices 1–5.
     "passes on the clean tree" case failed whenever it ran alongside a
     violation case — a flaky failure with no real cause. Every tree scan is
     now serialised on one lock in `apps/api/tests/test_ci_gates.py`.
+  - *TWO CI-BLOCKING workflow defects found and fixed (2026-10-21).* The
+    Day-7 workflow had never run green, and each failure hid the next:
+    1. **The gitleaks install step verified a file under a name that was
+       not on disk.** The archive was downloaded as `gitleaks.tar.gz`, but
+       the release's own checksums file lists it as
+       `gitleaks_<version>_linux_x64.tar.gz`, and `sha256sum --check`
+       resolves the file by the NAME IN THE CHECKSUM LINE. The step died
+       with `FAILED open or read` before the scan ever ran. The archive is
+       now downloaded under the name the checksums file lists.
+    2. **The reproducibility gate needed a model backend a CI runner does
+       not have.** `scripts/check_reproducibility.py`'s ARMS pass built the
+       arms with no generator, so each arm fell back to
+       `generator_from_env()` — the REAL local LLM — and the pass died
+       with `503 LLM_UNAVAILABLE` on a runner with no ollama, before it
+       compared anything. The arms are now given the model-free
+       `StubGenerator` explicitly, which is what the script's own
+       docstring already promised ("this script does not require a model").
+       The stub does not change what the pass MEASURES: the generation
+       node is terminal in the graph, and the ranking under comparison
+       comes from the agent's own `search_nodes` trace, which the stub
+       never touches. Verified: with the backend pointed at a dead port
+       the pass now reports the SAME config id (`cfg_8db1bc07b11f5080`)
+       and the SAME aggregates as the live-backend run.
+    The gitleaks step was hardened at the same time, without weakening the
+    gate: the checksum line is SELECTED before it is checked, so a
+    checksums file that does not list the archive fails by name instead of
+    producing an empty checksum list; the version the binary REPORTS is
+    checked against the pinned version (the checksum proves the bytes are
+    the ones the release published, not that the release is the one this
+    workflow asked for); and the download goes to its own directory, so
+    the `gitleaks detect --source .` step scans the repository and not
+    the download directory. `apps/api/tests/test_ci_gates.py` pins all of
+    it — the archive's name, the fail-closed behaviour, the download's
+    location, the stub generator, and that the workflow parses and every
+    `run:` block is valid bash.
+  - *A THIRD CI-BLOCKING defect, in the fix for the first one (2026-10-21).*
+    The "fail by name" hardening above did not work, and the shape of the
+    script said it did. The checksum line was selected with
+    `expected_line="$(grep -F " ${archive}" checksums.txt)"`, and `grep`
+    exits 1 when it matches nothing. Under `set -e`, a failing command
+    substitution in an assignment ABORTS the shell — so the
+    `if [ -z "$expected_line" ]` branch that names the missing archive was
+    DEAD CODE. The step still failed, but on the bare `grep` exit status,
+    with no message naming the archive: exactly the failure mode the
+    branch was written to replace. The line is now selected with `awk`,
+    which exits 0 when it matches nothing, so the branch is reached; and
+    `awk` matches the file name EXACTLY on the second field, so a `.sig`
+    or `.zip` entry for a different asset can never be selected either.
+    The download directory is now also removed on the way out (a `trap` on
+    `EXIT`), instead of being left under `/tmp` for the runner.
+    The lesson the tests now pin: a shape assertion ("this script
+    contains the fail-closed branch") is not evidence that the branch
+    RUNS. `apps/api/tests/test_ci_gates.py` now EXECUTES the step's real
+    `run:` block against stubbed `curl`/`sudo`/`gitleaks` and asserts on
+    what it PRINTS: the missing archive is named, the happy path still
+    passes, a binary reporting another version is rejected, and the
+    download lands outside the checkout and is cleaned up.
 - [x] **Ratchet:** first benchmark run on dev-24 sets `Recall@5`, `MRR@10`, p95 latency in
   CONSTRAINTS.md "Measured, not yet enforced". Update that table; ship no unmeasured
   numbers.
