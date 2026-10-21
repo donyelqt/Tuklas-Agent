@@ -1,0 +1,225 @@
+name: ci
+
+# The step order is the order PLAN.md Day 7 and CONSTRAINTS.md name, and the
+# order is deliberate: the cheapest and most deterministic gates run first, so
+# a broken import is caught before the suite spends minutes on it.
+#
+#   1. mypy on apps/api      (zero errors)
+#   2. ruff on apps/api      (zero errors)
+#   3. tsc + eslint on apps/web (zero errors)
+#   4. gitleaks              (zero findings)
+#   5. the two check scripts (exit 0)
+#   6. pytest                (green)
+#   7. diff-cover            (>= 80% on changed lines)
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The pinned tool versions. The Python ones come from poetry.lock (the
+  # main group and the dev group), so the gate that runs here is the gate
+  # the manifest describes. The rest are the tools the lock file does not
+  # carry.
+  PYTHON_VERSION: "3.11"
+  POETRY_VERSION: "2.2.1"
+  MYPY_VERSION: "1.13.0"
+  RUFF_VERSION: "0.8.2"
+  PYTEST_VERSION: "8.3.4"
+  DIFF_COVER_VERSION: "10.6.0"
+  NODE_VERSION: "22"
+  GITLEAKS_VERSION: "8.30.1"
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          # diff-cover compares the working tree against a base branch, and
+          # gitleaks' `detect` mode walks the commit history. Both need the
+          # history and the base ref, not a shallow clone.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # The pinned manifest IS the toolchain. `poetry install` installs
+      # exactly what `poetry.lock` pins -- every runtime dependency AND the
+      # dev group (mypy, ruff, pytest, pytest-cov, diff-cover) -- so the
+      # gate that runs here is the gate the manifest describes. A hand-written
+      # `pip install` list would drift from the lock file, and the lock file
+      # is the thing the repo promises is pinned.
+      #
+      # The Poetry version is pinned here for the same reason the tool
+      # versions are: an unpinned installer resolves differently over time.
+      - name: Install Poetry
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "poetry==${POETRY_VERSION}"
+
+      - name: Cache the Poetry installs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry/virtualenvs
+            ~/.cache/pypoetry/artifacts
+            ~/.cache/pypoetry/cache
+          key: poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('poetry.lock') }}
+
+      # Every Python command below runs through `poetry run`, because
+      # Poetry's virtualenv lives in its own cache directory and is NOT the
+      # interpreter `actions/setup-python` provides. `poetry run` puts the
+      # pinned environment on the PATH for that one command.
+      - name: Install the pinned toolchain from poetry.lock
+        run: poetry install --no-root --no-interaction
+
+      - name: Show the installed tool versions
+        run: |
+          poetry run python -m mypy --version
+          poetry run python -m ruff --version
+          poetry run python -m pytest --version
+          poetry run diff-cover --version
+          poetry --version
+
+      # ------------------------------------------------------------------
+      # 1. mypy on apps/api -- zero errors
+      # ------------------------------------------------------------------
+      - name: mypy (apps/api)
+        run: poetry run python -m mypy apps/api
+
+      # ------------------------------------------------------------------
+      # 2. ruff on apps/api -- zero errors
+      # ------------------------------------------------------------------
+      - name: ruff (apps/api)
+        run: poetry run python -m ruff check apps/api
+
+      # ------------------------------------------------------------------
+      # 3. tsc + eslint on apps/web -- zero errors
+      # ------------------------------------------------------------------
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install the web dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: tsc (apps/web)
+        working-directory: apps/web
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: eslint (apps/web)
+        working-directory: apps/web
+        run: npm run lint
+
+      # ------------------------------------------------------------------
+      # 4. gitleaks -- zero findings
+      # ------------------------------------------------------------------
+      # The binary is downloaded from the pinned release and its checksum is
+      # verified against the release's own checksums file, so a compromised
+      # download cannot quietly become the scanner.
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL "$url" -o gitleaks.tar.gz
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" \
+            -o checksums.txt
+          grep "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" checksums.txt \
+            | sha256sum --check --strict
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: gitleaks
+        run: gitleaks detect --redact --no-banner --source .
+
+      # ------------------------------------------------------------------
+      # 5. the two check scripts -- exit 0
+      # ------------------------------------------------------------------
+      # The corpus PDFs are gitignored (ADR-002), so a CI runner has none.
+      # The script fetches them from the URLs `docs/CORPUS.md` records and
+      # verifies the sha256 of each; a mismatch is a hard failure, because a
+      # corpus that is not the recorded one invalidates every gold node id.
+      #
+      # The suite is written so that it needs NEITHER the corpus files NOR a
+      # live model: the tests that want a corpus skip themselves with a clear
+      # message when the file is absent. Fetching it here means those tests
+      # RUN in CI instead of skipping.
+      - name: Fetch the benchmark corpus
+        run: |
+          poetry run python -m scripts.fetch_corpus
+          poetry run python -m scripts.fetch_corpus --secondary
+
+      - name: Vectorless quarantine scan
+        run: poetry run python scripts/check_no_vectors.py
+
+      - name: Eval run-config parity check
+        run: poetry run python scripts/check_eval_config.py scripts/fixtures/example-run-config.json
+
+      # The two proof scripts are the CI-visible evidence that the check
+      # scripts FAIL on a deliberate violation, not only that they pass on a
+      # clean tree. They write temporary files and remove them again.
+      - name: Prove the quarantine scan fails on a violation
+        run: poetry run python scripts/prove_check_no_vectors.py
+
+      - name: Prove the config check fails on a violation
+        run: poetry run python scripts/prove_check_eval_config.py
+
+      # The reproducibility rule (evaluation.md §6): "Same config -> same
+      # retrieval metrics exactly". The script runs the retrieval pass twice
+      # over two FRESH ingests, so a pass that reproduced itself through a
+      # cached artifact would fail.
+      - name: Retrieval reproducibility (same config id -> same metrics)
+        run: poetry run python -m scripts.check_reproducibility
+
+      # ------------------------------------------------------------------
+      # 6. pytest -- green
+      # ------------------------------------------------------------------
+      - name: pytest (apps/api)
+        run: poetry run python -m pytest apps/api/tests -q
+
+      # ------------------------------------------------------------------
+      # 7. diff-cover -- >= 80% on changed lines
+      # ------------------------------------------------------------------
+      # `--compare-branch=main` is the rule CONSTRAINTS.md names. The base
+      # ref is the REMOTE-tracking branch, because the checkout action leaves
+      # no local `main` branch behind, and it is resolved from the event so a
+      # pull request is compared against the branch it targets and a push
+      # against main.
+      - name: Coverage on changed lines
+        run: |
+          set -euo pipefail
+          base_ref="origin/main"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base_ref="origin/${{ github.base_ref }}"
+          fi
+          poetry run python -m pytest apps/api/tests -q --cov=apps/api --cov-report=xml:coverage.xml
+          poetry run diff-cover coverage.xml --compare-branch="$base_ref" --fail-under=80
+
+      - name: Upload the coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore

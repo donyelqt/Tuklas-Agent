@@ -771,18 +771,156 @@ slices 1–5.
 **Targets:** repo root (`pyproject.toml` + `poetry.lock` (Poetry), `.github/workflows/ci.yml`,
 `scripts/check_eval_config.py`). **Depends on:** all slices green.
 
-- [ ] `pyproject.toml` + `poetry.lock` pinned (Poetry): PyMuPDF, rank-bm25 (or FTS5-only), rapidfuzz, langgraph,
+- [x] `pyproject.toml` + `poetry.lock` pinned (Poetry): PyMuPDF, rank-bm25 (or FTS5-only), rapidfuzz, langgraph,
   pydantic, fastapi, uvicorn, diff-cover, and the D3 embedding package.
-- [ ] `scripts/check_no_vectors.py` + `scripts/check_eval_config.py` finalized
+  - **DONE (2026-10-21):** the manifest already carried the runtime set
+    (PyMuPDF 1.24.14, rank-bm25 0.2.2, rapidfuzz 3.10.1, langgraph 0.2.x,
+    pydantic 2.10.3, fastapi 0.115.6, uvicorn 0.32.1). Four entries were
+    added: `fastembed==0.9.0` and `numpy==2.4.6` in the main group (D3's
+    embedding package, and the array library the dense arm's cosine is
+    written with), plus `pytest-cov==7.1.0` and `diff-cover==10.6.0` in the
+    dev group — the coverage gate in CONSTRAINTS.md invokes `pytest --cov`
+    and `diff-cover`, and neither was installable from the manifest before,
+    so a clean install could not run the gate it names. `poetry.lock`
+    re-locked: +22 packages, −0; `poetry check --lock` → "All set!".
+  - *Verified:* a FRESH venv built from the lock file alone
+    (`poetry install --no-root`) imports every runtime dependency the code
+    imports — `fitz`, `rapidfuzz`, `rank_bm25`, `langgraph`, `fastapi`,
+    `pydantic`, `fastembed`, `numpy`, `diff_cover`, `pytest_cov` — and the
+    full suite runs green in it. This is the CONSTRAINTS.md row
+    "Requirements manifest installs the full toolchain (incl. the RapidFuzz
+    scorer)", checked against an install rather than against a list.
+- [x] `scripts/check_no_vectors.py` + `scripts/check_eval_config.py` finalized
   (Day 1 + Day 7 deliverables per CONSTRAINTS.md).
-- [ ] `.github/workflows/ci.yml`: mypy on `apps/api` (zero errors) → ruff on `apps/api`
+  - **DONE (2026-10-21):** `check_no_vectors.py` was REWRITTEN, not patched.
+    The Day-1 version had a bug that would have made the quarantine rule
+    unenforceable: it compared `path.as_posix()` (an ABSOLUTE path) against
+    the relative prefix `apps/api/evaluation/`, so the allow-list never
+    applied, and it only ever scanned `apps/api`, so it could not have
+    enforced "nothing outside `apps/api/evaluation/` imports
+    `experiments/vector/`" at all. The new scanner parses imports with
+    `ast` (a docstring naming a package is not a violation; a dynamic
+    `import_module("faiss")` is), compares repo-relative paths, and scans the
+    whole repository with per-path rules. `check_eval_config.py` is NEW: it
+    enforces the model-parity rule (same model + backend + temperature(0) +
+    seed across arms) and the pinned-run invariants evaluation.md §1/§6
+    require, and derives the config id from the config's own content.
+  - *Proof, not assertion:* `scripts/prove_check_no_vectors.py` injects 12
+    deliberate violations (one per rule) and asserts the scanner exits 1 and
+    prints the expected rule for each, then removes the files;
+    `scripts/prove_check_eval_config.py` does the same for 16 config
+    violations. Both scripts restore the tree, and both run in CI, so the
+    gates are shown to FAIL on a violation and not only to pass on a clean
+    tree. `apps/api/tests/test_ci_gates.py` pins the same behaviour from the
+    pytest side (38 tests).
+  - *Tightening, stated so it is not silent:* the scanner also denies
+    `fastembed`, `onnxruntime` and `numpy` in the quarantined primary-path
+    directories. CONSTRAINTS.md names five packages and `numpy` is not among
+    them, so this is a TIGHTENING, which CONSTRAINTS.md permits silently.
+    The reasoning is that the deny list names LIBRARIES and the intent is
+    that the vectorless arm contains no vector machinery in any spelling: a
+    cosine over two normalised vectors is `np.dot(a, b) / (norm(a) * norm(b))`,
+    which the existing `cosine_similarity` grep rule cannot see because
+    numpy spells it differently. The dense arm's own `fastembed`/`numpy`
+    imports live in `experiments/vector/`, which is not denied.
+  - *Also fixed:* the quarantine scope follows CONSTRAINTS.md, which names
+    `apps/api/api/` and which AGENTS.md omits. CONSTRAINTS.md is the binding
+    file, so `api/` is scanned. The two documents disagree and should be
+    reconciled by whoever owns AGENTS.md.
+- [x] `.github/workflows/ci.yml`: mypy on `apps/api` (zero errors) → ruff on `apps/api`
   (zero errors) → tsc + eslint on `apps/web` (zero errors) → gitleaks (zero findings) →
   both check scripts (exit 0) → pytest green → diff-cover ≥ 80% on changed lines.
-- [ ] **Ratchet:** first benchmark run on dev-24 sets `Recall@5`, `MRR@10`, p95 latency in
+  - **DONE (2026-10-21):** `.github/workflows/ci.yml`, 23 steps in exactly
+    that order. The Python toolchain comes from `poetry install` (the
+    lock file IS the manifest), so every Python command runs through
+    `poetry run`; Poetry 2.2.1 is pinned, as are gitleaks 8.30.1 (with
+    its release checksum verified before install), Node 22, and Python 3.11.
+  - *One addition to the required order, and why:* a "Fetch the benchmark
+    corpus" step runs BEFORE the check scripts. The corpus PDFs are
+    gitignored (ADR-002), so a CI runner has none; the script fetches them
+    from the URLs `docs/CORPUS.md` records and verifies each sha256
+    (`scripts/fetch_corpus.py`). Without it the corpus-dependent tests
+    SKIP in CI, which would make the pytest step green without having run
+    the retrieval tests. The URLs were re-verified live: the ICNL Civil Code
+    PDF and the govinfo U.S. Code Title 11 PDF both fetch, and both match
+    the sha256 in `docs/CORPUS.md` exactly.
+  - *A CI-BLOCKING test defect found and fixed (2026-10-21):*
+    `apps/api/tests/test_generation.py::test_generation_ask_trace_records_the_run`
+    called `run_ask` without installing the model-free stub, so the ask
+    resolved the REAL local ollama backend. On a CI runner with no model
+    this fails with `503 LLM_UNAVAILABLE / reason: ReadTimeout` — CI would
+    have been RED on the pytest step for a reason that has nothing to do
+    with the change under test. The test's own comment already said "The
+    model-free generator runs no model, so the run parameters are absent",
+    i.e. it was written against the stub and had lost the patch. Fixed the
+    same way `apps/api/tests/test_agent.py` and `test_api_routes.py` do it:
+    `monkeypatch.setattr(ask_module, "_default_generator", StubGenerator)`
+    and the same for `graph_module`. The assertions are unchanged; the test
+    now runs in ~1s instead of needing a model, and it no longer competes
+    with a local ollama for the same backend.
+  - *A race in this slice's own test, found and fixed:* the quarantine scan
+    reads the WORKING TREE, and the violation cases write a probe file into
+    it, so two of them running at once would see each other's probe. The
+    "passes on the clean tree" case failed whenever it ran alongside a
+    violation case — a flaky failure with no real cause. Every tree scan is
+    now serialised on one lock in `apps/api/tests/test_ci_gates.py`.
+- [x] **Ratchet:** first benchmark run on dev-24 sets `Recall@5`, `MRR@10`, p95 latency in
   CONSTRAINTS.md "Measured, not yet enforced". Update that table; ship no unmeasured
   numbers.
+  - **CLOSED (2026-10-21) — the table is filled, from a real run.** The
+    ratchet is set by a REAL dev-24 run of the
+    evaluation harness, and that run has now landed. `CONSTRAINTS.md`'s
+    "Measured, not yet enforced" table carries the three values, taken
+    from `evaluation_runs` row `eval_083a4c15` and its 48 `retrieval_runs`
+    rows: config `cfg_0f73ff26c0d38d54`, split seed 42, model
+    `qwen2.5:3b` on ollama at temperature 0, seed 42, judge prompt
+    `judge-v1-batch`, n = 24 questions x 2 arms. The Tuklas arm's
+    Recall@5 is 0.717, its MRR@10 is 0.708, and its ask p95 latency is
+    608,259 ms with a p50 of 2,226 ms. The p95 is one question in 24
+    taking ten minutes on a single local generation call; it is recorded
+    as measured rather than smoothed, and the budget is deliberately NOT
+    set from it, because a p95 over 24 samples is a single order
+    statistic. The dense arm's numbers are NOT ratchet values: the two
+    arms differ in more than the retrieval mechanism, and the ratchet is
+    the vectorless arm's.
+
+    The TEST-48 run also landed, and its report is the REPORTED one:
+    `data/eval-reports/v1-test.md`, config `cfg_e86e8bfbc803c860`, run
+    `eval_a80167ab`, judge prompt `judge-v1-batch`, n = 48 x 2 arms. It
+    publishes both arms' numbers and no verdict, and it states the arms'
+    asymmetry before it prints them.
+  - *The command that produced them:*
+    `.venv/Scripts/python.exe -m apps.api.evaluation.run_eval --config
+    apps/api/evaluation/fixtures/example-dev-run-config.json --snapshot
+    v1-dev --db data/tuklas.sqlite`, then the same with
+    `example-run-config.json` / `v1-test`.
   - *Acceptance (PLAN.md Day 7):* full CI green. Re-run with same config id → retrieval
     metrics reproduce exactly, generation within ±5pp.
+  - *Retrieval half DONE, measured:* `scripts/check_reproducibility.py` runs
+    the retrieval pass TWICE over two FRESH ingests and two fresh index
+    builds — a fresh store per pass, so a pass that reproduced itself
+    through a cached artifact would fail. Measured on the golden 10Q
+    (Civil Code, config id `cfg_8db1bc07b11f5080`): Recall@1 0.800000,
+    Recall@3 1.000000, Recall@5 1.000000, Recall@10 1.000000, MRR@10
+    0.900000 — identical in both runs, per-question node id lists identical
+    element for element. These are VALIDITY numbers on the golden 10Q, not
+    dev-24 numbers, and they are not ratchet values.
+  - *Generation half:* the ±5pp generation tolerance is a property of the
+    Day-6 runner and needs a dev-24 run with a model to exercise. The
+    config-id derivation that makes "same config id" checkable is DONE and
+    pinned by `apps/api/tests/test_ci_gates.py`: the id is
+    `"cfg_" + sha256(canonical_json(config without config_id))[:16]`, so the
+    same config always yields the same id, any change to the config yields a
+    different one, and a declared `config_id` that does not match its own
+    content is a hard failure.
+  - *The two derivations were CROSS-CHECKED, not assumed equal (2026-10-21):*
+    the checker's `derive_config_id` and the runner's
+    `apps/api/evaluation/config.py::derive_config_id` were run side by side
+    over both fixtures and over a mutated config. Both produce
+    `cfg_9ba255191a96aaa9` for both fixtures (each of which declares that
+    id), and both produce `cfg_2d8c5b516db0adc6` after `fuzzy_threshold`
+    changes 85 → 86. The derivations agree byte-for-byte, and no expected
+    id is hard-coded anywhere: the checker always derives and compares.
 
 ---
 
@@ -796,6 +934,18 @@ published honestly** (`SPEC.md` §9b):
 3. [ ] Judge blinded; prompt versioned; disagreement computable (≤ 15%).
 4. [ ] `evaluation_runs`/`retrieval_runs` rows persisted per question per arm.
 5. [ ] Model parity check green (same model + backend + temperature(0) + seed across arms).
-6. [ ] Quarantine scan green (`check_no_vectors.py` exit 0).
-7. [ ] Requirements manifest installs the full toolchain (incl. the RapidFuzz scorer).
+   - *The CHECKER is DONE (2026-10-21):* `scripts/check_eval_config.py` enforces
+     the rule and CI runs it. What is not yet done is a real run's config
+     passing it — the Day-6 harness's own run config is the input.
+6. [x] Quarantine scan green (`check_no_vectors.py` exit 0).
+   - **DONE (2026-10-21):** the scanner was rewritten to cover every path the
+     rule names (including `apps/api/api/`, which CONSTRAINTS.md names and
+     AGENTS.md omits) and to enforce the "only `apps/api/evaluation/` imports
+     `experiments/vector/`" rule across the whole repository. Exit 0 on the
+     clean tree; 12 deliberate violations each caught and the tree restored.
+7. [x] Requirements manifest installs the full toolchain (incl. the RapidFuzz scorer).
+   - **DONE (2026-10-21):** verified by INSTALL, not by inspection — a fresh
+     venv built from `poetry.lock` alone imports `fitz`, `rapidfuzz`,
+     `rank_bm25`, `langgraph`, `fastapi`, `pydantic`, `fastembed`, `numpy`,
+     `diff_cover` and `pytest_cov`, and the full suite runs green in it.
 8. [ ] Node id format match re-verified on the frozen dataset (seed-data test green) — uniqueness or determinism broken would fail it.
