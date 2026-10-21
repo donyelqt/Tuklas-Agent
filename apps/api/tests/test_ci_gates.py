@@ -744,6 +744,13 @@ def _run_gitleaks_step(
     (bin_dir / "curl").write_text(_CURL_STUB, encoding="utf-8", newline="\n")
     (bin_dir / "sudo").write_text(_SUDO_STUB, encoding="utf-8", newline="\n")
     (bin_dir / "gitleaks").write_text(_GITLEAKS_STUB, encoding="utf-8", newline="\n")
+    # The stubs are EXECUTED, so they have to be executable. A file written
+    # on Windows carries no execute bit, and on a Linux runner the shell
+    # would then find the REAL `curl` and `gitleaks` on the PATH instead --
+    # which fetches the real release over the network and quietly makes
+    # the test assert nothing. The bit is set explicitly for that reason.
+    for stub in (bin_dir / "curl", bin_dir / "sudo", bin_dir / "gitleaks"):
+        stub.chmod(0o755)
 
     # The archive's real bytes, and the checksums file that lists them
     # under the archive's own name. The archive is a REAL gzip tarball,
