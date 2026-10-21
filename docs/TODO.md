@@ -1090,30 +1090,84 @@ slices 1–5.
   saying it could not be anything but 0. A report that contradicts its own
   number is not a report a reader can rely on.
   - *The claim's first half is TRUE and the second half is not.* The dense
-    arm's gate cannot fail on LEXICAL grounds: its score is a cosine
+    arm's gate cannot fail on the LEXICAL condition: its score is a cosine
     similarity, non-zero for every node against every query, so the
     min-max normalization gives the nearest neighbour a lex of 1.0 and the
-    support rule passes. But the gate is not unconditional. The evidence
-    gate keeps a node only when its text is at least 50 characters, and
-    the dense arm's cosine ranks a cluster of short SECTION nodes (11 to
-    40 characters of text) at the very top for an out-of-vocabulary
-    question. Every one of them is dropped by the length floor, the kept
-    set is empty, and the gate fails on that NON-lexical ground.
-  - *Measured on the test split:* the dense arm refused one of the seven
-    unanswerable questions on that ground (q031) and one ANSWERABLE
-    question on the same ground (q061), which is why its abstention score
-    is neither 0 nor 1.
+    support rule passes. But the gate is not unconditional — it can fail
+    on a NON-lexical condition, and TWO such conditions are measured.
+  - *Measured on the test split:* the dense arm refused **1 of the 7**
+    unanswerable questions and **1 of the 41** answerable ones, so its
+    abstention score is 1/7 = 0.143 — not 0, and not 1. The two refusals
+    have DIFFERENT causes, and both were replayed to establish which:
+    1. **q031** (unanswerable) — the EVIDENCE LENGTH FLOOR. The dense
+       arm's cosine ranks a cluster of short SECTION nodes (11 to 40
+       characters of text) at the very top for the out-of-vocabulary
+       question; every one of them is dropped by the 50-character floor,
+       the kept set is EMPTY, and the gate fails.
+    2. **q061** (ANSWERABLE) — the TOP-8 EVIDENCE WINDOW, and NOT the
+       length floor. The kept set is NOT empty (8 items; 27 of the 29
+       retrieved nodes are over 50 characters). The agent merges every
+       sub-question's supporters, sorts them by score and keeps the top 8;
+       this question's first sub-question ("What are the ways a partition
+       may be made") had 8 supporters, all scoring below the other two
+       sub-questions' supporters, so every one of them was evicted by that
+       cut. The sub-question was left with NO supporter in the kept set
+       and the gate failed closed.
   - *Resolution:* the note now states the asymmetry that is true (the gate
-    cannot fail LEXICALLY, so a dense refusal is not a refusal to answer)
-    and names the non-lexical failure that is also true (the length
-    floor), and it says what the number IS a measurement of: the arm's
-    ranking and the length floor, not its refusal quality. It carries no
-    split-specific number, so it is true in both reports.
+    cannot fail on the LEXICAL condition, so most of the difference
+    between the two arms' abstention scores is the gate's TRIGGER rather
+    than the model's willingness to answer), names BOTH non-lexical
+    failure conditions, and says the number is a MEASURED COUNT rather
+    than a constant of the arm. The report now prints the count beside
+    the ratio ("abstention: 1 of 7 unanswerable questions refused"), so a
+    reader sees 0.143 as one refusal out of seven rather than as a
+    property of the arm. The note carries no split-specific number, so
+    it is true in both reports.
   - *The note was corrected BEFORE the reports were published, and the
     reports were re-rendered from the SAME stored run rather than
     re-run, because a re-run would have produced different numbers under
     the same run id and the report would then be a different
     measurement.*
+
+- [x] **F12 — the citation-accuracy number was published without saying
+  what it MEASURES, and a reader would have read it as one thing.** The
+  F3 fix made `citation_accuracy` a real measurement, and it moved from a
+  tautological 1.000 to 0.542 (vectorless) and 0.458 (dense) on dev-24,
+  and 0.646 and 0.542 on test-48. A number that moved that far, with no
+  statement of what it measures, invites exactly one reading: "the model
+  cites badly". That reading is not supported, and the report did not
+  support it.
+  - *Every failure was classified, against the stored run, by replaying
+    the arm to recover the citation list's MARKER NUMBERS and
+    cross-checking the replay against the stored row. The reconstruction
+    (marker m -> the m-th stored node id) reproduces the stored
+    `citations_valid` for 87 of 87 stored rows, so the classification is
+    against the same measurement the report publishes.*
+  - *Measured on test-48:*
+
+    | arm | claims | failed | scorer strict (paraphrase) | scorer strict (summary) | model cited badly | stray bracket |
+    |---|---|---|---|---|---|---|
+    | vectorless | 145 | 56 | 21 | 9 | 23 | 3 |
+    | dense | 143 | 62 | 19 | 5 | 34 | 4 |
+
+  - *So the two numbers are MEASUREMENTS OF A PAIR* — the model's
+    citations AND the support rule's sensitivity — and the pair splits
+    three ways: the SCORER is strict (the cited node is on the sentence's
+    topic and the sentence's content words ARE in the node, but the model
+    wrote legalese and no string rule can match a paraphrase to a
+    provision); the MODEL cited badly (the cited node is off the
+    sentence's topic); and a third mode that is neither, where the model
+    wrote a STATUTORY ARTICLE NUMBER in square brackets ("[1619]"), the
+    marker convention read it as a citation marker, and no such citation
+    exists.
+  - *The report now says so* (`CITATION_METRIC_NOTE`): the number is a
+    measurement of the pair, a reader must not read it as "the model
+    cites badly" without knowing how much of it is the string rule's
+    strictness, and the number is a LOWER BOUND on citation quality
+    rather than a measurement of it. The report does NOT put a number on
+    the split, because the split needs the citation list's marker
+    numbers and the run stores only the node ids — which is itself
+    recorded here rather than papered over.
 
 ---
 

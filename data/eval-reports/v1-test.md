@@ -86,6 +86,7 @@ THE NUMBERS (per arm; no comparison verdict)
     precision: @1=0.561 @3=0.317 @5=0.205 @10=0.125
     mrr@10=0.686
     generation: correctness=0.649 faithfulness=0.656 citation_accuracy=0.646 abstention=1.000
+    abstention: 7 of 7 unanswerable questions refused (a MEASURED COUNT, not a constant of the arm; see the note below)
     judge: n_judged=48 claims (the faithfulness above is the mean over these; a refusal carries no claim and is not judged)
     system: total p50=1936.0ms p95=6081.1ms | retrieval p50=169.0ms p95=307.4ms | generation p50=1775.5ms p95=5867.1ms
     tokens: in mean=1079.8 out mean=122.8 | tool iterations mean=6.65
@@ -95,6 +96,7 @@ THE NUMBERS (per arm; no comparison verdict)
     precision: @1=0.537 @3=0.301 @5=0.205 @10=0.120
     mrr@10=0.657
     generation: correctness=0.600 faithfulness=0.602 citation_accuracy=0.542 abstention=0.143
+    abstention: 1 of 7 unanswerable questions refused (a MEASURED COUNT, not a constant of the arm; see the note below)
     judge: n_judged=48 claims (the faithfulness above is the mean over these; a refusal carries no claim and is not judged)
     system: total p50=1673.0ms p95=6186.8ms | retrieval p50=42.0ms p95=70.5ms | generation p50=1621.5ms p95=6153.4ms
     tokens: in mean=1017.2 out mean=116.5 | tool iterations mean=7.12
@@ -140,6 +142,26 @@ MEASURED LIMITATIONS
   comparable with the earlier report's figure. The judge's scores, the
   abstention score and the token counts were not redefined.
 
+  The citation-accuracy number is a MEASUREMENT OF A PAIR: the model's
+  citations AND the support rule's sensitivity. The check is mechanical and
+  arm-blind - the answer is split into (marker, sentence) pairs and the
+  cited node's text is compared with the sentence by the shared scorer's
+  rule, the normalized sentence being a substring of the node's text or the
+  RapidFuzz token_set_ratio reaching the run's own fuzzy_threshold. A score
+  below 1.0 therefore has two possible causes that this number does not
+  separate. (1) The SCORER is strict: the cited node is on the sentence's
+  topic and the sentence's content words ARE in the node, but the model
+  wrote legalese and no string rule can match a paraphrase to a provision.
+  (2) The MODEL cited badly: the cited node is not on the sentence's topic
+  at all. A third mode is neither: the model wrote a STATUTORY ARTICLE
+  NUMBER in square brackets, the marker convention reads it as a citation
+  marker, and no such citation exists. The run records the node ids but not
+  the citation list's marker numbers, so the report does not put a number
+  on the split between those causes. A reader must therefore not read this
+  number as 'the model cites badly' without knowing how much of it is the
+  string rule's strictness, and the number is a LOWER BOUND on citation
+  quality rather than a measurement of it.
+
   The 'ref' scoring component is 0 for every node on this corpus. Its only
   edge source is the references_ table, and ingestion does not populate it
   (apps/api/ingestion/service.py: 'Day 1: no reference parsing; references_
@@ -155,28 +177,34 @@ MEASURED LIMITATIONS
   matching token gives lex = 1.0. The score is a lower bound on refusal
   quality, not a measurement of it.
 
-  The two arms' abstention scores are NOT comparable, and the reason is
-  structural rather than a defect in the run. The support rule is 'the
-  node's lex component is above 0'. The vectorless arm's lex layer is
-  ALL-ZERO when no query term matches any node, so its gate fails CLOSED on
-  lexical grounds and the run abstains. The dense arm's score is a cosine
+  The two arms' abstention scores are MEASURED COUNTS of the unanswerable
+  questions each arm refused - not constants of the arm - and most of the
+  difference between them is structural. The support rule is 'the node's
+  lex component is above 0'. The vectorless arm's lex layer is ALL-ZERO
+  when no query term matches any node, so its gate fails CLOSED on that
+  condition and the run abstains. The dense arm's score is a cosine
   similarity, which is non-zero for every node against every query; the
   min-max normalization then gives the nearest neighbour a lex of 1.0, so
-  the dense arm's gate CANNOT FAIL ON LEXICAL GROUNDS. A refusal by the
-  dense arm is therefore not a refusal to answer, and its abstention score
-  is far below the vectorless arm's for that reason alone. It is not
-  UNCONDITIONAL, though, and an earlier version of this note said it was:
-  the dense arm's gate can still fail on a NON-LEXICAL ground. The evidence
-  gate keeps a node only when its text is at least 50 characters, and the
-  dense arm's cosine ranks a cluster of short SECTION nodes (11 to 40
-  characters of text) at the very top for an out-of-vocabulary question.
-  Every one of them is dropped by the length floor, the kept set is empty,
-  and the gate fails. Whether that happens on a given question is a
-  property of the arm's RANKING and of the length floor, not of the
-  system's refusal quality, so the dense arm's abstention score is a number
-  about the ranking and the two arms' abstention scores are not comparable.
-  The number above is the measurement; this note says what it is a
-  measurement OF.
+  the dense arm's gate CANNOT FAIL ON THE LEXICAL CONDITION AT ALL. It
+  therefore refuses far less often, and that difference is a property of
+  the gate's TRIGGER, not of the model's willingness to answer. The dense
+  arm's score is not a structural constant, though, and an earlier version
+  of this note said it was: it claimed the score was STRUCTURALLY 0, and
+  the measured run contradicts that. The dense arm's gate can fail on a
+  NON-LEXICAL condition, and two such conditions are measured here. (1) The
+  EVIDENCE LENGTH FLOOR: the evidence gate keeps a node only when its text
+  is at least 50 characters, and the dense arm's cosine ranks a cluster of
+  short SECTION nodes (11 to 40 characters of text) at the very top for an
+  out-of-vocabulary question; every one of them is dropped by the floor,
+  the kept set is EMPTY, and the gate fails. (2) The TOP-8 EVIDENCE WINDOW:
+  the agent merges every sub-question's supporters, sorts them by score and
+  keeps the top 8, so a sub-question whose supporters all score below the
+  other sub-questions' supporters loses every one of them to that cut, is
+  left with NO supporter in the kept set, and the gate fails closed; the
+  kept set is NOT empty in this case, which is what distinguishes it from
+  the length floor. The number above is therefore a measured count of
+  refusals, and the count beside it is how many unanswerable questions
+  there were to refuse.
 
   The reproducibility acceptance has TWO halves, and only one of them is
   checked here. evaluation.md section 8 asks for 'Re-run with same config
