@@ -34,6 +34,12 @@ What it checks:
    so the same config always yields the same id, and a config that carries
    an id must carry the one its own content derives. That is what makes
    "re-run with the same config id" a checkable statement.
+4. THE PINS THAT MUST DESCRIBE THE CODE. The bonus flags and the stoplist
+   version are not free-form: they must equal the state the code actually
+   has, so a run cannot RECORD a bonus the retrieval layer does not apply
+   or a stoplist version nobody can identify. The script reads that state
+   from the code itself (the retrieval layer's applied bonuses and the
+   agent's stoplist version) rather than declaring a second copy of it.
 
 The config shape is api.md sec 4's EvalConfig, with the per-arm generation
 block as the only addition the parity rule needs. Both of these are
@@ -54,6 +60,40 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
+
+#: The repo root, so the gate can read the CODE's own state rather than a
+#: second copy of it. The script is run as a file (``python
+#: scripts/check_eval_config.py``), which puts ``scripts/`` on the path and
+#: NOT the repo root, so the root is added here.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _code_state() -> tuple[str, dict[str, bool]]:
+    """The CODE's own state: the stoplist version and the applied bonuses.
+
+    The script reads the retrieval layer and the agent's stoplist rather
+    than declaring its own copy of them, because the whole point of the
+    check is that the config's pins describe the run that HAPPENED. A
+    second declaration here would be a second thing to keep in step with
+    the first, and the gate would happily accept a config that pinned a
+    bonus the layer does not apply.
+
+    The imports are inside the function because the repo root has to be
+    on the path before they can resolve, and a module-level import after
+    that statement would be an import-not-at-top-of-file.
+    """
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from apps.api.agent.stoplist import STOPLIST_VERSION as version
+    from apps.api.retrieval.scoring import APPLIED_BONUS_FLAGS as applied
+
+    return version, dict(applied)
+
+
+#: The stoplist version the CODE has (retrieval.md §3: the list is
+#: "versioned in code, not ad hoc"). A config that names a different one
+#: records a stoplist that was never applied.
+STOPLIST_VERSION, APPLIED_BONUS_FLAGS = _code_state()
 
 #: The backends the run config may name (api.md sec 4: ollama|llamacpp|vllm).
 ALLOWED_BACKENDS = {"ollama", "llamacpp", "vllm"}
@@ -199,6 +239,13 @@ def _check_weights(config: dict[str, Any], violations: list[str]) -> None:
 
 
 def _check_bonus_flags(config: dict[str, Any], violations: list[str]) -> None:
+    """The two bonus flags, checked against what the retrieval layer applies.
+
+    A config that pins a bonus the retrieval layer does not apply records
+    what was ASKED for and not what was APPLIED, so the run's own record
+    would misdescribe the numbers it holds. Such a config is REFUSED here
+    rather than accepted and recorded.
+    """
     flags = config.get("bonus_flags")
     if flags is None:
         violations.append("config.bonus_flags: missing (the run must pin the bonus flags)")
@@ -211,6 +258,13 @@ def _check_bonus_flags(config: dict[str, Any], violations: list[str]) -> None:
             violations.append(f"config.bonus_flags.{name}: missing")
         elif not isinstance(flags[name], bool):
             violations.append(f"config.bonus_flags.{name}: must be a boolean")
+        elif flags[name] and not APPLIED_BONUS_FLAGS.get(name):
+            violations.append(
+                f"config.bonus_flags.{name}: the run pins the {name} bonus, but the "
+                "retrieval layer does not apply it (retrieval.md §3 defines no "
+                "magnitude for it), so the run would record a bonus that was never "
+                "applied"
+            )
 
 
 def _check_margins(config: dict[str, Any], violations: list[str]) -> None:
@@ -428,6 +482,19 @@ def check_run_config(run: dict[str, Any]) -> tuple[list[str], str]:
     _require_str(config, "normalization", violations)
     _require_str(config, "stoplist_version", violations)
     _require_str(config, "judge_prompt_version", violations)
+
+    # The stoplist version must be the version the CODE has. A config that
+    # names a version the code does not have records a stoplist nobody can
+    # identify, and the run's own record would then misdescribe the
+    # broaden-retry that produced the ranking (retrieval.md sec 3).
+    stoplist_version = config.get("stoplist_version")
+    if isinstance(stoplist_version, str) and stoplist_version.strip():
+        if stoplist_version != STOPLIST_VERSION:
+            violations.append(
+                f"config.stoplist_version: {stoplist_version!r} is not the stoplist "
+                f"this code has ({STOPLIST_VERSION!r}), so the run would record a "
+                "stoplist version that was never applied"
+            )
 
     threshold = config.get("fuzzy_threshold")
     if threshold is None:

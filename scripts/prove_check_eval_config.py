@@ -139,6 +139,16 @@ CASES: list[tuple[str, Any, str]] = [
         lambda: _mutate_shared(backend="openai"),
         "config.backend: 'openai' is not one of",
     ),
+    (
+        "the run pins a bonus the retrieval layer does not apply",
+        lambda: _mutate_bonus_flags(phrase=True),
+        "config.bonus_flags.phrase: the run pins the phrase bonus",
+    ),
+    (
+        "the run pins a stoplist version the code does not have",
+        lambda: _mutate_stoplist_version("fts5-english-v2"),
+        "config.stoplist_version: 'fts5-english-v2' is not the stoplist this code has",
+    ),
 ]
 
 
@@ -170,6 +180,26 @@ def _mutate_shared(
 def _mutate_weight(name: str, value: float) -> dict[str, Any]:
     run = _base()
     run["config"]["weights"][name] = value
+    return run
+
+
+def _mutate_bonus_flags(*, phrase: bool = False, fuzzy: bool = False) -> dict[str, Any]:
+    """A config that pins a bonus the retrieval layer does not apply.
+
+    retrieval.md sec 3 names the phrase and fuzzy bonuses and gives no
+    magnitude for either, so the retrieval layer applies NEITHER. A config
+    that pins one would record a bonus that was never applied, and the
+    checker has to refuse it.
+    """
+    run = _base()
+    run["config"]["bonus_flags"] = {"phrase": phrase, "fuzzy": fuzzy}
+    return run
+
+
+def _mutate_stoplist_version(version: str) -> dict[str, Any]:
+    """A config that names a stoplist version the code does not have."""
+    run = _base()
+    run["config"]["stoplist_version"] = version
     return run
 
 

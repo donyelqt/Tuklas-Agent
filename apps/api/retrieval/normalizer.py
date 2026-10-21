@@ -252,8 +252,12 @@ def extract_labels(s: str) -> list[tuple[str, float]]:
 def label_tokens(s: str) -> set[str]:
     """Raw words consumed by label spans — the tokens other components must NOT see.
 
-    Disjoint inputs (retrieval.md §3): identifier tokens are removed from the
-    lex and title inputs so a heading term fires in exactly one component.
+    Disjoint inputs (retrieval.md §3), QUERY side: identifier tokens are
+    removed from the lex and title inputs, so an IDENTIFIER term fires in
+    exactly one component. It is the IDENTIFIER term that is disjoint, not
+    the heading: a heading's ordinary words are also lexical surface, because
+    the parser stores the heading line at the start of a node's body text
+    (ADR-007).
     """
     consumed: set[str] = set()
     for m in _LABEL_SPAN_RE.finditer(s):

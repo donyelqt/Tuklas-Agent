@@ -46,6 +46,19 @@ def _db_kwarg(state: AgentState) -> dict[str, Any]:
     return {"db_path": path} if path else {}
 
 
+def _weights_kwarg(state: AgentState) -> dict[str, Any]:
+    """The pinned retrieval weights, when the caller pinned a weight vector.
+
+    The agent's retrieval must be scored with the SAME weight vector the
+    run recorded, or the answer and the metric would be produced under
+    two different weightings and neither would describe the other. The
+    key is absent when nothing was pinned, so the retrieval layer's
+    defaults apply and the behaviour is unchanged.
+    """
+    weights = state.get("_weights")
+    return {"weights": dict(weights)} if weights else {}
+
+
 def _evidence_eligible(node: Any) -> bool:
     """True when this node could itself contribute evidence.
 
@@ -180,6 +193,7 @@ def agent_search_nodes(state: AgentState, args: dict[str, Any]) -> AgentState:
         document_id=state["document_id"],
         top_k=top_k,
         **_db_kwarg(state),
+        **_weights_kwarg(state),
     )
     latency = (time.perf_counter() - start) * 1000.0
     matched = [hit for hit in hits if _hit_matched(hit)]

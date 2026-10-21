@@ -60,7 +60,11 @@ from apps.api.evaluation.metrics import (
     retrieval_aggregates,
     system_aggregates,
 )
-from apps.api.evaluation.scorer import matched_claims
+from apps.api.evaluation.scorer import (
+    citation_supports,
+    matched_claims,
+    split_citation_claims,
+)
 from apps.api.evaluation.store import (
     EvaluationRun,
     RetrievalRun,
@@ -182,13 +186,21 @@ class Runner:
         return judge_version or configured
 
     def build_arms(self) -> dict[str, Arm]:
-        """The two arms, in the order the config names them."""
+        """The two arms, in the order the config names them.
+
+        The run config's WEIGHTS go to the vectorless arm, because the
+        weights are retrieval.md §3's five-component weight vector and the
+        dense arm has no such components. The vectorless arm must be scored
+        with the weights the run pinned, or the run's own config id would
+        name a weighting that was never applied to anything.
+        """
         generator = self.generator()
         tuklas = TuklasArm(
             self.db_path,
             self.document_id,
             generator=generator,
             index_root=self.index_root,
+            weights=self.config.weights,
         )
         vector = VectorArm(
             self.db_path,
@@ -260,13 +272,31 @@ class Runner:
         """Whether the answer's citations are valid (evaluation.md §4).
 
         "Cited ids exist + support the attached claim; dangling id = failed
-        answer." Two checks:
+        answer." Three checks, all of them MECHANICAL:
 
         * the ids EXIST. A citation to a node the store does not have is a
           dangling id, and the answer fails.
         * the answer is a REFUSAL. An abstention carries no citations by
-          contract (api.md §3), so it is not a failed citation list — it
+          contract (api.md §3), so it is not a failed citation list - it
           is the correct shape for a refusal.
+        * the cited nodes SUPPORT the sentences that cite them. The answer
+          is split into (marker, sentence) pairs, and each cited node's
+          text is checked against the sentence its marker attaches it to,
+          with the shared scorer's rule and the run's own fuzzy threshold.
+
+        The support check is the half that was missing. Checking only that
+        the ids exist cannot fail: the citation assembler builds the list
+        from the kept evidence set, and the kept set is read from the
+        nodes table, so the ids are in the table by construction. A check
+        that cannot fail measures nothing, and a metric that reported 1.000
+        for every row was reporting the shape of the answer rather than
+        its accuracy.
+
+        The support check is MECHANICAL and arm-blind on purpose: it reads
+        a sentence and a node's text, and it cannot tell which arm
+        produced them. The LLM judge is unchanged, and it still measures
+        the OTHER half of the same definition - a model reading the
+        evidence can recognise a paraphrase this string rule cannot.
         """
         if answer.insufficient:
             return not citation_node_ids
@@ -276,13 +306,83 @@ class Runner:
 
         placeholders = ",".join("?" * len(citation_node_ids))
         with ingestion_db.connect(self.db_path) as conn:
-            found = conn.execute(
-                f"SELECT COUNT(*) FROM nodes WHERE id IN ({placeholders})",
+            rows = conn.execute(
+                f"SELECT id, text FROM nodes WHERE id IN ({placeholders})",
                 tuple(citation_node_ids),
-            ).fetchone()[0]
-        return int(found) == len(set(citation_node_ids))
+            ).fetchall()
+        texts = {str(row["id"]): str(row["text"]) for row in rows}
+        if len(texts) != len(set(citation_node_ids)):
+            # A dangling id: the answer cites a node the store does not have.
+            return False
+        return self._citations_support_their_sentences(answer, texts)
+
+    def _citations_support_their_sentences(
+        self, answer: AnswerResult, node_texts: dict[str, str]
+    ) -> bool:
+        """Whether every citation in the answer supports the sentence it marks.
+
+        The marker in the answer is the citation NUMBER the prompt showed
+        the model (``generation/prompts.py`` numbers the rendered evidence
+        from 1), and the citation list carries that number as its ``n``
+        field. The mapping is therefore by NUMBER, not by list position: a
+        citation whose number names no entry is a dangling marker and fails
+        the answer.
+
+        An answer whose sentences carry NO marker makes no citation claim,
+        and there is nothing for the support check to fail. Such an answer
+        still had to pass the existence check above, so it is not a free
+        pass: it is an answer that cites nothing and claims nothing, and
+        the abstention metric is what scores it.
+        """
+        by_number: dict[int, str] = {}
+        for citation in answer.citations:
+            if not isinstance(citation, dict):
+                continue
+            node_id = citation.get("node_id")
+            if not node_id:
+                continue
+            number = citation.get("n")
+            if not isinstance(number, int) or isinstance(number, bool):
+                continue
+            by_number[number] = str(node_id)
+
+        claims = split_citation_claims(answer.answer_markdown)
+        if not claims:
+            return True
+
+        threshold = self.config.fuzzy_threshold
+        for claim in claims:
+            node_id = by_number.get(claim.marker)
+            if node_id is None:
+                # The answer cites a number the citation list does not have.
+                return False
+            text = node_texts.get(node_id, "")
+            if not citation_supports(claim.sentence, text, threshold=threshold):
+                return False
+        return True
 
     # -- the whole run -----------------------------------------------------
+
+    def _applied_weights(self, result: ArmResult) -> dict[str, float]:
+        """The weight snapshot that was APPLIED to this arm's retrieval.
+
+        The row must record what was applied, not what was asked for. A
+        row that records the config's weights while the arm scored with
+        different ones is a row that misdescribes its own numbers, and
+        evaluation.md §6's "weights snapshot" requirement is only true if
+        the snapshot is the one that produced the ranking.
+
+        The arm reports the snapshot it used, and the config's is the
+        fallback for an arm that has no five-component weight vector of
+        its own (the dense arm's ranking is a cosine over embeddings, and
+        retrieval.md §3's weight vector does not apply to it).
+        """
+        applied = getattr(result.retrieval, "weights", None) or getattr(
+            result.answer, "weights", None
+        )
+        if applied:
+            return {str(key): float(value) for key, value in applied.items()}
+        return self.config.weights
 
     def _rows_for(
         self,
@@ -336,7 +436,7 @@ class Runner:
             answerable=result.question.answerable,
             retrieved_node_ids=result.retrieval.node_ids,
             gold_node_ids=result.question.gold_nodes,
-            weights=self.config.weights,
+            weights=self._applied_weights(result),
             normalization=str(self.config.config["normalization"]),
             latency_ms=result.retrieval.latency_ms,
             rank_first_hit=_rank_first_hit(
