@@ -48,13 +48,26 @@ And after the numbers:
   - the abstention score measures the ability to refuse a question whose
     VOCABULARY is absent, which is a lower bound rather than a measurement
     of refusal quality;
-  - the dense arm's sufficiency gate cannot fail on LEXICAL grounds, so a
-    refusal by the dense arm is not a refusal to answer; its gate can still
-    fail on a non-lexical one (the evidence gate's 50-character length
-    floor empties the kept set when the cosine ranks short SECTION nodes
-    at the top), so its abstention score is a property of the arm's
-    ranking, not a measurement of its refusal quality, and the two arms'
-    abstention scores are not comparable;
+  - the two arms' abstention scores are MEASURED COUNTS of the unanswerable
+    questions each arm refused, not constants of the arm - the report
+    prints the count beside the ratio. The dense arm's gate cannot fail on
+    the LEXICAL condition, so most of the difference between the two arms'
+    scores is the gate's TRIGGER rather than the model's willingness to
+    answer; but the dense arm's gate is not unconditional, and it can fail
+    on a non-lexical one - the evidence gate's 50-character length floor
+    (which empties the kept set when the cosine ranks short SECTION nodes
+    at the top) and the top-8 evidence window (which can evict every
+    supporter of one sub-question);
+  - `citation_accuracy` is a MEASUREMENT OF A PAIR - the model's citations
+    AND the support rule's sensitivity. A score below 1.0 has two possible
+    causes the number does not separate: the SCORER is strict (the cited
+    node is on topic and the sentence's content words are in it, but the
+    model wrote legalese and no string rule can match a paraphrase to a
+    provision), or the MODEL cited badly (the cited node is off the
+    sentence's topic). A third mode is neither: the model wrote a
+    STATUTORY ARTICLE NUMBER in square brackets, the marker convention
+    reads it as a citation marker, and no such citation exists. The number
+    is a LOWER BOUND on citation quality, not a measurement of it;
   - the GENERATION half of the reproducibility acceptance ("generation
     within ±5pp", `evaluation.md` §8) is UNCHECKED by anything in this
     repository: it needs a live local model backend, and the report says

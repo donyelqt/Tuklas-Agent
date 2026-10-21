@@ -232,55 +232,127 @@ ABSTENTION_NOTE = (
     "quality, not a measurement of it."
 )
 
-#: The note about the dense arm's sufficiency gate.
+#: The note about what the citation-accuracy number MEASURES.
 #:
-#: This is a STRUCTURAL asymmetry between the arms, and it is measured,
-#: not theorised. The vectorless arm's ``lex`` layer is all-zero when no
-#: query term matches any node, and the support rule ("lex > 0") then
-#: fails for every node, so the gate fails closed and the run abstains.
-#: The dense arm's score is a COSINE SIMILARITY, which is non-zero for
-#: every node against every query; the min-max normalization then gives
-#: the nearest neighbour a lex of 1.0, so the dense arm's gate never
-#: fails on LEXICAL grounds.
+#: The metric is the fraction of ANSWERS whose every citation supports the
+#: sentence it is attached to. The support check is MECHANICAL and
+#: arm-blind: the answer is split into (marker, sentence) pairs, and the
+#: cited node's text is compared with the sentence by the shared scorer's
+#: rule - the normalized sentence is a substring of the node's text, or the
+#: RapidFuzz token_set_ratio is at least the run's own fuzzy_threshold.
 #:
-#: It is not unconditional, though, and an earlier version of this note
-#: said it was: it claimed the dense arm's abstention score was
-#: STRUCTURALLY 0, and the measured run contradicts that. The evidence
-#: gate keeps a node only when its text is at least 50 characters, and
-#: the dense arm's cosine ranks a cluster of short SECTION nodes (11 to
-#: 40 characters of text) at the very top for an out-of-vocabulary
-#: question. Every one of them is dropped by the length floor, the kept
-#: set is empty, and the gate fails on that non-lexical ground.
+#: A number that falls below 1.0 is therefore a number about the PAIR of
+#: (the model's citation, this string rule), and the two halves of that
+#: pair fail for different reasons:
 #:
-#: The note therefore states what is true and does not carry a
-#: split-specific number: the two arms' abstention scores are not
-#: comparable, because the dense arm's number is a property of its
-#: ranking and of the length floor rather than a measurement of its
-#: refusal quality. A reader who compares the two arms' abstention
-#: scores compares a refusal measurement with a property of the ranking.
+#: * the SCORER is strict - the cited node is on the sentence's topic and
+#:   the sentence's content words are in the node, but the model wrote
+#:   legalese and no string rule can match a paraphrase to a provision;
+#: * the MODEL cited badly - the cited node is not on the sentence's topic
+#:   at all.
+#:
+#: A third failure mode is not about either: the model wrote a STATUTORY
+#: ARTICLE NUMBER in square brackets ("[1619]"), the marker convention
+#: reads it as a citation marker, and no such citation exists. That is a
+#: convention violation, and it is counted with the failures.
+#:
+#: The report does NOT put a single number on that split, because the
+#: split needs the citation list's marker numbers and the run stores only
+#: the node ids. What the report does say is that the number is a
+#: MEASUREMENT OF THE SCORER'S SENSITIVITY AS WELL AS OF THE MODEL'S
+#: CITATIONS, and that a reader must not read 0.54 as "the model cites
+#: badly" without knowing how much of it is the string rule.
+CITATION_METRIC_NOTE = (
+    "The citation-accuracy number is a MEASUREMENT OF A PAIR: the model's "
+    "citations AND the support rule's sensitivity. The check is mechanical "
+    "and arm-blind - the answer is split into (marker, sentence) pairs and "
+    "the cited node's text is compared with the sentence by the shared "
+    "scorer's rule, the normalized sentence being a substring of the node's "
+    "text or the RapidFuzz token_set_ratio reaching the run's own "
+    "fuzzy_threshold. A score below 1.0 therefore has two possible causes "
+    "that this number does not separate. (1) The SCORER is strict: the "
+    "cited node is on the sentence's topic and the sentence's content "
+    "words ARE in the node, but the model wrote legalese and no string "
+    "rule can match a paraphrase to a provision. (2) The MODEL cited "
+    "badly: the cited node is not on the sentence's topic at all. A third "
+    "mode is neither: the model wrote a STATUTORY ARTICLE NUMBER in "
+    "square brackets, the marker convention reads it as a citation marker, "
+    "and no such citation exists. The run records the node ids but not the "
+    "citation list's marker numbers, so the report does not put a number "
+    "on the split between those causes. A reader must therefore not read "
+    "this number as 'the model cites badly' without knowing how much of it "
+    "is the string rule's strictness, and the number is a LOWER BOUND on "
+    "citation quality rather than a measurement of it."
+)
+
+#: The note about the two arms' abstention scores.
+#:
+#: This is a STRUCTURAL difference in WHEN the two arms' gates fire, and
+#: it is measured, not theorised.
+#:
+#: The support rule is "the node's lex component is above 0". The
+#: vectorless arm's ``lex`` layer is ALL-ZERO when no query term matches
+#: any node, so its gate fails CLOSED on that condition and the run
+#: abstains. The dense arm's score is a COSINE SIMILARITY, which is
+#: non-zero for every node against every query; the min-max normalization
+#: then gives the nearest neighbour a lex of 1.0, so the dense arm's gate
+#: CANNOT FAIL ON THE LEXICAL CONDITION AT ALL. The dense arm therefore
+#: refuses far less often, and most of the difference between the two
+#: arms' abstention scores is this structural difference in the gate's
+#: trigger, not a difference in the model's willingness to answer.
+#:
+#: The dense arm's score is NOT a structural constant, though, and an
+#: earlier version of this note said it was: it claimed the dense arm's
+#: abstention score was STRUCTURALLY 0, and the measured run contradicts
+#: that. The dense arm's gate can fail on a NON-LEXICAL condition, and
+#: two such conditions are measured in this run:
+#:
+#: * the EVIDENCE LENGTH FLOOR. The evidence gate keeps a node only when
+#:   its text is at least 50 characters. The dense arm's cosine ranks a
+#:   cluster of short SECTION nodes (11 to 40 characters of text) at the
+#:   very top for an out-of-vocabulary question; every one of them is
+#:   dropped by the floor, the kept set is EMPTY, and the gate fails.
+#: * the TOP-8 EVIDENCE WINDOW. The agent merges every sub-question's
+#:   supporters, sorts them by score and keeps the top 8. A sub-question
+#:   whose supporters all score below the other sub-questions' supporters
+#:   loses every one of them to that cut, is left with NO supporter in the
+#:   kept set, and the gate fails closed. The kept set is not empty in
+#:   this case, which is what distinguishes it from the length floor.
+#:
+#: So the number above is a MEASURED COUNT of the unanswerable questions
+#: the arm refused, not a constant of the arm, and the count beside it is
+#: how many there were to refuse.
 DENSE_GATE_NOTE = (
-    "The two arms' abstention scores are NOT comparable, and the reason is "
-    "structural rather than a defect in the run. The support rule is 'the "
-    "node's lex component is above 0'. The vectorless arm's lex layer is "
-    "ALL-ZERO when no query term matches any node, so its gate fails "
-    "CLOSED on lexical grounds and the run abstains. The dense arm's score "
-    "is a cosine similarity, which is non-zero for every node against every "
-    "query; the min-max normalization then gives the nearest neighbour a "
-    "lex of 1.0, so the dense arm's gate CANNOT FAIL ON LEXICAL GROUNDS. "
-    "A refusal by the dense arm is therefore not a refusal to answer, and "
-    "its abstention score is far below the vectorless arm's for that reason "
-    "alone. It is not UNCONDITIONAL, though, and an earlier version of "
-    "this note said it was: the dense arm's gate can still fail on a "
-    "NON-LEXICAL ground. The evidence gate keeps a node only when its text "
-    "is at least 50 characters, and the dense arm's cosine ranks a cluster "
-    "of short SECTION nodes (11 to 40 characters of text) at the very top "
-    "for an out-of-vocabulary question. Every one of them is dropped by the "
-    "length floor, the kept set is empty, and the gate fails. Whether that "
-    "happens on a given question is a property of the arm's RANKING and of "
-    "the length floor, not of the system's refusal quality, so the dense "
-    "arm's abstention score is a number about the ranking and the two "
-    "arms' abstention scores are not comparable. The number above is the "
-    "measurement; this note says what it is a measurement OF."
+    "The two arms' abstention scores are MEASURED COUNTS of the "
+    "unanswerable questions each arm refused - not constants of the arm - "
+    "and most of the difference between them is structural. The support "
+    "rule is 'the node's lex component is above 0'. The vectorless arm's "
+    "lex layer is ALL-ZERO when no query term matches any node, so its "
+    "gate fails CLOSED on that condition and the run abstains. The dense "
+    "arm's score is a cosine similarity, which is non-zero for every node "
+    "against every query; the min-max normalization then gives the "
+    "nearest neighbour a lex of 1.0, so the dense arm's gate CANNOT FAIL "
+    "ON THE LEXICAL CONDITION AT ALL. It therefore refuses far less "
+    "often, and that difference is a property of the gate's TRIGGER, not "
+    "of the model's willingness to answer. The dense arm's score is not a "
+    "structural constant, though, and an earlier version of this note said "
+    "it was: it claimed the score was STRUCTURALLY 0, and the measured "
+    "run contradicts that. The dense arm's gate can fail on a NON-LEXICAL "
+    "condition, and two such conditions are measured here. (1) The "
+    "EVIDENCE LENGTH FLOOR: the evidence gate keeps a node only when its "
+    "text is at least 50 characters, and the dense arm's cosine ranks a "
+    "cluster of short SECTION nodes (11 to 40 characters of text) at the "
+    "very top for an out-of-vocabulary question; every one of them is "
+    "dropped by the floor, the kept set is EMPTY, and the gate fails. (2) "
+    "The TOP-8 EVIDENCE WINDOW: the agent merges every sub-question's "
+    "supporters, sorts them by score and keeps the top 8, so a "
+    "sub-question whose supporters all score below the other "
+    "sub-questions' supporters loses every one of them to that cut, is "
+    "left with NO supporter in the kept set, and the gate fails closed; "
+    "the kept set is NOT empty in this case, which is what distinguishes "
+    "it from the length floor. The number above is therefore a measured "
+    "count of refusals, and the count beside it is how many "
+    "unanswerable questions there were to refuse."
 )
 
 
@@ -374,6 +446,23 @@ def _arm_lines(name: str, aggregates: dict[str, Any]) -> list[str]:
         f"citation_accuracy={_fmt(generation.get('citation_accuracy'))} "
         f"abstention={_fmt(generation.get('abstention_score'))}"
     )
+    # The abstention score is a COUNT of the unanswerable questions the arm
+    # refused, divided by the number of unanswerable questions. Printing
+    # the numerator and the denominator beside the ratio stops a reader
+    # from reading the ratio as a constant of the arm: 0.143 out of 7 is
+    # one refusal, and 1.000 out of 1 is one refusal.
+    n_unanswerable = generation.get("n_unanswerable")
+    if isinstance(n_unanswerable, int) and n_unanswerable:
+        score = generation.get("abstention_score")
+        refused = (
+            round(float(score) * n_unanswerable) if isinstance(score, int | float) else None
+        )
+        if refused is not None:
+            lines.append(
+                f"    abstention: {refused} of {n_unanswerable} unanswerable "
+                f"questions refused (a MEASURED COUNT, not a constant of the arm; "
+                f"see the note below)"
+            )
     # The number of claims the judge actually scored, next to the
     # faithfulness it is a mean over. Faithfulness without n_judged is a
     # mean over an unstated number of observations, and the two differ
@@ -674,6 +763,7 @@ def render_report(
     lines.append("MEASURED LIMITATIONS")
     notes = [
         INSTRUMENT_CHANGE_NOTE,
+        CITATION_METRIC_NOTE,
         REF_COMPONENT_NOTE,
         ABSTENTION_NOTE,
         DENSE_GATE_NOTE,
@@ -728,6 +818,7 @@ def _wrap(text: str, width: int) -> list[str]:
 __all__ = [
     "ABSTENTION_NOTE",
     "ASYMMETRY_NOTE",
+    "CITATION_METRIC_NOTE",
     "DENSE_GATE_NOTE",
     "GENERATION_REPRODUCIBILITY_NOTE",
     "INSTRUMENT_CHANGE_NOTE",
