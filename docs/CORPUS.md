@@ -8,10 +8,22 @@ pypdf on the committed checksums below).
 
 ## Fetching
 
-`python -m scripts.fetch_corpus` (and `--secondary` for the second artifact) is how a
-machine that has no corpus gets one. It downloads each PDF and verifies the sha256
-against the value recorded below, so a fetch that returns the wrong bytes fails
-instead of poisoning the dataset.
+`python -m scripts.fetch_corpus` (and `--corpus primary` or `--corpus secondary` to
+fetch one artifact on its own) is how a machine that has no corpus gets one. It
+downloads each PDF and verifies the sha256 against the value recorded below, so a
+fetch that returns the wrong bytes fails instead of poisoning the dataset.
+
+The two failures are kept apart, because they mean different things. Bytes that
+arrive and do not match the recorded sha256 are a hard failure (exit 1): that is not
+the corpus the dataset was built against, and it is never written to disk. A host
+that does not answer is a different matter: the download is retried four times with
+growing delays (5/15/45/90 seconds), and if it is still not answering the script
+reports it as unreachable (exit 3) rather than pretending the artifact is wrong. CI
+treats that as a degraded run — it warns, the corpus-dependent tests skip, and the
+pytest step reports how many did — because `www.icnl.org` answers through Cloudflare
+and a 522 is that CDN reporting that its origin timed out, which is a statement
+about the host and not about the corpus. A 403 is not retried: it is the host's own
+answer to an unidentified client, and asking again would get it again.
 
 The fetch **must** send a User-Agent. The ICNL host answers an unidentified client
 with `403 Forbidden` — urllib sends no User-Agent at all by default, and the
