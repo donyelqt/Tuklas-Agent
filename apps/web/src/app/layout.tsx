@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, JetBrains_Mono } from "next/font/google";
+import type { ReactNode } from "react";
 import { site } from "@/lib/site";
 import "./globals.css";
 
@@ -49,7 +50,28 @@ export const viewport: Viewport = {
   themeColor: "#050507",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+/**
+ * The root layout's props, declared inline rather than with Next's generated
+ * `LayoutProps<"/">` global.
+ *
+ * `LayoutProps` is emitted into `.next/types/routes.d.ts` by `next build` and
+ * `next dev`, and `next-env.d.ts` imports that generated file. `.next/` is a
+ * build artifact and `next-env.d.ts` is gitignored, so on a fresh checkout the
+ * global is not declared anywhere and `tsc` fails with TS2304. The CI gate
+ * runs `tsc` before any build, so it cannot depend on a build artifact.
+ *
+ * The shape below is the one Next generates for a root layout with no
+ * dynamic segments and no named slots: `params` is a promise resolving to the
+ * empty param map, and `children` is the React node. Declaring it here keeps
+ * the same contract without the build-order dependency, and it stays
+ * assignable to the generated type Next validates against at build time.
+ */
+type RootLayoutProps = Readonly<{
+  children: ReactNode;
+  params: Promise<Record<string, never>>;
+}>;
+
+export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html
       lang="en"

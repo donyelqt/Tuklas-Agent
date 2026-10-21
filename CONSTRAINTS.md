@@ -38,32 +38,55 @@ Tightening is silent; loosening requires human approval in the commit message.
 
 | Metric | Today | Direction |
 |--------|-------|-----------|
-| Recall@5 (Tuklas, dev-24) | 0.717 | must not fall |
-| MRR@10 (Tuklas, dev-24) | 0.708 | must not fall |
-| Ask p95 latency (local) | 608,259 ms | record; budget set after first run |
+| Recall@5 (Tuklas, dev-24) | 0.674 | must not fall |
+| MRR@10 (Tuklas, dev-24) | 0.711 | must not fall |
+| Ask p95 latency (local) | 6,833 ms | record; budget set after first run |
 
 First benchmark run sets the ratchet values above — update this table then, not before.
 (Dev split is 24Q per `evaluation.md §1`; the 10Q smoke gate is a validity check, not the ratchet set.)
 
-**Status (2026-10-21, Day 6 + 7):** the ratchet is SET, from a real dev-24 run of
-the evaluation harness. Config `cfg_0f73ff26c0d38d54`, split seed 42, model
-`qwen2.5:3b` on ollama at temperature 0, seed 42, judge prompt `judge-v1-batch`,
-n = 24 questions x 2 arms. The values above are the Tuklas (vectorless) arm's,
-macro-averaged over the 23 answerable dev questions; the 1 unanswerable row is
-excluded from the retrieval aggregate and scored by abstention instead.
+**Status (2026-10-21, Day 6 + 7, RE-SET after the Day-8 instrument fix):** the
+ratchet is SET, from a real dev-24 run of the evaluation harness. Config
+`cfg_0f73ff26c0d38d54`, split seed 42, model `qwen2.5:3b` on ollama at
+temperature 0, seed 42, judge prompt `judge-v1-batch`, n = 24 questions x 2
+arms. The values above are the Tuklas (vectorless) arm's, macro-averaged over
+the 23 answerable dev questions; the 1 unanswerable row is excluded from the
+retrieval aggregate and scored by abstention instead.
 
-Two facts about the p95 value, so it is not misread. It is 608,259 ms — over ten
-minutes — and it is the tail of a distribution in which the p50 is 2,226 ms. The
-tail is ONE question: the local model took ten minutes on a single generation
-call, and one such call in 24 sets the 95th percentile. The metric is recorded as
-measured, because a ratchet that smooths a tail away is not a ratchet. The budget
-is NOT set by this row: a p95 over 24 samples is a single order statistic, and
-"must not fall" would be a claim about noise. The p50 (2,226 ms) is the number a
-reader should compare against.
+**The ratchet was RE-SET, because the INSTRUMENT changed (not because the
+system got better or worse).** The earlier values — Recall@5 0.717, MRR@10
+0.708, ask p95 608,259 ms — were measured over the OLD instrument, and that
+instrument is gone:
 
-The reproducible artifact is the run itself: `evaluation_runs` row `eval_083a4c15`
-with its 48 `retrieval_runs` rows in the store, joinable on
-`(evaluation_id, question_id, arm)`.
+* the retrieval metric is now computed over the node ids the ANSWER was
+  produced from (the union of the agent's per-sub-question `search_nodes`
+  results), where the old one was computed over a separate one-off search over
+  the whole question — a ranking the model never saw. The old numbers
+  therefore measured a DIFFERENT retrieval, and comparing them with the new
+  ones as if the instrument had been constant would be wrong in both
+  directions;
+* `latency_ms` is now the sum of the agent's own `search_nodes` calls for the
+  question, where the old figure was a one-off whole-question probe. The old
+  608,259 ms p95 was one local generation call taking ten minutes, measured on
+  the OLD probe; the new p95 (6,833 ms) is over the NEW measure.
+
+A ratchet that silently changes its instrument is not a ratchet, so the change
+is stated here rather than left for a reader to infer from a diff. The
+replacement values are from the re-run of the same config over the same dev
+split: `Recall@5 = 0.674`, `MRR@10 = 0.711`, ask p95 = 6,833 ms with a p50 of
+3,376 ms.
+
+One fact about the p95 value, so it is not misread. It is 6,833 ms against a
+p50 of 3,376 ms, and the p95 is still a single order statistic over 24 samples,
+so the budget is NOT set by this row: "must not fall" on a p95 over 24 samples
+would be a claim about noise. The metric is recorded as measured, because a
+ratchet that smooths a tail away is not a ratchet. The p50 (3,376 ms) is the
+number a reader should compare against.
+
+The reproducible artifact is the run itself: the `evaluation_runs` row for the
+re-run, with its 48 `retrieval_runs` rows in the store, joinable on
+`(evaluation_id, question_id, arm)`. The published reports are
+`data/eval-reports/v1-dev.md` and `data/eval-reports/v1-test.md`.
 
 **What is NOT in this table, and why.** The dense arm's numbers are not ratchet
 values: the ratchet is the vectorless arm's, and the two arms differ in more

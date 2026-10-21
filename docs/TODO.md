@@ -733,13 +733,66 @@ slices 1–5.
   ratchet has a measured starting point, and no comparison verdict is drawn
   from it: the arms differ in more than the retrieval mechanism (the vectorless
   arm applies identifier precedence and has an `ident` component; the dense arm
-  has neither), and the dense arm's abstention score is STRUCTURALLY 0 because a
-  cosine is non-zero for every node against every query, so its gate cannot fail
-  lexically. That is a property of the arm, not a measurement of it.
+  has neither), and the dense arm's gate cannot fail LEXICALLY because a
+  cosine is non-zero for every node against every query. That is a property
+  of the arm, not a measurement of it. (Corrected on 2026-10-21: the gate is
+  not unconditional — it can also fail on the evidence gate's 50-character
+  length floor, so the dense arm's abstention score is not structurally 0.
+  See the Day-8 entry below.)
 
   The spot check measured **2.5% disagreement over 81 claims** (threshold 15%),
   by mechanical re-judge — the judge's SELF-CONSISTENCY, not a builder's human
   re-scoring. The report names the method so the number is never mislabelled.
+
+- [x] **The dev-24 run was RE-RUN on the FIXED arms, and the ratchet was
+  RE-SET (2026-10-21, Day 8).** The table above is the ORIGINAL dev-24 run,
+  and it is kept because it is what was published at the time. Its retrieval
+  numbers were measured over a DIFFERENT INSTRUMENT from the one the harness
+  has now: the metric was computed over a separate, one-off search over the
+  whole question, a ranking the model never saw, where the fixed harness
+  computes it over the node ids the ANSWER was produced from (the union of
+  the agent's per-sub-question `search_nodes` results). `latency_ms` changed
+  with it: the old figure was a one-off whole-question probe, the new one is
+  the sum of the agent's own `search_nodes` calls for the question. The two
+  sets of numbers are therefore NOT comparable with each other, and the
+  ratchet in `CONSTRAINTS.md` was re-set rather than moved.
+  - *Re-run, same config `cfg_0f73ff26c0d38d54`, same dev split, same model
+    and seed, on the fixed arms:*
+
+  | Metric | Tuklas (vectorless) | Vector (dense) |
+  |---|---|---|
+  | Recall@1 | 0.500 | 0.457 |
+  | Recall@5 | 0.674 | 0.761 |
+  | Recall@10 | 0.848 | 0.826 |
+  | MRR@10 | 0.711 | 0.661 |
+  | Precision@1 | 0.609 | 0.522 |
+  | correctness | 0.721 | 0.767 |
+  | faithfulness | 0.745 | 0.696 |
+  | citation accuracy | 0.542 | 0.458 |
+  | abstention score | 1.000 | 0.000 |
+
+  - *The `CONSTRAINTS.md` ratchet now reads Recall@5 0.674 and MRR@10 0.711
+    for the vectorless arm, and ask p95 6,833 ms (p50 3,376 ms). The
+    p95 row's old value (608,259 ms) was one local generation call taking
+    ten minutes, measured on the OLD probe.*
+  - *`citation accuracy` is no longer 1.000 for both arms, and that is the
+    F3 fix showing up in the numbers: the old metric could not fail (the
+    cited ids were read from the nodes table the citation assembler had
+    built them from), so it measured the SHAPE of the answer rather than
+    its accuracy. The new metric also checks that each cited node SUPPORTS
+    the sentence its marker attaches it to.*
+  - *Still no comparison verdict: the arms differ in CHANNELS as well as in
+    mechanism (`ident`, `title` and `hier` are vectorless-only), the dense
+    arm's gate cannot fail LEXICALLY (its abstention score is therefore a
+    property of its ranking and of the evidence gate's length floor rather
+    than a measurement of its refusal quality, and it is 0.000 on dev and
+    0.143 on test), and the outcome of the comparison is unknown. The
+    published report says so in its own words.*
+  - *The spot check measured **0.0% disagreement over 59 claims** (threshold
+    15%), by mechanical re-judge — the judge's SELF-CONSISTENCY, not a
+    builder's human re-scoring.*
+  - *Reports:* `data/eval-reports/v1-dev.md` (dev-24) and
+    `data/eval-reports/v1-test.md` (test-48), with their `.json` aggregates.
 
 - [x] **Three defects were found and fixed while landing that run** (all recorded
   in ADR-006):
@@ -889,6 +942,21 @@ slices 1–5.
     `eval_a80167ab`, judge prompt `judge-v1-batch`, n = 48 x 2 arms. It
     publishes both arms' numbers and no verdict, and it states the arms'
     asymmetry before it prints them.
+  - **RE-SET (2026-10-21, Day 8) — the table was filled, then RE-SET,
+    because the instrument changed.** The values above (Recall@5 0.717,
+    MRR@10 0.708, p95 608,259 ms) were measured over the pre-fix
+    instrument: the retrieval metric was computed over a separate, one-off
+    search over the whole question rather than over the node ids the
+    ANSWER was produced from, and `latency_ms` was that same one-off
+    probe rather than the sum of the agent's `search_nodes` calls. The
+    harness now measures both differently, so the old numbers describe a
+    different measurement and the ratchet was re-set from the re-run of
+    the SAME config over the SAME dev split. The table now reads
+    Recall@5 **0.674**, MRR@10 **0.711** and ask p95 **6,833 ms** (p50
+    3,376 ms) for the vectorless arm. `CONSTRAINTS.md` states the change
+    of instrument next to the values, because a ratchet that silently
+    changes its instrument is not a ratchet. The dense arm's numbers are
+    still not ratchet values, for the same reason as before.
   - *The command that produced them:*
     `.venv/Scripts/python.exe -m apps.api.evaluation.run_eval --config
     apps/api/evaluation/fixtures/example-dev-run-config.json --snapshot
@@ -921,6 +989,118 @@ slices 1–5.
     id), and both produce `cfg_2d8c5b516db0adc6` after `fuzzy_threshold`
     changes 85 → 86. The derivations agree byte-for-byte, and no expected
     id is hard-coded anywhere: the checker always derives and compares.
+  - *The ARMS are now exercised too (2026-10-21):* the script also
+    constructs the vectorless arm AND the dense arm, over a SYNTHETIC
+    six-article statute, and compares the two passes the same way — the
+    per-arm macro-averaged metrics AND the per-question node id lists,
+    element for element. The corpus is synthetic on purpose: the dense arm
+    embeds every node of the corpus, and over the real Civil Code that is
+    a 2,579-node embed (about 4.5 minutes on CPU) per pass, twice. The
+    synthetic corpus carries three deliberate DISTRACTORS, because a
+    corpus where every metric is 1.0 would leave the aggregate comparison
+    blind to a regression. Measured: the vectorless arm's recall@1 is
+    1.000000 and the dense arm's is 0.833333, identical across both
+    passes.
+  - *The GENERATION half is still UNCHECKED, and says so.* The script
+    prints, on every successful run, that the "generation within ±5pp"
+    half of the acceptance is not checked here: it needs a live local
+    model backend, and a CI step that silently skipped when no model was
+    present would prove nothing. The report now carries the same
+    disclosure.
+
+---
+
+## Day 8 — Report honesty and the disjointness rule (2026-10-21)
+
+- [x] **F4 — the §3 disjointness rule did not match the implementation, and
+  the spec is corrected (ADR-007).** `docs/retrieval.md` §3 and
+  `docs/SPEC.md` §5 stated "titles stripped before BM25 … a heading term fires
+  in exactly one component". The titles are NOT stripped: the parser stores
+  the heading line at the start of the node's body, so the heading's words
+  are BM25 terms. Measured on the live store: 41,673 of 41,673 Civil Code
+  title tokens (100%) are also BM25 terms, and 2,392 of 2,392 corpus nodes
+  begin with their title.
+  - *Resolution:* the DOCUMENTATION is corrected (resolution b) and the
+    implementation is unchanged. The rule is restated as what it is — a
+    QUERY-side rule about IDENTIFIER terms. The alternative (stripping the
+    heading before BM25) was implemented and measured first: dev Recall@5
+    falls 0.7174 → 0.4348 (a −0.283 collapse against the ratchet), 11 of 23
+    dev questions move, 317 of 2,392 corpus nodes lose their only text, and
+    37.9% of the Civil Code's lexical tokens ARE the heading line. Stripping
+    only the identifier label prefix costs essentially nothing
+    (0.7174 / 0.7072), which localises the collapse to the heading's
+    ordinary words. The full measurement is in
+    `docs/decisions/ADR-007-disjoint-inputs-and-the-heading-line.md`.
+  - *Consequence:* NO published number changes. The ratchet values and
+    `data/eval-reports/v1-test.md` are untouched.
+  - *Acceptance:* `docs/retrieval.md` §3, `docs/SPEC.md` §5, the
+    `apps/api/retrieval/{index,normalizer}.py` docstrings, the
+    `apps/api/retrieval/scoring.py` module docstring and the
+    `experiments/vector/index.py` docstring all state the SAME rule, and a
+    contract test asserts that the documented rule is the implemented one.
+
+- [x] **F8 — the report omitted what a reader needs, and one docstring was
+  false.**
+  - The `ASYMMETRY_NOTE` named ONLY the `ident` channel. It now names all
+    THREE vectorless-only channels: `ident`, `title` and `hier` (the dense
+    arm's `title` and `hier` are 0.0 for every node by construction).
+    Measured on the Civil Code: the vectorless arm's `title` fires on
+    96.5% of its hits and its `hier` on 97.8%, and zeroing both changes the
+    top-10 order on 21 of 23 dev questions and 40 of 41 test questions.
+  - The report now prints each arm's CORPUS SIZE and the SURFACE it
+    scores, and says that the two arms rank the same node set over
+    different surfaces.
+  - The spot-check section now prints the METHOD by name and states in
+    plain words that the mechanical re-judge is the JUDGE'S
+    SELF-CONSISTENCY and NOT the builder's human re-score that
+    `evaluation.md` §4 asks for.
+  - `n_judged` is published next to `faithfulness` (47 of 48 rows, because
+    a refusal carries no claim to judge).
+  - The latency note now says the two arms measure DIFFERENT UNITS OF
+    WORK: the dense arm's ~64 ms is a matrix product over a PRE-BUILT index
+    (0.36 ms for the 2,579 × 384 product, measured) while the vectorless
+    arm's ~170 ms is a full-document BM25 RE-SCORE per query (141 ms of its
+    153 ms is the lex layer alone, measured).
+  - `apps/api/evaluation/store.py`'s module docstring claimed "The write is
+    ONE transaction per evaluation … a reader never sees a run whose
+    metrics exist but whose questions do not". That was FALSE: the runner
+    writes per-question rows incrementally and the run row LAST. The
+    docstring now describes the incremental write and the interrupted-run
+    state it produces.
+
+- [x] **F9 — the report's dense-gate note claimed the dense arm's
+  abstention score is STRUCTURALLY 0, and the measured run contradicts
+  it.** `DENSE_GATE_NOTE` asserted that the dense arm's sufficiency gate
+  "always passes", and therefore that its abstention score was
+  structurally 0. The re-run measures **0.000 on dev-24 and 0.143 on
+  test-48**, and the report printed that number a few lines above a note
+  saying it could not be anything but 0. A report that contradicts its own
+  number is not a report a reader can rely on.
+  - *The claim's first half is TRUE and the second half is not.* The dense
+    arm's gate cannot fail on LEXICAL grounds: its score is a cosine
+    similarity, non-zero for every node against every query, so the
+    min-max normalization gives the nearest neighbour a lex of 1.0 and the
+    support rule passes. But the gate is not unconditional. The evidence
+    gate keeps a node only when its text is at least 50 characters, and
+    the dense arm's cosine ranks a cluster of short SECTION nodes (11 to
+    40 characters of text) at the very top for an out-of-vocabulary
+    question. Every one of them is dropped by the length floor, the kept
+    set is empty, and the gate fails on that NON-lexical ground.
+  - *Measured on the test split:* the dense arm refused one of the seven
+    unanswerable questions on that ground (q031) and one ANSWERABLE
+    question on the same ground (q061), which is why its abstention score
+    is neither 0 nor 1.
+  - *Resolution:* the note now states the asymmetry that is true (the gate
+    cannot fail LEXICALLY, so a dense refusal is not a refusal to answer)
+    and names the non-lexical failure that is also true (the length
+    floor), and it says what the number IS a measurement of: the arm's
+    ranking and the length floor, not its refusal quality. It carries no
+    split-specific number, so it is true in both reports.
+  - *The note was corrected BEFORE the reports were published, and the
+    reports were re-rendered from the SAME stored run rather than
+    re-run, because a re-run would have produced different numbers under
+    the same run id and the report would then be a different
+    measurement.*
 
 ---
 

@@ -2,9 +2,9 @@
 
 Three structures, all rebuilt per document on demand:
 
-1. FTS5 ``node_fts`` — lexical surface over titles AND body text. Scoring keeps
-   the components disjoint by weighting the title column to 0 at query time
-   (§3), so the table stores both columns but lex never reads titles.
+1. FTS5 ``node_fts`` — lexical surface over titles AND body text. The title
+   column is weighted 0 at query time (§3), so the table stores both columns
+   but the FTS5 candidate MATCH prefilter never ranks on the title column.
 2. ``ident_index`` — normalized label → node_id, from node titles. A node
    contributes its own label (e.g. "art 1318") plus every ancestor container
    label it lives under (e.g. "title iv"), because "what does Title IV say"
@@ -16,6 +16,21 @@ Three structures, all rebuilt per document on demand:
    scores with rank-bm25, making lex a per-document function (FTS5's bm25()
    stats are table-global and would drift across ingests). FTS5 remains only
    the candidate MATCH prefilter.
+
+**The corpus carries the heading line, and that is deliberate (ADR-007).**
+The parser stores a node's heading at the START of that node's body text, so
+the corpus below contains the heading's words as well as the provision's
+words. The §3 disjointness rule is enforced on the QUERY side: the query's
+IDENTIFIER tokens are stripped from the lex and title inputs, so an
+identifier term fires in exactly one component. A heading's ORDINARY words
+are a different matter — they are lexical surface as well, so they can fire
+in ``lex`` and ``title`` together.
+
+The alternative was measured and rejected. Stripping the heading line from
+the corpus before BM25 removes 37.9% of the Civil Code's lexical tokens,
+empties 317 of its 2,392 corpus nodes (the heading IS the provision for
+those), and drops dev Recall@5 from 0.717 to 0.435. The measurement and the
+decision are in ADR-007.
 """
 
 from __future__ import annotations
@@ -42,6 +57,32 @@ _SECTION_INTRO_TYPES: frozenset[str] = frozenset({"section"})
 #: BM25 params (retrieval.md §2 defaults). Persisted into bm25.json AND loaded
 #: at query time — this is the runtime-truth lex model, not just an eval record.
 _BM25_PARAMS = {"k1": 1.5, "b": 0.75}
+
+
+def in_lex_corpus(node_type: str, text: str) -> bool:
+    """True when a node's body text belongs to the per-document BM25 corpus.
+
+    The rule is retrieval.md §2's: leaf-node bodies + section-intro nodes
+    (a section node counts only when it carries its own intro text).
+
+    **This is the ONE definition of "is this node in the lex corpus".**
+    ``build_indexes`` uses it to build the BM25 corpus, and the evaluation
+    harness uses it to build the DENSE arm's corpus, so the two arms'
+    lexical surfaces are the same node set by construction and cannot
+    drift apart.
+
+    The rule lives HERE, in the primary path, and not in the harness,
+    because architecture.md §2 gives ``experiments/vector/`` no imports
+    from the primary path — so the rule could not live there — and a
+    SECOND copy in ``apps/api/evaluation/`` would be a second rule that
+    drifts. The primary path owns the BM25 corpus, so the primary path
+    owns the rule; the harness imports it and passes the rule-derived
+    node set IN, which is the "the corpus comes IN, not out" contract
+    ``experiments/vector/index.py`` already documents.
+    """
+    if node_type in _LEAF_TYPES:
+        return True
+    return node_type in _SECTION_INTRO_TYPES and bool(text)
 
 
 def _iter_nodes(conn: sqlite3.Connection, doc_id: str) -> Iterator[sqlite3.Row]:
@@ -172,10 +213,18 @@ def build_indexes(
         )
 
         # --- 3. BM25 corpus: leaf bodies + section-intro texts -------------
+        # The corpus text is the node's stored body text AS IS, heading line
+        # included (ADR-007). The parser puts the heading at the start of the
+        # body, and for many nodes the heading IS the provision, so the
+        # heading's words are part of the document's lexical surface. The §3
+        # disjointness rule is a QUERY-side rule: the query's identifier
+        # tokens are stripped from the lex and title inputs, so an identifier
+        # term fires in exactly one component. A heading's ordinary words can
+        # fire in lex and title together, and the measurement behind that
+        # decision is in ADR-007.
         corpus: list[tuple[str, str]] = []
         for row in nodes:
-            ntype = str(row["type"])
-            if ntype in _LEAF_TYPES or (ntype in _SECTION_INTRO_TYPES and str(row["text"])):
+            if in_lex_corpus(str(row["type"]), str(row["text"])):
                 corpus.append((str(row["id"]), str(row["text"])))
         persist_bm25(doc_id, corpus, index_root=index_root)
 

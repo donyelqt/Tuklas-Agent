@@ -768,17 +768,31 @@ def run_agent(
     max_iterations: int = 12,
     db_path: str | None = None,
     generator: Generator | None = None,
+    weights: dict[str, float] | None = None,
 ) -> AgentState:
     """Run the loop and return the full state (api.md sec 3, architecture.md §4).
 
     The returned state carries the trace, the iteration count, the evidence
     verdict, and the answer or the canned abstention.
+
+    ``weights`` is the retrieval.md §3 weight vector the agent's own
+    retrieval is scored with. It is optional and defaults to the retrieval
+    layer's defaults, so a caller that pins no weights keeps the behaviour
+    it had. It exists because a run that records a weight snapshot must
+    have produced its answer with that snapshot: the agent's retrieval and
+    the recorded metric are the same measurement, and they are only the
+    same measurement if they are scored with the same weights.
     """
     # An empty question is an invalid plan (retrieval.md sec 7): the gate
     # fails closed to the abstention. The HTTP layer owns the 422 for a bad
     # body; the agent never raises for one.
     max_iterations = _validate_max_iterations(max_iterations)
-    state = initial_state(question, document_id, max_iterations=max_iterations)
+    state = initial_state(
+        question,
+        document_id,
+        max_iterations=max_iterations,
+        weights=weights,
+    )
     state["_db_path"] = db_path
     compiled = build_graph(generator)
     # LangGraph's invoke returns a plain mapping; the state IS an AgentState.

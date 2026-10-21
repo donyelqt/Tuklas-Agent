@@ -1,0 +1,280 @@
+{
+  "arms": {
+    "tuklas": {
+      "generation": {
+        "abstention_score": 1.0,
+        "citation_accuracy": 0.5416666666666666,
+        "correctness": 0.720807453416149,
+        "faithfulness": 0.7446578884078884,
+        "n_answerable": 23,
+        "n_judged": 24,
+        "n_unanswerable": 1
+      },
+      "retrieval": {
+        "by_category": {
+          "comparison": {
+            "mrr10": 0.7037037037037037,
+            "n": 3,
+            "precision@1": 0.6666666666666666,
+            "precision@10": 0.16666666666666666,
+            "precision@3": 0.2222222222222222,
+            "precision@5": 0.13333333333333333,
+            "recall@1": 0.3333333333333333,
+            "recall@10": 0.8333333333333334,
+            "recall@3": 0.3333333333333333,
+            "recall@5": 0.3333333333333333
+          },
+          "cross-reference": {
+            "mrr10": 0.8333333333333334,
+            "n": 3,
+            "precision@1": 0.6666666666666666,
+            "precision@10": 0.10000000000000002,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.20000000000000004,
+            "recall@1": 0.6666666666666666,
+            "recall@10": 1.0,
+            "recall@3": 1.0,
+            "recall@5": 1.0
+          },
+          "definition": {
+            "mrr10": 0.6666666666666666,
+            "n": 3,
+            "precision@1": 0.6666666666666666,
+            "precision@10": 0.06666666666666667,
+            "precision@3": 0.2222222222222222,
+            "precision@5": 0.13333333333333333,
+            "recall@1": 0.6666666666666666,
+            "recall@10": 0.6666666666666666,
+            "recall@3": 0.6666666666666666,
+            "recall@5": 0.6666666666666666
+          },
+          "direct-lookup": {
+            "mrr10": 0.9,
+            "n": 5,
+            "precision@1": 0.8,
+            "precision@10": 0.10722222222222222,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.2,
+            "recall@1": 0.8,
+            "recall@10": 1.0,
+            "recall@3": 1.0,
+            "recall@5": 1.0
+          },
+          "exception": {
+            "mrr10": 0.75,
+            "n": 2,
+            "precision@1": 0.5,
+            "precision@10": 0.1,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.2,
+            "recall@1": 0.5,
+            "recall@10": 1.0,
+            "recall@3": 1.0,
+            "recall@5": 1.0
+          },
+          "multi-hop": {
+            "mrr10": 0.6666666666666666,
+            "n": 3,
+            "precision@1": 0.6666666666666666,
+            "precision@10": 0.13333333333333333,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.20000000000000004,
+            "recall@1": 0.3333333333333333,
+            "recall@10": 0.6666666666666666,
+            "recall@3": 0.5,
+            "recall@5": 0.5
+          },
+          "multi-section": {
+            "mrr10": 0.4340277777777778,
+            "n": 4,
+            "precision@1": 0.25,
+            "precision@10": 0.15000000000000002,
+            "precision@3": 0.16666666666666666,
+            "precision@5": 0.1,
+            "recall@1": 0.125,
+            "recall@10": 0.75,
+            "recall@3": 0.25,
+            "recall@5": 0.25
+          }
+        },
+        "n_rows": 24,
+        "n_scored": 23,
+        "n_unanswerable_excluded": 1,
+        "overall": {
+          "mrr10": 0.7107487922705313,
+          "n": 23,
+          "precision@1": 0.6086956521739131,
+          "precision@10": 0.11896135265700487,
+          "precision@3": 0.27536231884057966,
+          "precision@5": 0.16521739130434784,
+          "recall@1": 0.5,
+          "recall@10": 0.8478260869565217,
+          "recall@3": 0.6739130434782609,
+          "recall@5": 0.6739130434782609
+        }
+      },
+      "system": {
+        "generation_latency_p50": 2692.5,
+        "generation_latency_p95": 6490.149999999999,
+        "iterations_mean": 6.875,
+        "latency_p50": 3376.0,
+        "latency_p95": 6833.449999999999,
+        "n": 24,
+        "retrieval_latency_p50": 344.0,
+        "retrieval_latency_p95": 1144.7,
+        "tokens_mean": 1142.8333333333333,
+        "tokens_out_mean": 145.79166666666666
+      }
+    },
+    "vector": {
+      "generation": {
+        "abstention_score": 0.0,
+        "citation_accuracy": 0.4583333333333333,
+        "correctness": 0.7673913043478262,
+        "faithfulness": 0.6956845238095237,
+        "n_answerable": 23,
+        "n_judged": 24,
+        "n_unanswerable": 1
+      },
+      "retrieval": {
+        "by_category": {
+          "comparison": {
+            "mrr10": 0.5555555555555556,
+            "n": 3,
+            "precision@1": 0.3333333333333333,
+            "precision@10": 0.16666666666666666,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.26666666666666666,
+            "recall@1": 0.16666666666666666,
+            "recall@10": 0.8333333333333334,
+            "recall@3": 0.5,
+            "recall@5": 0.6666666666666666
+          },
+          "cross-reference": {
+            "mrr10": 0.5,
+            "n": 3,
+            "precision@1": 0.3333333333333333,
+            "precision@10": 0.06666666666666667,
+            "precision@3": 0.2222222222222222,
+            "precision@5": 0.13333333333333333,
+            "recall@1": 0.3333333333333333,
+            "recall@10": 0.6666666666666666,
+            "recall@3": 0.6666666666666666,
+            "recall@5": 0.6666666666666666
+          },
+          "definition": {
+            "mrr10": 0.7777777777777777,
+            "n": 3,
+            "precision@1": 0.6666666666666666,
+            "precision@10": 0.10000000000000002,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.20000000000000004,
+            "recall@1": 0.6666666666666666,
+            "recall@10": 1.0,
+            "recall@3": 1.0,
+            "recall@5": 1.0
+          },
+          "direct-lookup": {
+            "mrr10": 1.0,
+            "n": 5,
+            "precision@1": 1.0,
+            "precision@10": 0.1,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.2,
+            "recall@1": 1.0,
+            "recall@10": 1.0,
+            "recall@3": 1.0,
+            "recall@5": 1.0
+          },
+          "exception": {
+            "mrr10": 0.6,
+            "n": 2,
+            "precision@1": 0.5,
+            "precision@10": 0.1,
+            "precision@3": 0.16666666666666666,
+            "precision@5": 0.2,
+            "recall@1": 0.5,
+            "recall@10": 1.0,
+            "recall@3": 0.5,
+            "recall@5": 1.0
+          },
+          "multi-hop": {
+            "mrr10": 0.7777777777777778,
+            "n": 3,
+            "precision@1": 0.6666666666666666,
+            "precision@10": 0.13333333333333333,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.20000000000000004,
+            "recall@1": 0.3333333333333333,
+            "recall@10": 0.6666666666666666,
+            "recall@3": 0.5,
+            "recall@5": 0.5
+          },
+          "multi-section": {
+            "mrr10": 0.29166666666666663,
+            "n": 4,
+            "precision@1": 0.0,
+            "precision@10": 0.125,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.2,
+            "recall@1": 0.0,
+            "recall@10": 0.625,
+            "recall@3": 0.5,
+            "recall@5": 0.5
+          }
+        },
+        "n_rows": 24,
+        "n_scored": 23,
+        "n_unanswerable_excluded": 1,
+        "overall": {
+          "mrr10": 0.6608695652173913,
+          "n": 23,
+          "precision@1": 0.5217391304347826,
+          "precision@10": 0.1130434782608696,
+          "precision@3": 0.3043478260869565,
+          "precision@5": 0.20000000000000007,
+          "recall@1": 0.45652173913043476,
+          "recall@10": 0.8260869565217391,
+          "recall@3": 0.6956521739130435,
+          "recall@5": 0.7608695652173914
+        }
+      },
+      "system": {
+        "generation_latency_p50": 3017.0,
+        "generation_latency_p95": 8375.449999999997,
+        "iterations_mean": 6.958333333333333,
+        "latency_p50": 3383.0,
+        "latency_p95": 8669.549999999997,
+        "n": 24,
+        "retrieval_latency_p50": 210.0,
+        "retrieval_latency_p95": 554.65,
+        "tokens_mean": 1080.4583333333333,
+        "tokens_out_mean": 174.54166666666666
+      }
+    }
+  },
+  "n_arms": 2,
+  "n_questions": 24,
+  "spot_check": {
+    "disagreement": 0.0,
+    "method": "mechanical-rejudge (judge self-consistency)",
+    "n_claims_compared": 59,
+    "performed": true,
+    "reason": "the disagreement measured here is the judge's SELF-CONSISTENCY: the same versioned prompt was re-sent to the same backend over the same evidence. It is NOT the builder's human re-scoring that evaluation.md §4 asks for, and a builder re-score would be a different measurement.",
+    "sample": [
+      "q001",
+      "q002",
+      "q003",
+      "q004",
+      "q005",
+      "q006",
+      "q007",
+      "q008",
+      "q009",
+      "q010"
+    ],
+    "sample_size": 10,
+    "threshold": 0.15,
+    "valid": true
+  }
+}
