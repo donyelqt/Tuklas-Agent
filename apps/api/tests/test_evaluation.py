@@ -290,6 +290,7 @@ def test_the_report_publishes_the_effective_sample_size(splits: Any) -> None:
         n_questions=48,
         aggregates={"arms": {}},
         dataset_overlap=overlap,
+        n_distinct_golds=dataset_module.effective_n(test),
     )
     assert "n distinct golds" in text, "the report must publish the effective n"
     assert str(overlap["n_distinct_test_gold_provisions"]) in text

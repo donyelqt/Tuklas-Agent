@@ -31,7 +31,119 @@ other. The report prints both arms' numbers side by side and stops.
 from __future__ import annotations
 
 import json
+import re
+from collections import Counter
+from dataclasses import dataclass
 from typing import Any
+
+from apps.api.agent.stoplist import STOPLIST
+from apps.api.evaluation.scorer import citation_supports, split_citation_claims
+
+# ---------------------------------------------------------------------------
+# The R9 rule, and the four buckets its REMAINDER splits into.
+#
+# R9 is ONE rule, applied identically to every (run, arm) pair, and it has
+# FOUR buckets rather than three: the fourth (OFF-SUBJECT) splits the
+# third (SCORER, printed as "remainder") MECHANICALLY, with the SAME
+# overlap measure R9 already defines. The three definitions R9 needs -
+# CONTENT WORDS, OVERLAP and ARTICLE EXTRACTION - live HERE, once, and the
+# note below quotes them; there is no second copy of any of them.
+#
+# The split exists because the remainder was a CATCH-ALL covering two
+# opposite things: "the model was right and the string rule was strict"
+# (the vectorless arm) and "the model cited something unrelated" (the
+# dense arm). A bucket a reader cannot reason about is not a measurement.
+# ---------------------------------------------------------------------------
+
+#: A token of the CONTENT WORDS definition: the lowercase alphanumeric
+#: runs of the text, of length >= 2, with the repository's own versioned
+#: stoplist removed (apps/api/agent/stoplist.py, STOPLIST, version
+#: fts5-english-v1 - the list the run configs already pin).
+_CONTENT_WORD_RE = re.compile(r"[a-z0-9]+")
+
+#: The node's OWN HEADING read for its article number. The heading is
+#: case-insensitive because the corpus carries BOTH "Article 213." and
+#: "ARTICLE 437."; a case-sensitive read misses the second kind, and a
+#: node whose heading is missed is a node the MODEL bucket cannot reach.
+#: The FIRST number in the heading is the node's own article: a heading
+#: that also cites another article in its body ("Article 247. When a
+#: creditor whose claim is not mentioned in article 243 ...") names the
+#: node's own article first.
+_HEADING_ARTICLE_RE = re.compile(r"^\s*Article\s+(\d+)\b", re.IGNORECASE)
+
+#: The SENTENCE's article references, read as a LIST: "Articles 55, 61,
+#: 68" yields all three numbers.
+_SENTENCE_ARTICLES_RE = re.compile(r"\bArticles?\s+(\d+(?:\s*,\s*\d+)*)", re.IGNORECASE)
+
+#: The abbreviated form, "Art. 1318".
+_SENTENCE_ARTICLE_ABBR_RE = re.compile(r"\bArt\.\s*(\d+)", re.IGNORECASE)
+
+#: The overlap at or below which a claim is "essentially no overlap" - the
+#: MODEL bucket's threshold, unchanged from R9.
+MODEL_OVERLAP_MAX = 0.20
+
+
+def content_words(text: str) -> set[str]:
+    """The CONTENT WORDS of a text, under R9's definition.
+
+    The lowercase alphanumeric tokens of length >= 2, with the
+    repository's own versioned stoplist removed. The stoplist is IMPORTED
+    from the agent's own module, so the list this rule drops is the list
+    the run configs pin and not a second copy of it.
+    """
+    return {
+        token
+        for token in _CONTENT_WORD_RE.findall(text.lower())
+        if len(token) >= 2 and token not in STOPLIST
+    }
+
+
+def heading_article(title: str) -> int | None:
+    """The statutory article the node's OWN HEADING names, if it names one.
+
+    ``None`` when the heading names no article - a chapter, a section or
+    a subsection. The heading is read case-insensitively, and the FIRST
+    number in it is the node's own article.
+    """
+    match = _HEADING_ARTICLE_RE.search(title)
+    return int(match.group(1)) if match else None
+
+
+def sentence_articles(sentence: str) -> set[int]:
+    """The article numbers a SENTENCE names, read as a LIST.
+
+    "Articles 55, 61, 68" yields all three numbers, and the abbreviated
+    "Art. 1318" yields 1318.
+    """
+    articles: set[int] = set()
+    for match in _SENTENCE_ARTICLES_RE.finditer(sentence):
+        for part in match.group(1).split(","):
+            articles.add(int(part.strip()))
+    for match in _SENTENCE_ARTICLE_ABBR_RE.finditer(sentence):
+        articles.add(int(match.group(1)))
+    return articles
+
+
+def subject_overlap(sentence: str, title: str, text: str) -> float:
+    """The OVERLAP of a sentence with a node, under R9's definition.
+
+    ``|sentence content words AND node content words| / |sentence content
+    words|`` - the subject-overlap, normalised by the SENTENCE. The node's
+    content words are its TITLE and its TEXT together.
+    """
+    words = content_words(sentence)
+    if not words:
+        return 0.0
+    node_words = content_words(title) | content_words(text)
+    return len(words & node_words) / len(words)
+
+
+#: The four buckets R9's classification produces, in the order the note
+#: prints them. The third is R9's SCORER bucket, and the fourth splits it.
+BUCKET_MARKER = "marker"
+BUCKET_MODEL = "model"
+BUCKET_OFF_SUBJECT = "off-subject"
+BUCKET_ON_SUBJECT = "on-subject"
 
 #: The note that every report carries about the arms' asymmetry. It is a
 #: CONSTANT, not a parameter, because it is a fact about the system and
@@ -258,10 +370,16 @@ ABSTENTION_NOTE = (
 #:   the sentence does NOT name A, AND the sentence's content words have
 #:   essentially no overlap with the node's (overlap <= 0.20). A citation
 #:   to a provision the sentence is not about.
-#: * SCORER - everything else, including every case where the cited node IS
-#:   the article the sentence names.
+#: * OFF-SUBJECT - every other failing claim whose sentence shares NO
+#:   content word with the cited node (overlap == 0). The cited node is
+#:   not about the sentence's subject at all. This is a LOWER BOUND on
+#:   real miscitations.
+#: * ON-SUBJECT - every other failing claim with overlap > 0. The cited
+#:   node IS about the sentence's subject, so no string rule can match a
+#:   proposition ABOUT a provision to the provision's own words: this is
+#:   most likely the scorer being strict.
 #:
-#: The two definitions the rule needs, stated so a reader can reproduce it:
+#: The three definitions the rule needs, stated so a reader can reproduce it:
 #:
 #: * CONTENT WORDS: the lowercase alphanumeric tokens of length >= 2 of the
 #:   text, with the repository's own versioned stoplist removed
@@ -271,9 +389,21 @@ ABSTENTION_NOTE = (
 #:   |sentence content words| - the subject-overlap, normalised by the
 #:   SENTENCE. The node's content words are its TITLE and its TEXT
 #:   together.
-#: * ARTICLE EXTRACTION: the node's own heading is read for "Article N";
-#:   the SENTENCE's article references are read as a LIST, so "Articles 55,
-#:   61, 68" yields all three numbers.
+#: * ARTICLE EXTRACTION: the node's own heading is read for "Article N",
+#:   case-INSENSITIVELY (the corpus carries both "Article 213." and
+#:   "ARTICLE 437."), taking the FIRST number in it; the SENTENCE's
+#:   article references are read as a LIST, so "Articles 55, 61, 68"
+#:   yields all three numbers.
+#:
+#: The fourth bucket is a MECHANICAL SPLIT of the third, with the SAME
+#: overlap measure the rule already defines: OFF-SUBJECT is the remainder
+#: at overlap == 0, ON-SUBJECT is the remainder at overlap > 0. The third
+#: bucket was a catch-all covering two OPPOSITE things - "the model was
+#: right and the string rule was strict" (the vectorless arm) and "the
+#: model cited something unrelated" (the dense arm) - and a bucket a
+#: reader cannot reason about is not a measurement. The three original
+#: buckets are NOT renumbered and NOT dropped: MARKER, MODEL and the
+#: remainder (ON-SUBJECT plus OFF-SUBJECT) are all still published.
 #:
 #: WHAT A READER NEEDS TO REPRODUCE IT: the run's `retrieval_runs` rows
 #: (`answer_markdown`, `citation_node_ids`, `citations_valid`) and the
@@ -283,11 +413,38 @@ ABSTENTION_NOTE = (
 #:
 #: MEASURED, by the rule above, on the two published runs:
 #:
-#:   run / arm             failing   marker   model   remainder
-#:   test-48 vectorless         56       3       7          46
-#:   test-48 dense              62       4      11          47
-#:   dev-24  vectorless         45       2      12          31
-#:   dev-24  dense              52       0      13          39
+#:   run / arm             failing  marker  model  off-subj  on-subj  remainder
+#:   test-48 vectorless         56       3      7         0       46         46
+#:   test-48 dense              62       4     11        16       31         47
+#:   dev-24  vectorless         45       2     12         0       31         31
+#:   dev-24  dense              52       0     13         0       39         39
+#:
+#: The OFF-SUBJECT counts are a LOWER BOUND on real miscitations, and the
+#: per-QUESTION spread matters as much as the total, so BOTH arms' spreads
+#: are recorded here and published in the note. The dense arm's 16 test-48
+#: off-subject claims span 5 QUESTIONS (5, 4, 3, 2 and 2 of them
+#: respectively: q070, q069, q059, q046, q066), with 5 in a single
+#: question - so the off-subject block is a few questions' worth of an
+#: answer about something else, not a property of every question. The
+#: VECTORLESS arm's off-subject count is 0 on BOTH runs (0 questions
+#: spanned, largest 0), and on dev-24 the DENSE arm's is 0 as well (0 of
+#: its 39 remainder claims, 0 questions, largest 0); the same is true of
+#: the dev-24 vectorless arm (0 of its 31). Publishing only the dense arm's
+#: test-48 figure would make the comparison asymmetric, so all four cells'
+#: off-subject counts and spreads are published.
+#:
+#: Two facts behind the dense arm's test-48 block, because they decide how
+#: a reader should read it. All 16 claims cite a CONTAINER node whose
+#: heading names no article at all - "SECTION 3." (9 claims), "SECTION 4"
+#: (3), "SUBSECTION 3. Rescission and Nullity of Partition" (2),
+#: "SECTION 5" (1) and "SUBSECTION 2. Warranty Against Hidden Defects of
+#: or Encumbrances Upon the Thing Sold" (1) - which is exactly why the
+#: MODEL bucket cannot reach them: its article clause never fires. And two
+#: further zero-overlap
+#: dense claims on test-48 (both in q068) are classed MODEL, because there
+#: the cited node's heading DOES name an article the sentence does not; the
+#: arm's zero-overlap total on test-48 is therefore 18 claims across 6
+#: questions, of which the off-subject bucket holds 16 across 5.
 #:
 #: The CORRECTION, stated explicitly. The previous version of this note
 #: published 52 / 1 / 3 (vectorless) and 34 / 24 / 4 (dense) on test-48,
@@ -321,8 +478,9 @@ ABSTENTION_NOTE = (
 #: marriage, not for offers or acceptances" citing Article 53, whose
 #: ENTIRE text is a 93-character lead-in - unambiguously correct, and
 #: classed SCORER. The vectorless arm's remainder is ON the sentence's
-#: subject: its median subject-overlap is 0.33, so its citations are about
-#: the sentence's subject and the string rule cannot match them.
+#: subject: its median subject-overlap over its remainder claims is 0.33 on
+#: test-48 and 0.42 on dev-24, so its citations are about the sentence's
+#: subject and the string rule cannot match them.
 #:
 #: The two arms' lower bounds are NOT COMPARABLE with each other, and the
 #: dense arm's REAL weakness is the off-subject block INSIDE its
@@ -331,7 +489,12 @@ ABSTENTION_NOTE = (
 #: stating "The provided evidence does not contain any information
 #: relevant to explicate spectrometer centrifuge embargo" and then citing
 #: five unrelated provisions. Those are the rows R9's MODEL bucket cannot
-#: reach, because their sentences name no article at all.
+#: reach, because their sentences name no article at all and their cited
+#: nodes are container nodes whose headings name no article either, so the
+#: article clause never fires. An off-subject claim is not PROOF of a
+#: miscitation either: the count is a LOWER BOUND, and a claim whose node
+#: does share content words with the sentence can still cite the wrong
+#: provision, which this rule cannot see.
 CITATION_METRIC_NOTE = (
     "The citation-accuracy number is a MEASUREMENT OF A PAIR: the model's "
     "citations AND the support rule's sensitivity, and a reader must not "
@@ -350,8 +513,20 @@ CITATION_METRIC_NOTE = (
     "HEADING names a statutory article A, AND the sentence does NOT name "
     "A, AND the sentence's content words have essentially no overlap with "
     "the node's (overlap <= 0.20) (a citation to a provision the sentence "
-    "is not about); SCORER, everything else, including every case where "
-    "the cited node IS the article the sentence names. THE TWO DEFINITIONS "
+    "is not about); and REMAINDER (R9's third bucket, the SCORER bucket, "
+    "printed as 'remainder'), everything else, including every case where "
+    "the cited node IS the article the sentence names. THE REMAINDER SPLITS "
+    "MECHANICALLY into two more buckets, with the SAME overlap measure, and "
+    "BOTH ARE PUBLISHED: OFF-SUBJECT, a remainder claim whose sentence "
+    "shares NO content word with the cited node (overlap == 0) - the cited "
+    "node is not about the sentence's subject at all, which is a LOWER "
+    "BOUND on real miscitations; and ON-SUBJECT, a remainder claim with "
+    "overlap > 0 - the cited node IS about the sentence's subject, and no "
+    "string rule can match a proposition ABOUT a provision to the "
+    "provision's own words, so this is most likely the scorer being strict. "
+    "The three original buckets are NOT renumbered and NOT dropped: MARKER, "
+    "MODEL and the remainder are all still published, the remainder both "
+    "whole and as its two parts. THE THREE DEFINITIONS "
     "THE RULE NEEDS, so a reader can reproduce it: CONTENT WORDS are the "
     "lowercase alphanumeric tokens of length >= 2 of the text, with the "
     "repository's own versioned stoplist removed (apps/api/agent/stoplist."
@@ -360,20 +535,47 @@ CITATION_METRIC_NOTE = (
     "words| divided by |sentence content words| - the subject-overlap, "
     "normalised by the SENTENCE - with the node's content words taken from "
     "its TITLE and its TEXT together; and an ARTICLE REFERENCE is read as a "
-    "LIST, so 'Articles 55, 61, 68' yields all three numbers. WHAT A "
+    "LIST, so 'Articles 55, 61, 68' yields all three numbers; the heading "
+    "is read case-INSENSITIVELY, because the corpus carries both 'Article "
+    "213.' and 'ARTICLE 437.', and the FIRST number in it is the node's own "
+    "article. WHAT A "
     "READER NEEDS TO REPRODUCE IT: the run's retrieval_runs rows "
     "(answer_markdown, citation_node_ids, citations_valid) and the nodes "
     "table (id, title, text). Nothing else - no model, no index, no "
     "re-run. The marker-to-node mapping is POSITIONAL: marker m is the "
     "m-th id in citation_node_ids. MEASURED, by the rule above, on the two "
-    "published runs: the test-48 vectorless arm's 56 failing claims are 3 "
-    "MARKER, 7 MODEL (13%) and 46 REMAINDER; the test-48 dense arm's 62 are "
-    "4 marker, 11 model (18%) and 47 remainder; the dev-24 vectorless "
-    "arm's 45 are 2 marker, 12 model (27%) and 31 remainder; the dev-24 "
-    "dense arm's 52 are 0 marker, 13 model (25%) and 39 remainder. THE "
+    "published runs, as failing / marker / model / off-subject / on-subject, "
+    "the REMAINDER being the last two added together: the test-48 vectorless "
+    "arm's 56 failing claims are 3 MARKER, 7 MODEL (13%), 0 OFF-SUBJECT and "
+    "46 ON-SUBJECT, remainder 46; the test-48 dense arm's 62 are 4 marker, "
+    "11 model (18%), 16 off-subject and 31 on-subject, remainder 47; the "
+    "dev-24 vectorless arm's 45 are 2 marker, 12 model (27%), 0 off-subject "
+    "and 31 on-subject, remainder 31; the dev-24 dense arm's 52 are 0 "
+    "marker, 13 model (25%), 0 off-subject and 39 on-subject, remainder 39. "
+    "BOTH ARMS' OFF-SUBJECT COUNTS ARE PUBLISHED, with the per-QUESTION "
+    "SPREAD of the rows behind them, because one arm's count alone reads as "
+    "a comparison: the test-48 dense arm's 16 off-subject claims are 16 of "
+    "its 47 remainder claims, and they span 5 QUESTIONS with 5 in the "
+    "largest single one (5, 4, 3, 2 and 2 claims in each) - a few "
+    "questions' worth of an answer about something else, not a property of "
+    "every question; the test-48 VECTORLESS arm's off-subject count is 0 of "
+    "its 46 remainder claims, spanning 0 questions, largest 0; on dev-24 "
+    "both arms' off-subject counts are 0, spanning 0 questions each (0 of "
+    "the dense arm's 39 remainder claims and 0 of the vectorless arm's 31, "
+    "largest 0 in either arm). All 16 of the test-48 dense arm's "
+    "off-subject claims cite a node whose heading names NO article at all - "
+    "9 cite 'SECTION 3.', 3 'SECTION 4', 2 'SUBSECTION 3. Rescission and "
+    "Nullity of Partition', 1 'SECTION 5' and 1 'SUBSECTION 2. Warranty "
+    "Against Hidden Defects of or Encumbrances Upon the Thing Sold' - so "
+    "the cited node is a container node, which is exactly why the MODEL "
+    "bucket cannot reach them: its article clause never fires. "
+    "Two further zero-overlap dense claims on test-48 "
+    "(both in q068) are classed MODEL instead, because there the cited "
+    "node's heading does name an article the sentence does not. THE "
     "CORRECTION, stated explicitly: the previous version of this note "
     "published 52 / 1 / 3 (vectorless) and 34 / 24 / 4 (dense) on "
     "test-48, and 39 / 4 / 2 (vectorless) and 41 / 11 / 0 (dense) on "
+    "dev-24. Those numbers did not "
     "come from ONE rule. A search of 768,848 rule variants - each a "
     "(content-word definition, article-extraction rule, node side, overlap "
     "denominator, threshold) combination - found NO rule reproducing all "
@@ -403,16 +605,24 @@ CITATION_METRIC_NOTE = (
     "acceptances' citing Article 53, whose ENTIRE text is a 93-character "
     "lead-in - unambiguously correct, and classed SCORER. The vectorless "
     "arm's remainder is ON the sentence's subject: its median "
-    "subject-overlap is 0.33, so its citations are about the sentence's "
+    "subject-overlap over its remainder claims is 0.33 on test-48 and 0.42 "
+    "on dev-24, so its citations are about the sentence's "
     "subject and the string rule cannot match them. The two arms' lower "
     "bounds are NOT COMPARABLE with each other, and the dense arm's REAL "
-    "weakness is the off-subject block INSIDE its remainder: 16 of its 47 "
-    "test-48 remainder claims share ZERO content words with the cited "
-    "node, in 5 questions - for example an answer stating 'The provided "
-    "evidence does not contain any information relevant to explicate "
-    "spectrometer centrifuge embargo' and then citing five unrelated "
-    "provisions. Those are the rows R9's MODEL bucket cannot reach, "
-    "because their sentences name no article at all."
+    "weakness is the off-subject block INSIDE its remainder, the 16 of its "
+    "47 test-48 remainder claims counted above: for example one of those "
+    "answers states 'The provided evidence does not contain any information "
+    "relevant to explicate spectrometer centrifuge embargo' and cites five "
+    "provisions, on all five of which the claim fails (three of them "
+    "off-subject, to container nodes, and two MODEL, to article nodes whose "
+    "headings name articles the sentence does not). Those off-subject rows "
+    "are the ones R9's MODEL bucket cannot reach, because their sentences "
+    "name no article at all, and their cited nodes are container nodes "
+    "whose headings name no article either, so its article clause never "
+    "fires. An off-subject claim is not PROOF of a miscitation either: the "
+    "count is a lower bound, and a claim whose node does share content "
+    "words with the sentence can still be a citation to the wrong "
+    "provision, which this rule cannot see."
 )
 
 #: The note about the two arms' abstention scores.
@@ -626,6 +836,172 @@ INSTRUMENT_CHANGE_NOTE = (
     "comparable with the earlier report's figure. The judge's scores, "
     "the abstention score and the token counts were not redefined."
 )
+
+
+#: One classified citation claim: its bucket, and the question it came
+#: from. The sentence and the node are kept so a reader of the
+#: measurement can see WHICH rows are in a bucket.
+@dataclass(frozen=True)
+class ClassifiedClaim:
+    """One failing citation claim, under R9's four buckets."""
+
+    bucket: str
+    question_id: str
+    marker: int
+    sentence: str
+    node_id: str
+    overlap: float
+
+
+@dataclass(frozen=True)
+class CitationBreakdown:
+    """R9's breakdown of one (run, arm) pair's failing citation claims.
+
+    ``buckets`` counts the four buckets; ``off_subject_questions`` maps
+    each question that carries an OFF-SUBJECT claim to how many it
+    carries, so a reader can see the SPREAD of the off-subject rows and
+    not only their total.
+    """
+
+    buckets: dict[str, int]
+    off_subject_questions: dict[str, int]
+
+    @property
+    def failing(self) -> int:
+        """The number of failing claims the breakdown covers."""
+        return sum(self.buckets.values())
+
+    @property
+    def remainder(self) -> int:
+        """R9's third bucket, printed as "remainder": the two last ones."""
+        return self.buckets[BUCKET_OFF_SUBJECT] + self.buckets[BUCKET_ON_SUBJECT]
+
+    @property
+    def n_off_subject_questions(self) -> int:
+        """How many questions the off-subject claims span."""
+        return len(self.off_subject_questions)
+
+    @property
+    def max_off_subject_in_one_question(self) -> int:
+        """The largest number of off-subject claims in a single question."""
+        if not self.off_subject_questions:
+            return 0
+        return max(self.off_subject_questions.values())
+
+
+def classify_citation_claims(
+    *,
+    answer_markdown: str,
+    citation_node_ids: list[str],
+    nodes: dict[str, tuple[str, str]],
+    question_id: str,
+    threshold: int,
+) -> list[ClassifiedClaim]:
+    """Classify one answer's citation claims under R9's four buckets.
+
+    The rule is applied to every (marker, sentence) pair whose cited node
+    does not support the sentence under the shared scorer at the run's
+    threshold:
+
+    * MARKER - the marker names no citation in the row's citation list. A
+      NOTATION failure, not a citation error.
+    * MODEL - the cited node's OWN HEADING names a statutory article A, AND
+      the sentence does NOT name A, AND the sentence's content words have
+      essentially no overlap with the node's (overlap <= 0.20). A citation
+      to a provision the sentence is not about.
+    * OFF-SUBJECT - every other failing claim whose sentence shares NO
+      content word with the cited node (overlap == 0). The cited node is
+      not about the sentence's subject at all. This is a LOWER BOUND on
+      real miscitations, and it is where the dense arm's genuine failure
+      mode lives.
+    * ON-SUBJECT - every other failing claim with overlap > 0. The cited
+      node IS about the sentence's subject; no string rule can match a
+      proposition ABOUT a provision to the provision's own words, so this
+      is most likely the scorer being strict.
+
+    The marker-to-node mapping is POSITIONAL: marker m is the m-th id in
+    ``citation_node_ids``. The three definitions the rule needs -
+    CONTENT WORDS, OVERLAP and ARTICLE EXTRACTION - are the module's own,
+    so there is no second copy of any of them.
+    """
+    claims: list[ClassifiedClaim] = []
+    for claim in split_citation_claims(answer_markdown):
+        if claim.marker < 1 or claim.marker > len(citation_node_ids):
+            claims.append(
+                ClassifiedClaim(
+                    bucket=BUCKET_MARKER,
+                    question_id=question_id,
+                    marker=claim.marker,
+                    sentence=claim.sentence,
+                    node_id="",
+                    overlap=0.0,
+                )
+            )
+            continue
+        node_id = citation_node_ids[claim.marker - 1]
+        title, text = nodes.get(node_id, ("", ""))
+        if citation_supports(claim.sentence, text, threshold=threshold):
+            continue
+        overlap = subject_overlap(claim.sentence, title, text)
+        article = heading_article(title)
+        named = sentence_articles(claim.sentence)
+        if article is not None and article not in named and overlap <= MODEL_OVERLAP_MAX:
+            bucket = BUCKET_MODEL
+        elif overlap == 0.0:
+            bucket = BUCKET_OFF_SUBJECT
+        else:
+            bucket = BUCKET_ON_SUBJECT
+        claims.append(
+            ClassifiedClaim(
+                bucket=bucket,
+                question_id=question_id,
+                marker=claim.marker,
+                sentence=claim.sentence,
+                node_id=node_id,
+                overlap=overlap,
+            )
+        )
+    return claims
+
+
+def breakdown_for_rows(
+    *,
+    rows: list[dict[str, Any]],
+    nodes: dict[str, tuple[str, str]],
+    threshold: int,
+) -> CitationBreakdown:
+    """R9's four-bucket breakdown of one (run, arm) pair's failing rows.
+
+    ``rows`` are the run's ``retrieval_runs`` rows for ONE arm, each
+    carrying ``question_id``, ``answer_markdown`` and
+    ``citation_node_ids``; the rows whose ``citations_valid`` is true
+    contribute nothing, because they are not failures.
+    """
+    buckets: Counter[str] = Counter()
+    off_subject_questions: Counter[str] = Counter()
+    for row in rows:
+        if row.get("citations_valid"):
+            continue
+        citation_node_ids = [str(node_id) for node_id in (row.get("citation_node_ids") or [])]
+        for claim in classify_citation_claims(
+            answer_markdown=str(row.get("answer_markdown") or ""),
+            citation_node_ids=citation_node_ids,
+            nodes=nodes,
+            question_id=str(row.get("question_id") or ""),
+            threshold=threshold,
+        ):
+            buckets[claim.bucket] += 1
+            if claim.bucket == BUCKET_OFF_SUBJECT:
+                off_subject_questions[claim.question_id] += 1
+    return CitationBreakdown(
+        buckets={
+            BUCKET_MARKER: buckets[BUCKET_MARKER],
+            BUCKET_MODEL: buckets[BUCKET_MODEL],
+            BUCKET_OFF_SUBJECT: buckets[BUCKET_OFF_SUBJECT],
+            BUCKET_ON_SUBJECT: buckets[BUCKET_ON_SUBJECT],
+        },
+        off_subject_questions=dict(off_subject_questions),
+    )
 
 
 def _fmt(value: float | None, places: int = 3) -> str:
@@ -867,6 +1243,7 @@ def render_report(
     dense_arm_description: dict[str, Any] | None = None,
     vectorless_arm_description: dict[str, Any] | None = None,
     dataset_overlap: dict[str, Any] | None = None,
+    n_distinct_golds: int | None = None,
 ) -> str:
     """The run report, as text.
 
@@ -881,13 +1258,20 @@ def render_report(
     lines.append("")
     lines.append("THE RUN")
     lines.append(f"  n questions          : {n_questions}")
-    if dataset_overlap is not None:
-        distinct = dataset_overlap.get("n_distinct_test_gold_provisions")
-        if distinct:
-            lines.append(
-                f"  n distinct golds     : {distinct} (the effective sample "
-                f"size; {n_questions} questions share some provisions)"
-            )
+    # The rendered split's OWN effective sample size. It is NOT read from
+    # ``dataset_overlap``: that dict describes the PAIR of splits, and its
+    # per-split fields hold one split's count each, so reading the
+    # test-named field on a dev report prints the TEST split's count in the
+    # dev split's header - a wrong number under a correct-looking name.
+    # The caller that loaded the split being rendered passes its own count
+    # (``dataset_module.effective_n``), so the header and the SHARE note
+    # below cannot be mixed up: the header describes THIS split, the note
+    # describes the pair.
+    if n_distinct_golds:
+        lines.append(
+            f"  n distinct golds     : {n_distinct_golds} (the effective sample "
+            f"size; {n_questions} questions share some provisions)"
+        )
     lines.append(f"  split                : {dataset_name} (snapshot {dataset_snapshot})")
     lines.append(f"  split seed           : {split_seed}")
     lines.append(f"  model / backend      : {config_body.get('model')} / {config_body.get('backend')}")
@@ -1020,19 +1404,32 @@ def render_report(
     if dataset_overlap is not None:
         shared = dataset_overlap.get("n_shared_gold_nodes", 0)
         if shared:
+            # This note is about the PAIR of splits, and the pair is the
+            # same fact in both reports, so the text is the same in both
+            # and every number in it is labelled with the split it
+            # describes: a share of the test split's golds is not a share
+            # of the dev split's, and on the dev report both are printed.
             notes.append(
                 "The dev and test splits SHARE "
-                f"{shared} gold provision(s) "
-                f"({dataset_overlap.get('shared_fraction_of_test_golds', 0.0):.1%} "
-                "of the test split's distinct gold provisions), and "
+                f"{shared} gold provision(s): "
+                f"{dataset_overlap.get('shared_fraction_of_test_golds', 0.0):.1%} "
+                "of the test split's "
+                f"{dataset_overlap.get('n_distinct_test_gold_provisions', 0)} "
+                "distinct gold provisions, and "
+                f"{dataset_overlap.get('shared_fraction_of_dev_golds', 0.0):.1%} "
+                "of the dev split's "
+                f"{dataset_overlap.get('n_distinct_dev_gold_provisions', 0)}. "
                 f"{len(dataset_overlap.get('test_questions_fully_contained_in_dev', []))} "
                 "test question(s) have their ENTIRE gold set inside the dev "
-                "split's. evaluation.md sec 1 makes the dev split the tuning "
+                "split's. Each number above names the split it describes, and "
+                "the pair's shared COUNT is the same on the dev report and the "
+                "test report, because it is a property of the pair and not of "
+                "the report. evaluation.md sec 1 makes the dev split the tuning "
                 "split and the test split the one touched once per frozen "
-                "config, so for those provisions the tuning has already seen "
-                "the test split's answer key. The per-category numbers below "
-                "move in steps of 1/n, and one question can move several rows "
-                "at once where a provision is reused."
+                "config, so for the provisions both splits gold the tuning has "
+                "already seen the test split's answer key. The per-category "
+                "numbers below move in steps of 1/n, and one question can move "
+                "several rows at once where a provision is reused."
             )
     for note in notes:
         for line in _wrap(note, 74):
