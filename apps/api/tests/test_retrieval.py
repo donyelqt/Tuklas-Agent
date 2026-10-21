@@ -171,7 +171,7 @@ def test_retrieval_scoring_disjoint_inputs(civil_code: SimpleNamespace) -> None:
     db, doc_id = civil_code.db, civil_code.doc_id
     query = "Article 1318 meeting of minds between parties"
 
-    hits = score_nodes(db, doc_id, query)
+    hits, _lex_path = score_nodes(db, doc_id, query)
     assert hits, "scoring returned no candidates"
 
     by_id = {h.node_id: h for h in hits}
@@ -230,7 +230,7 @@ def test_retrieval_scoring_disjoint_inputs(civil_code: SimpleNamespace) -> None:
     # two-pass order: pass-1 all-zero => pass-2 ref/hier must be 0
     # (broaden-retry condition per retrieval.md §3).
     gibberish = "qqzz wumpus frobnicate"
-    zero_hits = score_nodes(db, doc_id, gibberish)
+    zero_hits, _lp = score_nodes(db, doc_id, gibberish)
     for hit in zero_hits:
         c = hit.components
         if c["lex"] == 0 and c["ident"] == 0 and c["title"] == 0:
@@ -248,7 +248,7 @@ def test_retrieval_two_pass_ref_hier(civil_code: SimpleNamespace) -> None:
     db, doc_id = civil_code.db, civil_code.doc_id
     query = "Article 1318 meeting of minds between parties"
 
-    base = score_nodes(db, doc_id, query)
+    base, _lp = score_nodes(db, doc_id, query)
     assert base
 
     # frozen pass-1 sets, reconstructed from the reported lex components
@@ -283,7 +283,8 @@ def test_retrieval_two_pass_ref_hier(civil_code: SimpleNamespace) -> None:
                         "see the cross-referenced article")
         # 2-hop chain: source -> direct -> second_hop
 
-        rescored = {h.node_id: h for h in score_nodes(db, doc_id, query)}
+        rescored_hits, _lp = score_nodes(db, doc_id, query)
+        rescored = {h.node_id: h for h in rescored_hits}
         assert rescored[direct].components["ref"] > 0, \
             "1-hop reachable node from a lex-top-5 seed must score ref>0"
         assert rescored[second_hop].components["ref"] > 0, \
@@ -330,9 +331,10 @@ def test_retrieval_lex_per_document(tmp_path: Path) -> None:
     scoring_module.INDEX_ROOT = index_root
     try:
         query = "contract requisites consent object certain"
+        before_hits, _lp = score_nodes(str(db_path), doc.id, query)
         before = {
             h.node_id: h.components["lex"]
-            for h in score_nodes(str(db_path), doc.id, query)
+            for h in before_hits
             if h.components["lex"] > 0
         }
         assert len(before) >= 3, "fixture too small: need >= 3 lex-positive nodes"
@@ -351,9 +353,10 @@ def test_retrieval_lex_per_document(tmp_path: Path) -> None:
         other = ingest_pdf(str(other_pdf), slug="other-doc-zebra", db_path=str(db_path))
         build_indexes(str(db_path), other.id, index_root=index_root)
 
+        after_hits, _lp = score_nodes(str(db_path), doc.id, query)
         after = {
             h.node_id: h.components["lex"]
-            for h in score_nodes(str(db_path), doc.id, query)
+            for h in after_hits
         }
         for nid in probe_ids:
             assert after[nid] == captured[nid], (
@@ -541,7 +544,7 @@ def test_retrieval_select_evidence_pipeline(civil_code: SimpleNamespace) -> None
         db, f"node_{SLUG}_page_probe_short", "too short", page_start=1,
     )
 
-    hits = score_nodes(db, doc_id, "contract requisites consent object certain")
+    hits, _lp = score_nodes(db, doc_id, "contract requisites consent object certain")
     assert hits
     fake_spanless = ScoredNode(
         node_id=spanless["id"], title=spanless["title"], snippet=spanless["text"][:200],
@@ -570,7 +573,7 @@ def test_retrieval_select_evidence_pipeline(civil_code: SimpleNamespace) -> None
 
     # nothing clears the 0.15 gate -> insufficient (kept may still hold the
     # zero-score top-8 window; the gate, not a pre-filter, decides insufficiency)
-    empty_hits = score_nodes(db, doc_id, "qqzz wumpus frobnicate")
+    empty_hits, _lp = score_nodes(db, doc_id, "qqzz wumpus frobnicate")
     no_evidence = select_evidence(
         empty_hits, ["quantum chromodynamics entanglement flux"], db_path=db
     )
@@ -1122,7 +1125,7 @@ def test_retrieval_inherited_label_is_not_the_owning_level(
     """
     db, doc_id = civil_code.db, civil_code.doc_id
 
-    hits = score_nodes(db, doc_id, "article 1318")
+    hits, _lp = score_nodes(db, doc_id, "article 1318")
     by_id = {h.node_id: h for h in hits}
     owner = by_id[DOC_1318]
     assert owner.components["ident"] == 1.0, (
@@ -1144,7 +1147,7 @@ def test_retrieval_inherited_label_is_not_the_owning_level(
 
     # A CONTAINER label: a node under "CHAPTER 2" carries "ch 2", and the
     # component value is the container level, 0.5.
-    hits = score_nodes(db, doc_id, "chapter 2")
+    hits, _lp = score_nodes(db, doc_id, "chapter 2")
     ch2 = [h for h in hits if h.components["ident"] > 0]
     assert ch2, "a chapter label must reach the nodes under it"
     for hit in ch2:
@@ -1187,7 +1190,7 @@ def test_retrieval_inherited_label_is_not_the_owning_level(
     assert children, f"{owner_id} must have children to inherit the label"
     assert inheritor_levels, "the corpus must have nodes inheriting 'sec 1'"
 
-    hits = score_nodes(db, doc_id, "section 1")
+    hits, _lp = score_nodes(db, doc_id, "section 1")
     by_id = {h.node_id: h for h in hits}
     assert by_id[owner_id].components["ident"] == 1.0, (
         "the section that owns 'sec 1' must score 1.0"

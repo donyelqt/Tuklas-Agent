@@ -161,6 +161,22 @@ EVAL_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
         "k",
         "k TEXT",
     ),
+    # The run's measurement provenance (docs/TODO.md, the OPEN GAP item):
+    # which retrieval INSTRUMENT produced the metric, and which LEX PATH
+    # produced the vectorless arm's lex scores. Both are NULL on rows
+    # recorded before the columns existed - a NULL is the fact "not
+    # recorded", and it is never back-filled from what we now believe the
+    # run used. Rows recorded after the change carry both.
+    (
+        "evaluation_runs",
+        "retrieval_instrument",
+        "retrieval_instrument TEXT",
+    ),
+    (
+        "evaluation_runs",
+        "lex_paths",
+        "lex_paths TEXT",
+    ),
     # The per-question, per-arm row. The join keys come first; the rest is
     # what the GET endpoint's QuestionRow needs, so the endpoint is a
     # join and not a second computation.

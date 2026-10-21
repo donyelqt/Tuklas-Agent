@@ -118,11 +118,16 @@ def _record(
     latency_ms: float,
     error: str | None = None,
     fallback: bool | None = None,
+    lex_path: Any | None = None,
 ) -> None:
     """Append the tool_result + trace entry for one wrapper call.
 
     ``fallback`` is the flat-fallback flag read from retrieval (retrieval.md
     sec 6); it is recorded only where it applies (search_nodes).
+
+    ``lex_path`` is the lex-path info the retrieval layer returned for a
+    ``search_nodes`` call — which lex source produced the scores. It is
+    recorded only where retrieval reports it; other tools pass nothing.
     """
     state["tool_iterations"] = int(state.get("tool_iterations", 0)) + 1
     branch_id = f"{tool}#{state['tool_iterations']}"
@@ -138,15 +143,18 @@ def _record(
         entry["error"] = error
     if fallback is not None:
         entry["fallback"] = fallback
-    state["tool_results"].append(
-        {
-            "tool": tool,
-            "args": args,
-            "result_ids": result_ids,
-            "relevant": relevant,
-            "latency_ms": round(latency_ms, 3),
-        }
-    )
+    if lex_path is not None:
+        entry["lex_path"] = lex_path
+    tool_result: dict[str, Any] = {
+        "tool": tool,
+        "args": args,
+        "result_ids": result_ids,
+        "relevant": relevant,
+        "latency_ms": round(latency_ms, 3),
+    }
+    if lex_path is not None:
+        tool_result["lex_path"] = lex_path
+    state["tool_results"].append(tool_result)
     state["trace"].append(entry)
     if not relevant:
         # Irrelevant branch: zero evidence nodes, logged with its branch id.
@@ -217,6 +225,14 @@ def agent_search_nodes(state: AgentState, args: dict[str, Any]) -> AgentState:
     state["_hits_by_question"] = by_question
     state["_hits"] = list(state.get("_hits", [])) + list(matched)
     state["_searched"] = list(state.get("_searched", [])) + [query]
+    # The lex path the retrieval layer ACTUALLY took for this call, read
+    # off the hits the layer returned (scoring.py reports the decision;
+    # the trace only carries it). Every hit of one call carries the same
+    # info, so the first hit's is the call's. Recorded on the tool trace
+    # so the run row's lex-path fact describes the calls that produced
+    # the ranking, not a re-derivation by the caller.
+    lex_paths = [getattr(hit, "lex_path", None) for hit in hits]
+    lex_path = next((info for info in lex_paths if info is not None), None)
     # retrieval.md sec 6: the fallback flag is computed by score_nodes and
     # carried on every ScoredNode; the Day-3 trace reads it from retrieval
     # rather than recomputing it. A flat-fallback document (parse_confidence
@@ -230,7 +246,9 @@ def agent_search_nodes(state: AgentState, args: dict[str, Any]) -> AgentState:
         hit_ids,
         bool(hit_ids),
         latency,
+        error=None,
         fallback=fallback,
+        lex_path=lex_path,
     )
     return state
 

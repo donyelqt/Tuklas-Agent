@@ -64,7 +64,11 @@ from apps.api.agent import state as agent_state
 from apps.api.agent.tools import TOOL_TABLE
 from apps.api.retrieval import normalizer
 from apps.api.retrieval.index import in_lex_corpus
-from apps.api.retrieval.scoring import WEIGHT_DEFAULTS, ScoredNode
+from apps.api.retrieval.scoring import (
+    WEIGHT_DEFAULTS,
+    ScoredNode,
+    format_lex_path,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -95,6 +99,28 @@ SURFACE_VECTOR = (
 )
 
 
+#: The retrieval INSTRUMENT that produced the metric THIS harness records:
+#: the metric is computed over the node ids the ANSWER was produced from,
+#: the union of the agent's per-sub-question ``search_nodes`` results.
+#:
+#: This is the instrument the current code implements; the constant exists
+#: so the run row carries a versioned NAME for it rather than a fact a
+#: reader has to infer from the code version. A PREVIOUS harness computed
+#: the metric over a separate, one-off search over the whole question — a
+#: ranking the model never saw. The two measure different retrievals, so
+#: their numbers are not comparable, and a run row recorded under either
+#: instrument names which one it used:
+RETRIEVAL_INSTRUMENT_ANSWER_NODE_UNION = "answer-node-union-v1"
+
+#: The OLD instrument, named for the record: a separate one-off search
+#: over the whole question, a ranking the agent never saw. NO code path
+#: uses it any more; it exists so a reader of an old run row — or of
+#: this repo's history — has a name for what those numbers were
+#: measured over, and so the current constant's meaning is defined
+#: against its counterpart rather than against nothing.
+RETRIEVAL_INSTRUMENT_WHOLE_QUESTION_SEARCH = "whole-question-search-v0"
+
+
 @dataclass(frozen=True)
 class RetrievalResult:
     """One arm's retrieval for one question.
@@ -114,6 +140,10 @@ class RetrievalResult:
     latency_ms: int
     components: dict[str, dict[str, float]] = field(default_factory=dict)
     weights: dict[str, float] | None = None
+    #: The rendered lex paths the run's ``search_nodes`` calls took, as
+    #: the retrieval layer reported them. Empty when no search ran; the
+    #: caller records an empty list as not-recorded rather than guessing.
+    lex_paths: list[str] = field(default_factory=list)
 
     def head(self, k: int) -> list[str]:
         """The top-``k`` node ids."""
@@ -143,6 +173,9 @@ class AnswerResult:
     tokens_source: str | None
     retrieved_node_ids: list[str] = field(default_factory=list)
     weights: dict[str, float] | None = None
+    #: Same fact as the retrieval path's: the lex paths the run's
+    #: ``search_nodes`` calls took, as the layer reported them.
+    lex_paths: list[str] = field(default_factory=list)
 
 
 class Arm(Protocol):
@@ -300,6 +333,32 @@ def _search_latency(state: dict[str, Any]) -> int:
     return int(total)
 
 
+def _lex_paths(state: dict[str, Any]) -> list[str]:
+    """The lex paths the run's ``search_nodes`` calls actually took.
+
+    Each entry is the rendered form of the lex-path info the RETRIEVAL
+    LAYER returned for one call (``scoring.format_lex_path``) — recorded
+    on the call's own trace by the tool wrapper, so this reads what ran
+    rather than re-deriving it. A run makes several calls (one per
+    sub-question), and they can in principle disagree — an artifact that
+    exists for one document and not another — so the list is kept whole
+    and the run row records it as the JSON list. An empty list means the
+    agent ran no search (or ran one whose trace predates the reporting),
+    and the run row's lex-path field is left NULL rather than guessed.
+    """
+    paths: list[str] = []
+    for entry in state.get("tool_results", []) or []:
+        if not isinstance(entry, dict) or entry.get("tool") != "search_nodes":
+            continue
+        info = entry.get("lex_path")
+        if info is None:
+            continue
+        rendered = format_lex_path(info)
+        if rendered not in paths:
+            paths.append(rendered)
+    return paths
+
+
 @dataclass(frozen=True)
 class _AgentRun:
     """One agent run, and what it retrieved."""
@@ -310,6 +369,7 @@ class _AgentRun:
     search_latency_ms: int
     node_ids: list[str]
     components: dict[str, dict[str, float]]
+    lex_paths: list[str] = field(default_factory=list)
 
 
 class _RunCache:
@@ -416,6 +476,7 @@ class TuklasArm:
             latency_ms=run.search_latency_ms,
             components=run.components,
             weights=dict(self.weights),
+            lex_paths=list(run.lex_paths),
         )
 
     def answer(self, question: str, *, max_iterations: int = 12) -> AnswerResult:
@@ -442,6 +503,7 @@ class TuklasArm:
             tokens_source=run.state.get("_gen_tokens_source"),
             retrieved_node_ids=list(run.node_ids),
             weights=dict(self.weights),
+            lex_paths=list(run.lex_paths),
         )
 
     def _run_for(self, question: str, *, max_iterations: int, role: str) -> _AgentRun:
@@ -465,6 +527,7 @@ class TuklasArm:
             search_latency_ms=_search_latency(dict(state)),
             node_ids=_retrieved_node_ids(dict(state)),
             components=_hit_components(dict(state)),
+            lex_paths=_lex_paths(dict(state)),
         )
         self._runs.put(question, max_iterations, run, role)
         return run
@@ -708,6 +771,7 @@ class VectorArm:
             node_ids=list(run.node_ids),
             latency_ms=run.search_latency_ms,
             components=run.components,
+            lex_paths=list(run.lex_paths),
         )
 
     def answer(self, question: str, *, max_iterations: int = 12) -> AnswerResult:
@@ -735,6 +799,7 @@ class VectorArm:
             tokens_out=int(state.get("_gen_completion_tokens", 0) or 0),
             tokens_source=state.get("_gen_tokens_source"),
             retrieved_node_ids=list(run.node_ids),
+            lex_paths=list(run.lex_paths),
         )
 
     def _run_for(self, question: str, *, max_iterations: int, role: str) -> _AgentRun:
@@ -758,6 +823,7 @@ class VectorArm:
             search_latency_ms=_search_latency(dict(state)),
             node_ids=_retrieved_node_ids(dict(state)),
             components=_hit_components(dict(state)),
+            lex_paths=_lex_paths(dict(state)),
         )
         self._runs.put(question, max_iterations, run, role)
         return run
@@ -919,6 +985,8 @@ __all__ = [
     "ARM_NAMES",
     "ARM_TUKLAS",
     "ARM_VECTOR",
+    "RETRIEVAL_INSTRUMENT_ANSWER_NODE_UNION",
+    "RETRIEVAL_INSTRUMENT_WHOLE_QUESTION_SEARCH",
     "SURFACE_TUKLAS",
     "SURFACE_VECTOR",
     "TOP_K",

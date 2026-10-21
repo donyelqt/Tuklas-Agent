@@ -1409,7 +1409,7 @@ slices 1–5.
   - Both files carry a header naming what produced them, what the reader may
     not conclude, and (for the dev file) that it is a reconstruction.
 
-- [ ] **OPEN GAP — the run row records NEITHER the retrieval INSTRUMENT nor
+- [x] **OPEN GAP — the run row records NEITHER the retrieval INSTRUMENT nor
   the LEX PATH, so two runs of the same config id are not comparable.**
   - *Why it matters.* A run's row records the config, the metrics and the
     per-question rows, but not which instrument produced the retrieval
@@ -1458,6 +1458,58 @@ slices 1–5.
     `apps/api/evaluation/runner.py` (what it writes), both of which are
     outside this correction's scope, which touches only `report.py` and the
     documents.
+  - *The fix, DONE (2026-10-22, PR for `feat/run-row-instrument-and-lex-path`).*
+    The run row now carries BOTH facts. What was implemented:
+    - **The instrument.** `apps/api/evaluation/arms.py` defines
+      `RETRIEVAL_INSTRUMENT_ANSWER_NODE_UNION = "answer-node-union-v1"` (the
+      metric computed over the node ids the ANSWER was produced from, the
+      union of the agent's per-sub-question `search_nodes` results) and,
+      named for the record only, the OLD instrument
+      `RETRIEVAL_INSTRUMENT_WHOLE_QUESTION_SEARCH = "whole-question-search-v0"`
+      (a separate one-off search over the whole question, a ranking the model
+      never saw — no code path uses it). The runner records the constant in
+      the new `evaluation_runs.retrieval_instrument` column.
+    - **The lex path, reported by the layer that chooses it.**
+      `apps/api/retrieval/scoring.py` now returns a `LexPathInfo` from
+      `score_nodes` (and carries it on every `ScoredNode`): the per-document
+      path with the artifact's tokenizer version and a sha256-16 of the
+      artifact's FILE CONTENT, or `fts5-fallback`. The caller records the
+      layer's own report (`format_lex_path`); nothing re-derives the choice
+      by re-stat-ing the file. The agent's `search_nodes` trace carries it,
+      `arms.py` collects it per run, and the runner dedupes it into the new
+      `evaluation_runs.lex_paths` column (JSON list). The hash is
+      content-addressed — the same artifact hashes the same regardless of
+      mtime — so it is stable across reads and changes only when the
+      artifact's content changes.
+    - **Backward compatibility, proven.** Both columns are idempotent
+      `ALTER TABLE ADD COLUMN` migrations (`apps/api/ingestion/db.py`'s
+      existing `EVAL_COLUMN_MIGRATIONS` pattern), so they work on an
+      existing store. Verified against a COPY of the real 21 MB
+      `data/tuklas.sqlite` (the original untouched): before and after the
+      migration, `evaluation_runs` holds 2 rows and `retrieval_runs` holds
+      144, and every pre-existing cell is identical — the two runs'
+      `metrics` blobs hash the same before and after (`eval_083a4c15`
+      sha256-16 `a608400020bf866d`, `eval_a80167ab` sha256-16
+      `83f1307871fa6778`), with the two appended columns reading SQL NULL.
+    - **The sentinel.** A run recorded before this change has NULL in both
+      columns, and `load_evaluation` passes the NULL through AS NULL: not
+      recorded is a FACT about the run, and no code path or test invents a
+      value for it. `lex_paths = NULL` (not recorded) is kept distinct from
+      an empty JSON list (a recorded run whose searches reported no path).
+    - **Config untouched, on purpose.** The facts are recorded in the ROW,
+      not added to the run config, so `scripts/check_eval_config.py` and
+      the run-config parity check are unaffected (both fixtures still pass:
+      `cfg_9ba255191a96aaa9`, `cfg_0f73ff26c0d38d54`).
+    - **Forward-looking only.** This change does NOT make the two
+      already-published runs comparable: neither of them records either
+      fact, and their rows are not retro-filled. Two runs recorded AFTER
+      this change carry both facts and can be compared when they match.
+    - Tests: `apps/api/tests/test_run_provenance.py` (8 tests) pins the
+      layer-reported lex path per artifact state (present, absent, stale),
+      the two instrument constants, a new run carrying both facts, and a
+      legacy run reading as NULL for both. Gates at the time of the fix:
+      pytest 256 passed / 86 skipped (corpus-dependent, expected), ruff
+      clean, mypy clean, `check_no_vectors.py` exit 0.
   - *What the current report says instead.* The report's run identity block
     now names the instrument and the lex path, and its MEASURED LIMITATIONS
     carry the per-cause measurement above. The report does **not** say the

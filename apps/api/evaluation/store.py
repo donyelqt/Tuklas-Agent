@@ -81,6 +81,20 @@ class EvaluationRun:
     k: list[int]
     status: str = "queued"
     metrics: dict[str, Any] = field(default_factory=dict)
+    #: The retrieval INSTRUMENT that produced the run's retrieval metric:
+    #: a versioned name from ``apps.api.evaluation.arms`` (currently
+    #: ``answer-node-union-v1``, the metric computed over the node ids the
+    #: ANSWER was produced from). ``None`` on a run recorded before the
+    #: field existed - that absence is a FACT about the run, and it is
+    #: never back-filled from what we now believe the run used.
+    retrieval_instrument: str | None = None
+    #: The lex path(s) the run's retrieval calls took, as the retrieval
+    #: layer reported them (the per-document BM25 artifact's facts, or the
+    #: FTS5 fallback). ``None`` means not recorded - a run before the
+    #: field existed, or a run in which no search reported a path; an
+    #: EMPTY list is a recorded run whose searches reported none. The two
+    #: are kept distinct on purpose.
+    lex_paths: list[str] | None = None
 
     def to_record(self) -> dict[str, Any]:
         """The run row as the store writes it."""
@@ -101,6 +115,8 @@ class EvaluationRun:
             "k": self.k,
             "status": self.status,
             "metrics": self.metrics,
+            "retrieval_instrument": self.retrieval_instrument,
+            "lex_paths": self.lex_paths,
         }
 
 
@@ -150,8 +166,9 @@ def write_evaluation(
         conn.execute(
             "INSERT INTO evaluation_runs (id, dataset, dataset_snapshot, config,"
             " config_id, code_version, model, backend, temperature, seed,"
-            " judge_prompt_version, split_seed, arms, k, status, metrics, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " judge_prompt_version, split_seed, arms, k, status, metrics, created_at,"
+            " retrieval_instrument, lex_paths)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run.id,
                 run.dataset,
@@ -170,6 +187,17 @@ def write_evaluation(
                 run.status,
                 json.dumps(run.metrics, ensure_ascii=False, sort_keys=True),
                 _now(),
+                # The measurement provenance. A run that does not carry it
+                # (constructed without the fields, e.g. by an old code
+                # path) stores NULL, which reads as NOT RECORDED - never
+                # as an empty string or a path name, which would be a
+                # claim about what the run used.
+                run.retrieval_instrument,
+                (
+                    json.dumps(run.lex_paths, ensure_ascii=False)
+                    if run.lex_paths is not None
+                    else None
+                ),
             ),
         )
         conn.executemany(
@@ -305,13 +333,17 @@ def load_evaluation(db_path: str, evaluation_id: str) -> dict[str, Any] | None:
             (evaluation_id,),
         ).fetchall()
     run = dict(run_row)
-    for key in ("config", "metrics", "arms", "k"):
+    for key in ("config", "metrics", "arms", "k", "lex_paths"):
         raw = run.get(key)
         if isinstance(raw, str):
             try:
                 run[key] = json.loads(raw)
             except json.JSONDecodeError:
                 run[key] = None
+    # The measurement provenance: a run recorded BEFORE these fields
+    # existed reads back as SQL NULL. That NULL is the fact "not
+    # recorded" and is passed through AS NULL - it is never mapped to an
+    # empty string, a path name, or any inferred value.
     questions = [_question_row(dict(row)) for row in question_rows]
     return {"run": run, "questions": questions}
 
@@ -338,4 +370,5 @@ __all__ = [
     "load_evaluation",
     "new_evaluation_id",
     "write_evaluation",
+    "write_evaluation_rows",
 ]
