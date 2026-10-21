@@ -156,7 +156,12 @@ jobs:
           # same place; and keeping both out of the checkout keeps the
           # NEXT step's scan (`gitleaks detect --source .`) over the
           # repository alone, with no downloaded tarball in its path.
+          # The `trap` removes the directory again, on every exit path:
+          # the step's working directory is the checkout, and a directory
+          # left behind under /tmp is litter the runner keeps until the
+          # job ends.
           work_dir="$(mktemp -d)"
+          trap 'rm -rf "${work_dir}"' EXIT
           cd "$work_dir"
           curl -sSfL "$url" -o "$archive"
           curl -sSfL \
@@ -177,8 +182,20 @@ jobs:
           #    same. `cd`ing into the directory that holds the archive
           #    keeps that true regardless of what the runner's working
           #    directory is.
-          expected_line="$(grep -F " ${archive}" checksums.txt)"
-          if [ -z "$expected_line" ]; then
+          #
+          # The line is selected with `awk`, not `grep`, and the difference
+          # is load-bearing under `set -e`. `grep` exits 1 when it matches
+          # nothing, and a failing command substitution in an assignment
+          # aborts the shell under `set -e` -- so with `grep` the "does not
+          # list" branch below was DEAD CODE: the step died on the bare
+          # grep exit status and never printed the message naming the
+          # missing archive. `awk` exits 0 when it matches nothing, so the
+          # branch is reached and the failure names the archive.
+          # `awk` also matches the file name EXACTLY, on the second field:
+          # the archive's own name, not a prefix of it, so a `.sig` or
+          # `.zip` entry for a different asset can never be selected.
+          expected_line="$(awk -v name="${archive}" '$2 == name { print }' checksums.txt)"
+          if [ -z "${expected_line}" ]; then
             echo "gitleaks: the checksums file does not list ${archive}" >&2
             exit 1
           fi
