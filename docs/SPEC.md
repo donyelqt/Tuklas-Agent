@@ -406,8 +406,9 @@ lives at `/app/*`. Both must follow AGENTS.md conventions:
   barrel calls `createContext` at module scope and breaks SSR page-data collection).
 - **Shape system.** Radius 0 and no shadows. `text-ink-5` is for non-text decoration only
   — it fails the text contrast threshold and is banned on any readable string. Accent cyan
-  (`accent-2`) is permitted in exactly one component, `comparison-arms.tsx`, never
-  anywhere else.
+  (`accent-2`) is permitted in exactly two components, `comparison-arms.tsx` and
+  `dot-wave.tsx` (`hero-backdrop.tsx` counts as `dot-wave.tsx`'s exception), never
+  anywhere else (`docs/landing-page/DESIGN.md` section 3 is the contract).
 - **Hyphens.** Zero em-dash and zero en-dash characters in any rendered string on the
   marketing route — use the ASCII hyphen.
 - **Favicon.** The four assets in `apps/web/src/app/` (`icon.svg`, `favicon.ico`,

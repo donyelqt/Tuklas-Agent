@@ -1,6 +1,6 @@
 # Constraints (rev 2 — post adversarial review)
 
-Last reviewed: 2026-10-07 by staff-eng (rev 2 — review fixes applied, still pre-implementation).
+Last reviewed: 2026-10-07 by staff-eng (rev 2 — review fixes applied; the implementation and the measured ratchet have landed since).
 
 Agents: read this file before writing code. Do not weaken it to make a change pass.
 Tightening is silent; loosening requires human approval in the commit message.
@@ -27,7 +27,7 @@ Tightening is silent; loosening requires human approval in the commit message.
 | Lint (TS) | Zero errors from repo config | `eslint apps/web` | every edit |
 | Secrets | No findings | `gitleaks detect --redact --no-banner` | every edit, CI |
 | Vectorless quarantine + agent thinness | Script exit 0 | `python scripts/check_no_vectors.py` | task end, CI |
-| Eval model parity | Same model+backend+temperature(0)+seed across arms | `python scripts/check_eval_config.py <run-config.json>` (Day 7; until then reviewer asserts config equality in the eval PR) | CI on eval runs |
+| Eval model parity | Same model+backend+temperature(0)+seed across arms | `python scripts/check_eval_config.py <run-config.json>` (CI step "Eval run-config parity check"; `scripts/prove_check_eval_config.py` proves it fails on a violation) | CI on eval runs |
 | Tests | New/changed behavior has a test; suite green | `pytest apps/api -q` / `npm test --prefix apps/web` | task end, CI |
 | Coverage (Python, changed lines) | ≥ 80% on diff | `pytest --cov --cov-report=xml apps/api && diff-cover --compare-branch=main --fail-under=80 coverage.xml` (`diff-cover` pinned in requirements) | task end, CI |
 | SSE contract | Event order pinned incl. zero-tool-call + error cases | contract test `test_ask_stream_order` | CI |
