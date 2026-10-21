@@ -5,21 +5,29 @@ Read this file before touching anything in the repo. It is short on purpose.
 ## Project
 
 Tuklas Agent is a local-first, vectorless retrieval system for private law
-document discovery. It is a pre-implementation research artifact: the
-specification suite under `docs/` is complete and the code has not been written.
-The research question is the product, and the honest comparison against a dense
-vector baseline is the deliverable. Do not write copy, code, or comments that
-assume the result.
+document discovery. It is an implemented research artifact, not a specification:
+the suite under `docs/` is complete and the code that implements it is written --
+`apps/api/` and the `apps/web/` site, the dense baseline under `experiments/vector/`,
+and the CI gates under `scripts/`. A benchmark run is measured and reported
+(`CONSTRAINTS.md`, `data/eval-reports/`), and a report carries no verdict. The
+research question is the product, and the honest comparison against a dense vector
+baseline is still undecided. Do not write copy, code, or comments that assume the
+result.
 
 ## Repo layout
 
 ```
-apps/web/       marketing site at /, Next.js App Router   (exists, only implemented app)
-apps/api/       FastAPI service                            (specified in docs/architecture.md, not built)
-docs/           PRD, architecture, api, retrieval, evaluation, decisions, landing-page
-experiments/    evaluation harness and the dense vector baseline under vector/  (specified, not built)
-data/           corpora, splits, run artefacts             (specified, not built)
-scripts/        check_no_vectors.py, check_eval_config.py  (specified, not built)
+apps/web/       marketing site at /, Next.js App Router   (implemented)
+apps/api/       FastAPI service: agent, api, evaluation, generation, ingestion,
+                models, retrieval and tests packages     (implemented)
+docs/           PRD, SPEC, PLAN, TODO, CORPUS, architecture, api, retrieval,
+                evaluation, decisions, landing-page, lifecycle-strategy-note
+experiments/    dense vector baseline under vector/       (implemented)
+data/           dataset splits and eval reports (tracked); corpora and indexes
+                are local and gitignored                 (implemented)
+scripts/        CI gates: check_no_vectors.py, check_eval_config.py,
+                check_reproducibility.py, fetch_corpus.py, prove_*
+CONSTRAINTS.md  binding quality floor; the measured ratchet lives here
 ```
 
 ## The engineering floor
@@ -57,9 +65,10 @@ preferences.
 - No superiority claims. Never write outperforms, beats, better than, superior, most
   accurate, best. The outcome of the vectorless versus vector comparison is unknown
   and `docs/PRD.md` says so.
-- No fabricated metrics. Every retrieval and latency metric in `CONSTRAINTS.md` is
-  currently `unmeasured`. No invented Recall@5, MRR, latency, token counts, and no
-  fabricated precision such as `99.99%` or `4.1x`.
+- No fabricated metrics. Every metric comes from a real run, and `CONSTRAINTS.md` is
+  the authority for the measured values (see its dated ratchet section). No invented
+  Recall@5, MRR, latency, token counts, and no fabricated precision such as `99.99%`
+  or `4.1x`: a number that was not measured does not exist.
 - No legal-advice phrasing in copy, prompts, or UI. The banned phrases are `you should`,
   `I advise`, `your case`, `you must`. Research tool framing only. The persistent
   disclaimer must render on the page.
@@ -108,8 +117,10 @@ npm run start                       # serve the production build for browser ver
 - Radius 0 and no shadows is the shape system, not an oversight.
 - `text-ink-5` is for non-text decoration only. It fails the text contrast threshold and
   is banned on any string a user must read.
-- Accent cyan (`accent-2`) is permitted in exactly one component,
-  `comparison-arms.tsx`. Never anywhere else.
+- Accent cyan (`accent-2`) is permitted in exactly two components: `comparison-arms.tsx`,
+  as the labelled dense-baseline marker, and `dot-wave.tsx`'s ambient canvas
+  (`hero-backdrop.tsx` counts as the same exception, per DESIGN.md section 3). Never on a
+  CTA, a link, a focus ring, or any text a user must read.
 - Motion animates only `opacity` and `transform`. `window.addEventListener('scroll')` is
   banned; use IntersectionObserver.
 
