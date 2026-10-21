@@ -1258,6 +1258,171 @@ slices 1–5.
 
 ---
 
+## Day 9 — Report correction: the citation breakdown, and the instrument/store state (2026-10-21)
+
+- [x] **The published citation breakdown was not produced by ONE rule, and the
+  sentence built on it is WITHDRAWN.**
+  - *What was published.* The previous report's `CITATION_METRIC_NOTE` carried
+    a per-arm breakdown of the citation failures and the sentence "the dense
+    arm is the one with a real miscitation problem, at 39% of its failures",
+    built on the dense arm's "24 model cited badly (39%)" figure.
+  - *The CORRECTION, measured.* The two published numbers came from two
+    DIFFERENT rules. A search of **768,848 rule variants** — each a
+    (content-word definition, article-extraction rule, node side, overlap
+    denominator, threshold) combination — found **NO rule reproducing all
+    four published splits** (test-48 vectorless 52/1/3, test-48 dense
+    34/24/4, dev-24 vectorless 39/4/2, dev-24 dense 41/11/0), and **NO rule
+    reproducing the two arms' published splits of the same split**: 3,144 of
+    the rules reproduce both VECTORLESS published splits and 336 reproduce
+    both DENSE published splits, but the two sets do not intersect, so the
+    two published numbers came from two DIFFERENT rules.
+  - *The dense split could not have come from the rule the previous note
+    stated — and this is decidable WITHOUT any search.* That rule required
+    the SENTENCE to name an article, and on test-48 only **6 of the dense
+    arm's 58 resolvable failing rows** have a sentence naming a DIFFERENT
+    article, so any rule of that shape can class at most 6 rows as "model" —
+    the published split said **24**. On dev-24 the same bound is **10** and
+    the published split said **11**. So the "24 model cited badly (39%)"
+    figure and the sentence built on it are **WITHDRAWN**.
+  - *What replaces it.* ONE uniform rule, **R9**, applied identically to every
+    (run, arm) pair: for each (marker, sentence) pair whose cited node does
+    not support the sentence under the shared scorer at the run's threshold —
+    **MARKER**, the marker names no citation in the row's citation list (a
+    NOTATION failure, not a citation error); **MODEL**, the cited node's OWN
+    HEADING names a statutory article A, AND the sentence does NOT name A,
+    AND the sentence's content words have essentially no overlap with the
+    node's (overlap <= 0.20); **SCORER**, everything else, including every
+    case where the cited node IS the article the sentence names. The rule's
+    two definitions are stated in the note so a reader can reproduce it from
+    the stored run alone: **content words** are the lowercase alphanumeric
+    tokens of length >= 2 with the repository's own versioned stoplist removed
+    (`apps/api/agent/stoplist.py`, `STOPLIST`, version `fts5-english-v1`, the
+    list the run configs already pin); **overlap** is
+    `|sentence content words AND node content words| / |sentence content words|`
+    (the subject-overlap, normalised by the SENTENCE), with the node's
+    content words taken from its TITLE and TEXT together; and an article
+    reference is read as a **LIST**, so "Articles 55, 61, 68" yields all
+    three numbers. The marker-to-node mapping is POSITIONAL: marker m is the
+    m-th id in `citation_node_ids`.
+  - *MEASURED by R9, on the stored runs (no re-run):*
+
+    | run | arm | failing claims | marker | model | remainder |
+    |---|---|---|---|---|---|
+    | test-48 | vectorless | 56 | 3 | 7 (13%) | 46 |
+    | test-48 | dense | 62 | 4 | 11 (18%) | 47 |
+    | dev-24 | vectorless | 45 | 2 | 12 (27%) | 31 |
+    | dev-24 | dense | 52 | 0 | 13 (25%) | 39 |
+
+  - *The mechanically decidable count* is therefore **11 of 62 (18%)** on
+    test-48 and **13 of 52 (25%)** on dev-24.
+  - *The number remains a LOWER BOUND, dominated by the SCORER's strictness.*
+    The sharpest SCORER case is a sentence reading "Article 53 and Article 64
+    discuss requisites for marriage, not for offers or acceptances" citing
+    Article 53, whose ENTIRE text is a 93-character lead-in — unambiguously
+    correct, and classed SCORER. The vectorless arm's remainder is ON the
+    sentence's subject (median subject-overlap **0.33**), so its citations
+    are about the sentence's subject and the string rule cannot match them.
+    The two arms' lower bounds are **NOT COMPARABLE** with each other.
+  - *The dense arm's REAL weakness* is the off-subject block INSIDE its
+    remainder: **16 of its 47 test-48 remainder claims share ZERO content
+    words with the cited node**, across 5 questions — e.g. an answer stating
+    "The provided evidence does not contain any information relevant to
+    explicate spectrometer centrifuge embargo" and then citing five unrelated
+    provisions. Those rows are unreachable by R9's MODEL bucket, because
+    their sentences name no article at all.
+  - *The reports were re-rendered from the SAME stored runs*
+    (`eval_447127eb`, `eval_ff373231`), NOT re-run, and the re-render was
+    proved faithful: **100 of 100** stored aggregate numbers appear in each
+    rendered report, zero mismatches.
+
+- [x] **The previous report of these splits is PRESERVED, quarantined, and
+  is NOT a baseline.**
+  - `data/eval-reports/v1-test-OLD-INSTRUMENT-AND-STORE.md` — the old test
+    report, **recovered from git** with
+    `git show eb36a52:data/eval-reports/v1-test.md > <file>`. Its body is
+    byte-identical to git blob `092545c3af1d46e7da98bba98af4afd27d8229a1`
+    (sha256 `db8a4c2b75b8b9e205db2fdb075ce74f6fb88022debe602f3297d5c612c81db4`,
+    5308 bytes).
+  - `data/eval-reports/v1-dev-OLD-INSTRUMENT-AND-STORE.md` — the old dev
+    report, which **did NOT exist in git** and is therefore
+    **RECONSTRUCTED** by rendering the stored run `eval_083a4c15` (config
+    `cfg_5a3d6973caf7bd43`, judge prompt `judge-v1`) with the OLD renderer,
+    recovered from `eb36a52:apps/api/evaluation/report.py`. The **method was
+    validated** on the test report first: rendering `eval_a80167ab` with the
+    old renderer reproduces the published PR#31 test file byte-for-byte
+    (sha256 `db8a4c2b75b8b9e205db2fdb075ce74f6fb88022debe602f3297d5c612c81db4`,
+    5308 bytes). The reconstruction's numbers were checked against the
+    stored run row: 100 of 100 found, zero mismatches.
+  - Both files carry a header naming what produced them, what the reader may
+    not conclude, and (for the dev file) that it is a reconstruction.
+
+- [ ] **OPEN GAP — the run row records NEITHER the retrieval INSTRUMENT nor
+  the LEX PATH, so two runs of the same config id are not comparable.**
+  - *Why it matters.* A run's row records the config, the metrics and the
+    per-question rows, but not which instrument produced the retrieval
+    metric, and not which lex path produced the scores. The instrument
+    changed between the two published reports (the metric is now computed
+    over the node ids the ANSWER was produced from — the union of the
+    agent's per-sub-question `search_nodes` results — where the earlier
+    report computed it over a separate one-off search over the whole
+    question, a ranking the model never saw). The lex layer changed too,
+    and the repository does not record that either: the earlier report was
+    measured with the per-document BM25 artifact
+    `data/indexes/<doc-id>/bm25.json` PRESENT, so the vectorless arm's lex
+    component came from that document's own rank-bm25 model; the current
+    report was measured with it ABSENT, so the retrieval layer fell back to
+    FTS5, whose N and average document length are TABLE-GLOBAL across every
+    ingested document (`apps/api/retrieval/scoring.py` says so itself:
+    "can still drift when another document is ingested; reproducibility
+    holds only until the next ingest"). `data/indexes/` is gitignored, so a
+    reader of the run row alone **cannot tell** that the two runs were
+    measured under different lex layers.
+  - *MEASURED, per cause, with everything else held fixed.* Vectorless arm,
+    test-48: the instrument change alone moves recall@5 by **-0.061**
+    (0.7927 -> 0.7317) and mrr@10 by **-0.1028**; the lex-layer change alone
+    moves recall@5 by **-0.0122** (0.7927 -> 0.7805) and mrr@10 by
+    **+0.0187**; the interaction between the two is **+0.0122** on
+    recall@5. Dense arm, test-48: the instrument change alone moves
+    recall@5 by **-0.0854** (0.7927 -> 0.7073) at the OLD surface and
+    **-0.0610** (0.7683 -> 0.7073) at the NEW surface, and mrr@10 by
+    **-0.1109** and **-0.0918**. The dense arm is NOT affected by the lex
+    layer at all — it builds its own index in-process and has no persisted
+    artifact to lose — so its whole change is the instrument plus its three
+    surface changes (the corpus cut to 2,392 nodes, the de-duplicated title,
+    the identifier-stripped query), which together net **-0.0244** of
+    recall@5 and **-0.0262** of mrr@10, of which the node-set cut (**+0.0244**)
+    and the de-duplicated title (**-0.0244**) cancel to within 0.001. The
+    instrument is the LARGEST SINGLE EFFECT in BOTH arms, and it is not the
+    whole story in either.
+  - *The fix, NOT DONE.* Record BOTH in the run row: the id of the
+    retrieval instrument that produced the metric, and the lex path that
+    produced the scores (the per-document BM25 artifact's presence or
+    absence, and the artifact's own hash or tokenizer version when present).
+    Until the row carries them, a reader of a run row cannot tell which
+    measurement they are looking at, and two runs of the same config id are
+    not comparable. **This is not done** — it needs a change to
+    `apps/api/evaluation/store.py` (the run row's shape) and to
+    `apps/api/evaluation/runner.py` (what it writes), both of which are
+    outside this correction's scope, which touches only `report.py` and the
+    documents.
+  - *What the current report says instead.* The report's run identity block
+    now names the instrument and the lex path, and its MEASURED LIMITATIONS
+    carry the per-cause measurement above. The report does **not** say the
+    vectorless arm got worse, and it does **not** say it got better: the
+    difference is attributable to the instrument and the store state, and to
+    nothing in the arm's ranking CODE. The retrieval
+    layer's **tree is BYTE-IDENTICAL** between the two runs: the run that
+    produced the earlier report was measured at the tree whose root tree
+    object is `4d8ad7e6` (commit `25272c1`), the current run at `04f6dcae`
+    (commit `eb36a52`), and **both carry the same git tree object for
+    `apps/api/retrieval`** (`d19c4365`) — `git diff 25272c1:apps/api/retrieval
+    eb36a52:apps/api/retrieval` is empty. So nothing in the ranking code
+    changed between the two runs, and the tree hash **is** cited, because it
+    is a real git object a reader can check. (An earlier draft of this entry
+    said the layer's files were *not* byte-identical and that no tree hash
+    could be cited; that was **wrong** — the search had looked for a sha256
+    of the node rows rather than for a git tree object.)
+
 ## What MUST be true before the first benchmark run is reportable
 
 From the eval-readiness audit — a run violating any of these **completes but cannot be
