@@ -59,15 +59,21 @@ And after the numbers:
     at the top) and the top-8 evidence window (which can evict every
     supporter of one sub-question);
   - `citation_accuracy` is a MEASUREMENT OF A PAIR - the model's citations
-    AND the support rule's sensitivity. A score below 1.0 has two possible
-    causes the number does not separate: the SCORER is strict (the cited
-    node is on topic and the sentence's content words are in it, but the
-    model wrote legalese and no string rule can match a paraphrase to a
-    provision), or the MODEL cited badly (the cited node is off the
-    sentence's topic). A third mode is neither: the model wrote a
-    STATUTORY ARTICLE NUMBER in square brackets, the marker convention
-    reads it as a citation marker, and no such citation exists. The number
-    is a LOWER BOUND on citation quality, not a measurement of it;
+    AND the support rule's sensitivity - and the report carries the
+    MEASURED BREAKDOWN of its failures, because the ratio alone is
+    misleading. Re-adjudicated against the stored run: on test-48 the
+    vectorless arm's 56 failures are 52 SCORER SENSITIVITY (93%), 1 MODEL
+    CITED BADLY (2%) and 3 MARKER CONVENTION (5%); the dense arm's 62
+    failures are 34 scorer sensitivity (55%), 24 model cited badly (39%)
+    and 4 marker convention (6%). On dev-24: vectorless 45 failures = 39
+    scorer (87%), 4 model (9%), 2 marker (4%); dense 52 failures = 41
+    scorer (79%), 11 model (21%), 0 marker. So the number is DOMINATED BY
+    THE SCORER'S STRICTNESS, and reading 0.542 and 0.458 as "the model
+    cites badly 54% and 46% of the time" would be WRONG - the vectorless
+    figure would be wrong by a factor of about fifty. The number is a
+    LOWER BOUND on citation quality, not a measurement of it, and that
+    lower bound is loose by DIFFERENT AMOUNTS for the two arms, so the two
+    arms' numbers are not comparable with each other either;
   - the GENERATION half of the reproducibility acceptance ("generation
     within ±5pp", `evaluation.md` §8) is UNCHECKED by anything in this
     repository: it needs a live local model backend, and the report says

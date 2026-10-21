@@ -1143,31 +1143,61 @@ slices 1–5.
     (marker m -> the m-th stored node id) reproduces the stored
     `citations_valid` for 87 of 87 stored rows, so the classification is
     against the same measurement the report publishes.*
-  - *Measured on test-48:*
+  - *Measured, by the rule above, on BOTH published runs:*
 
-    | arm | claims | failed | scorer strict (paraphrase) | scorer strict (summary) | model cited badly | stray bracket |
+    | run | arm | claims | failed | scorer sensitivity | model cited badly | marker convention |
     |---|---|---|---|---|---|---|
-    | vectorless | 145 | 56 | 21 | 9 | 23 | 3 |
-    | dense | 143 | 62 | 19 | 5 | 34 | 4 |
+    | test-48 | vectorless | 145 | 56 | 52 (93%) | 1 (2%) | 3 (5%) |
+    | test-48 | dense | 143 | 62 | 34 (55%) | 24 (39%) | 4 (6%) |
+    | dev-24 | vectorless | 119 | 45 | 39 (87%) | 4 (9%) | 2 (4%) |
+    | dev-24 | dense | 131 | 52 | 41 (79%) | 11 (21%) | 0 (0%) |
 
+  - *The classification RULE, so a reader can judge it:* a failure is
+    "the model cited badly" only if the sentence names an article the
+    cited node is not (and whose text does not mention it) AND the
+    node's heading and text are both off the sentence's subject; a
+    failure whose marker names no citation is a marker-convention
+    failure; everything else is scorer sensitivity.
+  - *The two scorer-sensitivity cases, as measured:* the cited node is
+    ON the sentence's subject (or IS the article the sentence names, or
+    its text names that article) and the string rule simply did not
+    match. The sharpest case is a sentence reading "Article 53 and
+    Article 64 discuss requisites for marriage", citing Article 53, whose
+    ENTIRE text is a 93-character lead-in. The citation is unambiguously
+    correct, and no string rule can match a proposition ABOUT a
+    provision to the provision's own words.
+  - *The marker-convention case, as measured:* the model wrote a
+    STATUTORY ARTICLE NUMBER in square brackets ("[1619]") where the
+    prompt asks for a part number, and the marker convention reads it as
+    a citation marker. In 5 of the 7 such cases the article the model
+    named IS in the answer's own citation list, so the model was citing
+    the right provision in the wrong notation, and the support check
+    would PASS if the marker were resolved to that article. That makes it
+    a NOTATION violation — neither a citation error nor scorer
+    sensitivity.
   - *So the two numbers are MEASUREMENTS OF A PAIR* — the model's
     citations AND the support rule's sensitivity — and the pair splits
-    three ways: the SCORER is strict (the cited node is on the sentence's
-    topic and the sentence's content words ARE in the node, but the model
-    wrote legalese and no string rule can match a paraphrase to a
-    provision); the MODEL cited badly (the cited node is off the
-    sentence's topic); and a third mode that is neither, where the model
-    wrote a STATUTORY ARTICLE NUMBER in square brackets ("[1619]"), the
-    marker convention read it as a citation marker, and no such citation
-    exists.
-  - *The report now says so* (`CITATION_METRIC_NOTE`): the number is a
-    measurement of the pair, a reader must not read it as "the model
-    cites badly" without knowing how much of it is the string rule's
-    strictness, and the number is a LOWER BOUND on citation quality
-    rather than a measurement of it. The report does NOT put a number on
-    the split, because the split needs the citation list's marker
-    numbers and the run stores only the node ids — which is itself
-    recorded here rather than papered over.
+    three ways as tabulated above.
+  - *The report now carries the BREAKDOWN* (`CITATION_METRIC_NOTE`): the
+    per-arm counts, the rule, the two worked examples, and the
+    consequence stated plainly — the number is DOMINATED BY THE SCORER'S
+    STRICTNESS rather than by citation quality. For the vectorless arm
+    93% of the failures are the string rule failing to match a CORRECT
+    citation; for the dense arm 55% are, and the dense arm is the one
+    with a real miscitation problem, at 39% of its failures. Reading
+    0.542 and 0.458 as "the model cites badly 54% and 46% of the time"
+    would be WRONG, and the vectorless figure would be wrong by a factor
+    of about fifty. The number is a LOWER BOUND on citation quality, not
+    a measurement of it, and that lower bound is loose by DIFFERENT
+    AMOUNTS for the two arms, so the two arms' numbers are not
+    comparable with each other either.
+  - *The breakdown is not reproducible from a stored run alone,* because
+    the run records the citation list's node ids but not its marker
+    numbers. It was measured against the store by replaying the arms, and
+    the method is stated so a reader can repeat it. The reports were
+    re-rendered from the SAME stored runs (eval_447127eb, eval_ff373231),
+    not re-run, and the re-render was proved faithful: 132 of 132
+    numbers match the stored aggregates, zero mismatches.
 
 ---
 
