@@ -139,16 +139,81 @@ jobs:
       - name: Install gitleaks
         run: |
           set -euo pipefail
-          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -sSfL "$url" -o gitleaks.tar.gz
+          # The archive is downloaded under the name the release's own
+          # checksums file lists it under, because `sha256sum --check` looks
+          # up the file by the NAME in the checksums line. Downloading it as
+          # `gitleaks.tar.gz` and then checking the name
+          # `gitleaks_<version>_linux_x64.tar.gz` makes sha256sum look for a
+          # file that does not exist under the name it is checking, and the
+          # step fails with "FAILED open or read" before the scan ever runs.
+          # The archive's own name is the one that verifies.
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          # The download goes into its own directory, OUTSIDE the checkout.
+          # `sha256sum --check` resolves the file by the name in the
+          # checksums line, relative to the working directory, so the
+          # archive and the checksums file have to be looked up from the
+          # same place; and keeping both out of the checkout keeps the
+          # NEXT step's scan (`gitleaks detect --source .`) over the
+          # repository alone, with no downloaded tarball in its path.
+          # The `trap` removes the directory again, on every exit path:
+          # the step's working directory is the checkout, and a directory
+          # left behind under /tmp is litter the runner keeps until the
+          # job ends.
+          work_dir="$(mktemp -d)"
+          trap 'rm -rf "${work_dir}"' EXIT
+          cd "$work_dir"
+          curl -sSfL "$url" -o "$archive"
           curl -sSfL \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" \
             -o checksums.txt
-          grep "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" checksums.txt \
-            | sha256sum --check --strict
-          tar -xzf gitleaks.tar.gz gitleaks
+          # The checksums line is read into a variable, not piped straight
+          # into `sha256sum --check`. Two reasons, both about the gate
+          # actually being a gate:
+          #
+          # 1. `grep <pattern> file | sha256sum --check` reads the file
+          #    list from STDIN, and if the grep matches NOTHING the check
+          #    sees an empty list and reports "no properly formatted
+          #    SHA256 checksum lines found" -- a failure, but one that says
+          #    nothing about WHICH file was expected. Selecting the line
+          #    first makes a missing entry fail loudly, by name.
+          # 2. `sha256sum --check` verifies the file NAMED in the line, so
+          #    the name in the line and the name on disk have to be the
+          #    same. `cd`ing into the directory that holds the archive
+          #    keeps that true regardless of what the runner's working
+          #    directory is.
+          #
+          # The line is selected with `awk`, not `grep`, and the difference
+          # is load-bearing under `set -e`. `grep` exits 1 when it matches
+          # nothing, and a failing command substitution in an assignment
+          # aborts the shell under `set -e` -- so with `grep` the "does not
+          # list" branch below was DEAD CODE: the step died on the bare
+          # grep exit status and never printed the message naming the
+          # missing archive. `awk` exits 0 when it matches nothing, so the
+          # branch is reached and the failure names the archive.
+          # `awk` also matches the file name EXACTLY, on the second field:
+          # the archive's own name, not a prefix of it, so a `.sig` or
+          # `.zip` entry for a different asset can never be selected.
+          expected_line="$(awk -v name="${archive}" '$2 == name { print }' checksums.txt)"
+          if [ -z "${expected_line}" ]; then
+            echo "gitleaks: the checksums file does not list ${archive}" >&2
+            exit 1
+          fi
+          echo "expected: ${expected_line}"
+          echo "${expected_line}" | sha256sum --check --strict
+          tar -xzf "$archive" gitleaks
           sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
-          gitleaks version
+          # The version the binary REPORTS must be the version that was
+          # pinned above. The checksum proves the bytes are the ones the
+          # release published; this proves the release is the one this
+          # workflow asked for, so a silently re-pointed download cannot
+          # become the scanner.
+          installed_version="$(gitleaks version)"
+          echo "installed: gitleaks ${installed_version}"
+          if [ "$installed_version" != "${GITLEAKS_VERSION}" ]; then
+            echo "gitleaks: expected version ${GITLEAKS_VERSION}, got ${installed_version}" >&2
+            exit 1
+          fi
 
       - name: gitleaks
         run: gitleaks detect --redact --no-banner --source .

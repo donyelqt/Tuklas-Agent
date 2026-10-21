@@ -288,6 +288,7 @@ def run_once_arms(questions: list[tuple[str, str]]) -> dict[str, Any]:
     the evaluation reports, computed per arm from the arm's OWN ranking.
     """
     import apps.api.retrieval.scoring as scoring
+    from apps.api.agent.graph import StubGenerator
     from apps.api.evaluation.arms import ARM_TUKLAS, ARM_VECTOR, TuklasArm, VectorArm
     from apps.api.ingestion.service import ingest_pdf
     from apps.api.retrieval.index import build_indexes
@@ -302,9 +303,26 @@ def run_once_arms(questions: list[tuple[str, str]]) -> dict[str, Any]:
         original_root = scoring.INDEX_ROOT
         scoring.INDEX_ROOT = tmp_path / "idx"
         try:
+            # The arms run the WHOLE agent graph, and the graph's last node
+            # is ``generate``. An arm built without a generator falls back
+            # to ``generator_from_env()`` -- the REAL local LLM -- so on a
+            # machine with no model backend the arms pass died with
+            # ``LLM_UNAVAILABLE`` before it compared anything. The
+            # deterministic stub is what makes this pass model-free, which
+            # is what the script promises: the GENERATION half of the
+            # acceptance is explicitly NOT checked here.
+            #
+            # The stub does not change what the pass MEASURES. The
+            # generation node is TERMINAL in the graph (it runs after
+            # ``sufficiency_gate`` and before ``END``), and the ranking
+            # this pass compares comes from the agent's own
+            # ``search_nodes`` trace, which the stub never touches. The
+            # stub only decides what the answer text is, and it honours
+            # the gate exactly as the real service does.
+            generator = StubGenerator()
             arms = {
-                ARM_TUKLAS: TuklasArm(db_path, document.id),
-                ARM_VECTOR: VectorArm(db_path, document.id),
+                ARM_TUKLAS: TuklasArm(db_path, document.id, generator=generator),
+                ARM_VECTOR: VectorArm(db_path, document.id, generator=generator),
             }
             per_arm: dict[str, list[dict[str, Any]]] = {}
             for arm_name, arm in arms.items():
