@@ -564,6 +564,11 @@ points at.
     bytes with them. The loader is restored, with the reason recorded in
     `next.config.ts` so the next person does not remove it again.
 
+  - *Slice branches:* `feat/day5-api-routes-and-explorer` (PR #28, merged as
+    `f312413`) and `fix/day5-identifier-precedence` (PR #29, merged as
+    `e838cca`). Both branches are kept on the remote — the branch name is the
+    visible record that this work was a slice.
+
 ---
 
 ## Day 6 — Slice 6: Evaluation framework (both arms + metrics)
@@ -817,6 +822,10 @@ slices 1–5.
      per-question rows are now written as they are produced so an interrupted run
      keeps what it finished.
 
+  - *Slice branch:* `feat/day6-evaluation-framework` (PR #30, merged as
+    `613acd4`). The branch is kept on the remote — the branch name is the
+    visible record that this work was a slice.
+
 ---
 
 ## Day 7 — Requirements, CI, reproducibility
@@ -1007,6 +1016,10 @@ slices 1–5.
     model backend, and a CI step that silently skipped when no model was
     present would prove nothing. The report now carries the same
     disclosure.
+
+  - *Slice branch:* `feat/day7-ci-and-requirements` (PR #31, merged as
+    `eb36a52`). The branch is kept on the remote — the branch name is the
+    visible record that this work was a slice.
 
 ---
 
