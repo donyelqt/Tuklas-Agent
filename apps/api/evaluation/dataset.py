@@ -408,20 +408,31 @@ def gold_overlap(dev: Dataset, test: Dataset) -> dict[str, Any]:
     ]
     answerable = [question for question in test.questions if question.answerable]
     distinct = {gold for question in answerable for gold in question.gold_nodes}
+    # The DEV split's own effective sample size, beside the test split's.
+    # Both are properties of the split each is named for, so a caller that
+    # wants to state a share of the dev split's golds reads the DEV field
+    # and a caller that wants the test split's reads the TEST one. A single
+    # field cannot serve both: it holds one split's count, and a report that
+    # reads it under the other split's name prints the wrong split's number
+    # while the field name still reads as correct.
+    dev_answerable = [question for question in dev.questions if question.answerable]
+    dev_distinct = {gold for question in dev_answerable for gold in question.gold_nodes}
     return {
         "shared_gold_nodes": shared,
         "n_shared_gold_nodes": len(shared),
         "n_test_gold_nodes": len(test_golds),
         "shared_fraction_of_test_golds": len(shared) / max(1, len(test_golds)),
+        "shared_fraction_of_dev_golds": len(shared) / max(1, len(dev_distinct)),
         "test_questions_fully_contained_in_dev": tainted,
         "n_test_questions": len(test.questions),
         "n_test_answerable": len(answerable),
         "n_distinct_test_gold_provisions": len(distinct),
+        "n_distinct_dev_gold_provisions": len(dev_distinct),
     }
 
 
-def effective_n(test: Dataset) -> int:
-    """The number of INDEPENDENT measurements in the test split.
+def effective_n(split: Dataset) -> int:
+    """The number of INDEPENDENT measurements in a split.
 
     The report says n=41, and 41 is the number of answerable test
     questions. It is not the number of independent observations: six gold
@@ -429,14 +440,16 @@ def effective_n(test: Dataset) -> int:
     success on one of them moves several rows at once, and the reported
     per-category gaps move in steps of 1/n that are larger than they look.
 
-    This returns the number of DISTINCT gold provisions among the
+    This returns the number of DISTINCT gold provisions among the split's
     answerable questions, so a reader can see the effective sample size
-    next to the nominal one.
+    next to the nominal one. It is a property of ONE split, and it is
+    asked of whichever split a report is describing - the dev report's
+    effective sample size is the dev split's, not the test split's.
     """
     return len(
         {
             gold
-            for question in test.questions
+            for question in split.questions
             if question.answerable
             for gold in question.gold_nodes
         }

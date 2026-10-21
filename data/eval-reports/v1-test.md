@@ -214,9 +214,20 @@ MEASURED LIMITATIONS
   OWN HEADING names a statutory article A, AND the sentence does NOT name
   A, AND the sentence's content words have essentially no overlap with the
   node's (overlap <= 0.20) (a citation to a provision the sentence is not
-  about); SCORER, everything else, including every case where the cited
-  node IS the article the sentence names. THE TWO DEFINITIONS THE RULE
-  NEEDS, so a reader can reproduce it: CONTENT WORDS are the lowercase
+  about); and REMAINDER (R9's third bucket, the SCORER bucket, printed as
+  'remainder'), everything else, including every case where the cited node
+  IS the article the sentence names. THE REMAINDER SPLITS MECHANICALLY into
+  two more buckets, with the SAME overlap measure, and BOTH ARE PUBLISHED:
+  OFF-SUBJECT, a remainder claim whose sentence shares NO content word with
+  the cited node (overlap == 0) - the cited node is not about the
+  sentence's subject at all, which is a LOWER BOUND on real miscitations;
+  and ON-SUBJECT, a remainder claim with overlap > 0 - the cited node IS
+  about the sentence's subject, and no string rule can match a proposition
+  ABOUT a provision to the provision's own words, so this is most likely
+  the scorer being strict. The three original buckets are NOT renumbered
+  and NOT dropped: MARKER, MODEL and the remainder are all still published,
+  the remainder both whole and as its two parts. THE THREE DEFINITIONS THE
+  RULE NEEDS, so a reader can reproduce it: CONTENT WORDS are the lowercase
   alphanumeric tokens of length >= 2 of the text, with the repository's own
   versioned stoplist removed (apps/api/agent/stoplist.py, STOPLIST, version
   fts5-english-v1, the list the run configs already pin); OVERLAP is
@@ -224,55 +235,87 @@ MEASURED LIMITATIONS
   content words| - the subject-overlap, normalised by the SENTENCE - with
   the node's content words taken from its TITLE and its TEXT together; and
   an ARTICLE REFERENCE is read as a LIST, so 'Articles 55, 61, 68' yields
-  all three numbers. WHAT A READER NEEDS TO REPRODUCE IT: the run's
-  retrieval_runs rows (answer_markdown, citation_node_ids, citations_valid)
-  and the nodes table (id, title, text). Nothing else - no model, no index,
-  no re-run. The marker-to-node mapping is POSITIONAL: marker m is the m-th
-  id in citation_node_ids. MEASURED, by the rule above, on the two
-  published runs: the test-48 vectorless arm's 56 failing claims are 3
-  MARKER, 7 MODEL (13%) and 46 REMAINDER; the test-48 dense arm's 62 are 4
-  marker, 11 model (18%) and 47 remainder; the dev-24 vectorless arm's 45
-  are 2 marker, 12 model (27%) and 31 remainder; the dev-24 dense arm's 52
-  are 0 marker, 13 model (25%) and 39 remainder. THE CORRECTION, stated
-  explicitly: the previous version of this note published 52 / 1 / 3
-  (vectorless) and 34 / 24 / 4 (dense) on test-48, and 39 / 4 / 2
-  (vectorless) and 41 / 11 / 0 (dense) on come from ONE rule. A search of
-  768,848 rule variants - each a (content-word definition,
-  article-extraction rule, node side, overlap denominator, threshold)
-  combination - found NO rule reproducing all four published splits, and NO
-  rule reproducing the two arms' published splits of the SAME split: 3,144
-  of the rules reproduce both VECTORLESS published splits and 336 reproduce
-  both DENSE published splits, but the two sets do not intersect, so the
-  two published numbers came from two DIFFERENT rules. R9 as stated in this
-  note reproduces NEITHER published split, and the dense split could not
-  have come from the rule the previous note stated - which is decidable
-  WITHOUT any search: that rule required the SENTENCE to name an article,
-  and on test-48 only 6 of the dense arm's 58 resolvable failing rows have
-  a sentence naming a DIFFERENT article, so any rule of that shape can
-  class at most 6 rows as 'model' - the published split says 24. On dev-24
-  the same bound is 10 and the published split says 11. So the '24 model
-  cited badly (39%)' figure and the sentence built on it - 'the dense arm
-  is the one with a real miscitation problem, at 39% of its failures' - are
-  WITHDRAWN. What replaces them is this note's own four counts: the
-  mechanically decidable count is 11 of 62 (18%) and 7 of 56 (13%) on
-  test-48, and 13 of 52 (25%) and 12 of 45 (27%) on dev-24, for the dense
-  and the vectorless arm respectively. THE NUMBER IS A LOWER BOUND on
-  citation quality, dominated by the SCORER's strictness: no string rule
-  can match a proposition ABOUT a provision to the provision's own words.
-  The sharpest SCORER case is a sentence reading 'Article 53 and Article 64
-  discuss requisites for marriage, not for offers or acceptances' citing
-  Article 53, whose ENTIRE text is a 93-character lead-in - unambiguously
-  correct, and classed SCORER. The vectorless arm's remainder is ON the
-  sentence's subject: its median subject-overlap is 0.33, so its citations
-  are about the sentence's subject and the string rule cannot match them.
-  The two arms' lower bounds are NOT COMPARABLE with each other, and the
-  dense arm's REAL weakness is the off-subject block INSIDE its remainder:
-  16 of its 47 test-48 remainder claims share ZERO content words with the
-  cited node, in 5 questions - for example an answer stating 'The provided
+  all three numbers; the heading is read case-INSENSITIVELY, because the
+  corpus carries both 'Article 213.' and 'ARTICLE 437.', and the FIRST
+  number in it is the node's own article. WHAT A READER NEEDS TO REPRODUCE
+  IT: the run's retrieval_runs rows (answer_markdown, citation_node_ids,
+  citations_valid) and the nodes table (id, title, text). Nothing else - no
+  model, no index, no re-run. The marker-to-node mapping is POSITIONAL:
+  marker m is the m-th id in citation_node_ids. MEASURED, by the rule
+  above, on the two published runs, as failing / marker / model /
+  off-subject / on-subject, the REMAINDER being the last two added
+  together: the test-48 vectorless arm's 56 failing claims are 3 MARKER, 7
+  MODEL (13%), 0 OFF-SUBJECT and 46 ON-SUBJECT, remainder 46; the test-48
+  dense arm's 62 are 4 marker, 11 model (18%), 16 off-subject and 31
+  on-subject, remainder 47; the dev-24 vectorless arm's 45 are 2 marker, 12
+  model (27%), 0 off-subject and 31 on-subject, remainder 31; the dev-24
+  dense arm's 52 are 0 marker, 13 model (25%), 0 off-subject and 39
+  on-subject, remainder 39. BOTH ARMS' OFF-SUBJECT COUNTS ARE PUBLISHED,
+  with the per-QUESTION SPREAD of the rows behind them, because one arm's
+  count alone reads as a comparison: the test-48 dense arm's 16 off-subject
+  claims are 16 of its 47 remainder claims, and they span 5 QUESTIONS with
+  5 in the largest single one (5, 4, 3, 2 and 2 claims in each) - a few
+  questions' worth of an answer about something else, not a property of
+  every question; the test-48 VECTORLESS arm's off-subject count is 0 of
+  its 46 remainder claims, spanning 0 questions, largest 0; on dev-24 both
+  arms' off-subject counts are 0, spanning 0 questions each (0 of the dense
+  arm's 39 remainder claims and 0 of the vectorless arm's 31, largest 0 in
+  either arm). All 16 of the test-48 dense arm's off-subject claims cite a
+  node whose heading names NO article at all - 9 cite 'SECTION 3.', 3
+  'SECTION 4', 2 'SUBSECTION 3. Rescission and Nullity of Partition', 1
+  'SECTION 5' and 1 'SUBSECTION 2. Warranty Against Hidden Defects of or
+  Encumbrances Upon the Thing Sold' - so the cited node is a container
+  node, which is exactly why the MODEL bucket cannot reach them: its
+  article clause never fires. Two further zero-overlap dense claims on
+  test-48 (both in q068) are classed MODEL instead, because there the cited
+  node's heading does name an article the sentence does not. THE
+  CORRECTION, stated explicitly: the previous version of this note
+  published 52 / 1 / 3 (vectorless) and 34 / 24 / 4 (dense) on test-48, and
+  39 / 4 / 2 (vectorless) and 41 / 11 / 0 (dense) on dev-24. Those numbers
+  did not come from ONE rule. A search of 768,848 rule variants - each a
+  (content-word definition, article-extraction rule, node side, overlap
+  denominator, threshold) combination - found NO rule reproducing all four
+  published splits, and NO rule reproducing the two arms' published splits
+  of the SAME split: 3,144 of the rules reproduce both VECTORLESS published
+  splits and 336 reproduce both DENSE published splits, but the two sets do
+  not intersect, so the two published numbers came from two DIFFERENT
+  rules. R9 as stated in this note reproduces NEITHER published split, and
+  the dense split could not have come from the rule the previous note
+  stated - which is decidable WITHOUT any search: that rule required the
+  SENTENCE to name an article, and on test-48 only 6 of the dense arm's 58
+  resolvable failing rows have a sentence naming a DIFFERENT article, so
+  any rule of that shape can class at most 6 rows as 'model' - the
+  published split says 24. On dev-24 the same bound is 10 and the published
+  split says 11. So the '24 model cited badly (39%)' figure and the
+  sentence built on it - 'the dense arm is the one with a real miscitation
+  problem, at 39% of its failures' - are WITHDRAWN. What replaces them is
+  this note's own four counts: the mechanically decidable count is 11 of 62
+  (18%) and 7 of 56 (13%) on test-48, and 13 of 52 (25%) and 12 of 45 (27%)
+  on dev-24, for the dense and the vectorless arm respectively. THE NUMBER
+  IS A LOWER BOUND on citation quality, dominated by the SCORER's
+  strictness: no string rule can match a proposition ABOUT a provision to
+  the provision's own words. The sharpest SCORER case is a sentence reading
+  'Article 53 and Article 64 discuss requisites for marriage, not for
+  offers or acceptances' citing Article 53, whose ENTIRE text is a
+  93-character lead-in - unambiguously correct, and classed SCORER. The
+  vectorless arm's remainder is ON the sentence's subject: its median
+  subject-overlap over its remainder claims is 0.33 on test-48 and 0.42 on
+  dev-24, so its citations are about the sentence's subject and the string
+  rule cannot match them. The two arms' lower bounds are NOT COMPARABLE
+  with each other, and the dense arm's REAL weakness is the off-subject
+  block INSIDE its remainder, the 16 of its 47 test-48 remainder claims
+  counted above: for example one of those answers states 'The provided
   evidence does not contain any information relevant to explicate
-  spectrometer centrifuge embargo' and then citing five unrelated
-  provisions. Those are the rows R9's MODEL bucket cannot reach, because
-  their sentences name no article at all.
+  spectrometer centrifuge embargo' and cites five provisions, on all five
+  of which the claim fails (three of them off-subject, to container nodes,
+  and two MODEL, to article nodes whose headings name articles the sentence
+  does not). Those off-subject rows are the ones R9's MODEL bucket cannot
+  reach, because their sentences name no article at all, and their cited
+  nodes are container nodes whose headings name no article either, so its
+  article clause never fires. An off-subject claim is not PROOF of a
+  miscitation either: the count is a lower bound, and a claim whose node
+  does share content words with the sentence can still be a citation to the
+  wrong provision, which this rule cannot see.
 
   The 'ref' scoring component is 0 for every node on this corpus. Its only
   edge source is the references_ table, and ingestion does not populate it
@@ -331,14 +374,17 @@ MEASURED LIMITATIONS
   generation tolerance is therefore an UNCHECKED acceptance, and a reader
   must not treat this run's generation numbers as a reproduced measurement.
 
-  The dev and test splits SHARE 9 gold provision(s) (17.0% of the test
-  split's distinct gold provisions), and 5 test question(s) have their
-  ENTIRE gold set inside the dev split's. evaluation.md sec 1 makes the dev
+  The dev and test splits SHARE 9 gold provision(s): 17.0% of the test
+  split's 53 distinct gold provisions, and 30.0% of the dev split's 30. 5
+  test question(s) have their ENTIRE gold set inside the dev split's. Each
+  number above names the split it describes, and the pair's shared COUNT is
+  the same on the dev report and the test report, because it is a property
+  of the pair and not of the report. evaluation.md sec 1 makes the dev
   split the tuning split and the test split the one touched once per frozen
-  config, so for those provisions the tuning has already seen the test
-  split's answer key. The per-category numbers below move in steps of 1/n,
-  and one question can move several rows at once where a provision is
-  reused.
+  config, so for the provisions both splits gold the tuning has already
+  seen the test split's answer key. The per-category numbers below move in
+  steps of 1/n, and one question can move several rows at once where a
+  provision is reused.
 
 The outcome of the vectorless-versus-dense comparison is not
 claimed here. The numbers above are what was measured; what

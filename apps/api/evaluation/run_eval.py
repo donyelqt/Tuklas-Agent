@@ -56,6 +56,39 @@ def _fail(message: str) -> int:
     return 1
 
 
+def split_overlap() -> dict[str, Any] | None:
+    """The gold overlap of the FROZEN SPLIT PAIR: dev against test, always.
+
+    The overlap the report publishes is a fact about the PAIR of splits, and
+    the pair does not depend on which report is being written: dev and test
+    share the same provisions whichever one is being described. So both
+    sides are loaded BY NAME from the frozen split files here, and the split
+    being rendered is never one side of the comparison.
+
+    That matters because the alternatives are not equivalent.
+    ``gold_overlap(dev, dev)`` measures the dev split against ITSELF, in
+    which every one of its own golds is "shared", 100% of its golds are
+    shared, and every answerable question's gold set is "contained" in the
+    other side - three numbers that are about nothing, printed by the dev
+    report under the TEST split's name. A share figure that is not the
+    pair's is not a caveat about the reported split; it is a fabricated
+    contamination figure, and this is the one call site that decides it.
+
+    Returns ``None`` when the frozen splits cannot be read: the report then
+    carries no overlap note, which is an open measurement rather than a
+    measured zero.
+    """
+    try:
+        dev_dataset = dataset_module.load_split(DATASET_DIR, "dev")
+        test_dataset = dataset_module.load_split(DATASET_DIR, "test")
+    except Exception:
+        return None
+    try:
+        return dataset_module.gold_overlap(dev_dataset, test_dataset)
+    except Exception:
+        return None
+
+
 def _corpus_state(db_path: str) -> dict[str, Any]:
     """The ingested corpus's node ids and slugs, for the dataset's checks."""
     from apps.api.ingestion import db as ingestion_db
@@ -300,20 +333,13 @@ def main(argv: list[str] | None = None) -> int:
     if dense_description is not None:
         dense_description.setdefault("n_nodes", _node_count(args.db, dataset.questions[0].document))
 
-    # The gold overlap between the splits is a property of the DATASET, not
-    # of the run, and the report needs it: the dev split is the tuning
-    # split, so a provision both splits gold is a provision whose answer key
-    # the tuning has already seen.
-    dataset_overlap = None
-    try:
-        dev_dataset = dataset_module.load_dataset(str(DATASET_DIR / "dev.json"))
-    except Exception:
-        dev_dataset = None
-    if dev_dataset is not None:
-        try:
-            dataset_overlap = dataset_module.gold_overlap(dev_dataset, dataset)
-        except Exception:
-            dataset_overlap = None
+    # The gold overlap between the splits is a property of the DATASET PAIR,
+    # not of the run and not of the report, and the report needs it: the dev
+    # split is the tuning split, so a provision both splits gold is a
+    # provision whose answer key the tuning has already seen. The rendered
+    # split's OWN effective sample size is a different fact about a
+    # different thing, and it is passed separately.
+    dataset_overlap = split_overlap()
 
     text = eval_report.render_report(
         evaluation_id=outcome["evaluation_id"],
@@ -327,6 +353,7 @@ def main(argv: list[str] | None = None) -> int:
         dense_arm_description=dense_description,
         vectorless_arm_description=vectorless_description,
         dataset_overlap=dataset_overlap,
+        n_distinct_golds=dataset_module.effective_n(dataset),
     )
     print(text)
     if args.report:
