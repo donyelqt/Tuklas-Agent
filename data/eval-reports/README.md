@@ -2,10 +2,32 @@
 
 The reports of the evaluation runs, one file per run.
 
-- `v1-test.md` - the REPORTED run: the test-48 split, both arms, config
-  `cfg_e86e8bfbc803c860`, split seed 42, model `qwen2.5:3b` on ollama at
-  temperature 0, seed 42, judge prompt `judge-v1-batch`. `v1-test.json`
-  is the same run's aggregates in machine-readable form.
+**CURRENT**
+
+- `v1-test.md` - the REPORTED test run: the test-48 split, both arms, run
+  `eval_447127eb`, config `cfg_e86e8bfbc803c860`, split seed 42, model
+  `qwen2.5:3b` on ollama at temperature 0, seed 42, judge prompt
+  `judge-v1-batch`. `v1-test.json` is the same run's aggregates in
+  machine-readable form.
+- `v1-dev.md` - the dev run: the dev-24 split, both arms, run
+  `eval_ff373231`, config `cfg_0f73ff26c0d38d54`, split seed 42, model
+  `qwen2.5:3b` on ollama at temperature 0, seed 42, judge prompt
+  `judge-v1-batch`. `v1-dev.json` is the same run's aggregates in
+  machine-readable form.
+
+**PRESERVED AND QUARANTINED - not a baseline, not comparable, not reproducible**
+
+- `v1-test-OLD-INSTRUMENT-AND-STORE.md` - the SUPERSEDED test report, run
+  `eval_a80167ab`, config `cfg_e86e8bfbc803c860`, judge prompt
+  `judge-v1-batch`. Recovered from git (`eb36a52:data/eval-reports/v1-test.md`).
+- `v1-dev-OLD-INSTRUMENT-AND-STORE.md` - the SUPERSEDED dev report, run
+  `eval_083a4c15`, config `cfg_5a3d6973caf7bd43`, judge prompt `judge-v1`.
+  RECONSTRUCTED by rendering the stored run with the OLD renderer
+  (`eb36a52:apps/api/evaluation/report.py`); the method was validated by
+  reproducing the published test file byte-for-byte.
+
+Both carry a header that says what produced them and why their numbers must
+not be diffed against the current ones.
 
 A report publishes both arms' numbers and NO verdict. It states what a
 reader needs BEFORE it prints a number:
@@ -61,19 +83,32 @@ And after the numbers:
   - `citation_accuracy` is a MEASUREMENT OF A PAIR - the model's citations
     AND the support rule's sensitivity - and the report carries the
     MEASURED BREAKDOWN of its failures, because the ratio alone is
-    misleading. Re-adjudicated against the stored run: on test-48 the
-    vectorless arm's 56 failures are 52 SCORER SENSITIVITY (93%), 1 MODEL
-    CITED BADLY (2%) and 3 MARKER CONVENTION (5%); the dense arm's 62
-    failures are 34 scorer sensitivity (55%), 24 model cited badly (39%)
-    and 4 marker convention (6%). On dev-24: vectorless 45 failures = 39
-    scorer (87%), 4 model (9%), 2 marker (4%); dense 52 failures = 41
-    scorer (79%), 11 model (21%), 0 marker. So the number is DOMINATED BY
-    THE SCORER'S STRICTNESS, and reading 0.542 and 0.458 as "the model
-    cites badly 54% and 46% of the time" would be WRONG - the vectorless
-    figure would be wrong by a factor of about fifty. The number is a
-    LOWER BOUND on citation quality, not a measurement of it, and that
-    lower bound is loose by DIFFERENT AMOUNTS for the two arms, so the two
-    arms' numbers are not comparable with each other either;
+    misleading. The breakdown is under ONE UNIFORM RULE (R9), applied
+    identically to every (run, arm) pair, and the rule is stated in full
+    so a reader can reproduce it from the stored run alone. Measured: on
+    test-48 the vectorless arm's 56 failing claims are 3 MARKER, 7 MODEL
+    (13%) and 46 REMAINDER; the dense arm's 62 are 4 marker, 11 model
+    (18%) and 47 remainder. On dev-24: vectorless 45 failures = 2 marker,
+    12 model (27%), 31 remainder; dense 52 failures = 0 marker, 13 model
+    (25%), 39 remainder. So the number is DOMINATED BY THE SCORER'S
+    STRICTNESS, and reading 0.542 and 0.458 as "the model cites badly 54%
+    and 46% of the time" would be WRONG. The number is a LOWER BOUND on
+    citation quality, not a measurement of it, and that lower bound is
+    loose by DIFFERENT AMOUNTS for the two arms, so the two arms' numbers
+    are not comparable with each other either. A PREVIOUS version of the
+    report published a different breakdown (52/1/3 and 34/24/4 on test-48)
+    and the sentence "the dense arm is the one with a real miscitation
+    problem, at 39% of its failures"; both are WITHDRAWN, because the
+    two published numbers came from two DIFFERENT rules. A search of
+    768,848 rule variants found NO rule reproducing all four published
+    splits, and NO rule reproducing the two arms' published splits of the
+    same split - 3,144 rules reproduce both vectorless published splits and
+    336 reproduce both dense published splits, and the two sets do not
+    intersect. The dense split could not have come from the rule the
+    previous note stated at all: that rule required the SENTENCE to name an
+    article, and only 6 of the dense arm's 58 resolvable failing rows on
+    test-48 have a sentence naming a different article, so any rule of that
+    shape reaches at most 6 - the published split said 24;
   - the GENERATION half of the reproducibility acceptance ("generation
     within ±5pp", `evaluation.md` §8) is UNCHECKED by anything in this
     repository: it needs a live local model backend, and the report says
@@ -81,6 +116,17 @@ And after the numbers:
 
 **The outcome of the vectorless-versus-dense comparison is not claimed
 here.** The numbers are what was measured; what they mean is a reading.
+
+  **A report here is a MEASUREMENT OF A RUN, and a run is only
+  comparable with another run when the INSTRUMENT and the STORE STATE
+  are the same.** Both are properties of the harness and the working
+  tree, not of the questions, and a reader cannot see either from the
+  run's row. So every report states, in its run identity block, which
+  instrument produced its retrieval metric and which lex path produced
+  its scores, and a report that replaced an earlier one states what
+  changed and what a reader may not conclude. The
+  `-OLD-INSTRUMENT-AND-STORE` files are the worked example: preserved,
+  quarantined, and not comparable with the current ones.
 
 ## Reproducing a report
 
