@@ -22,7 +22,7 @@ import json
 import re
 import sqlite3
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 from apps.api.ingestion import db, errors
 from apps.api.retrieval import normalizer
@@ -82,6 +82,12 @@ class ScoredNode:
     #: trace needs this flag from retrieval; it is computed in score_nodes and
     #: carried here so search_nodes results surface it for free.
     fallback: bool = False
+    #: True when this node is the one the query IDENTIFIES: it uniquely owns an
+    #: exact label (article/section) the query names. Not a component and not
+    #: part of the score — it is a fact about the query, and it decides the
+    #: ORDER (see ``_rank_key``). The components dict stays frozen at the five
+    #: §3 components; a sixth would change the published component contract.
+    identified: bool = False
 
 
 #: Version tag of the BM25 tokenizer; persisted in bm25.json so stale
@@ -123,6 +129,56 @@ def _clamp_weights(weights: dict[str, float]) -> dict[str, float]:
             raise ValueError(f"weight {key}={value} outside [{_WEIGHT_MIN}, {_WEIGHT_MAX}]")
         merged[key] = value
     return merged
+
+
+def _rank_key(node: ScoredNode) -> tuple[int, float, int, int, str]:
+    """The ONE ordering the pipeline uses: identified first, then score desc.
+
+    retrieval.md §3 sums five bounded components, so no single one of them
+    can outrank the sum of the others. Measured consequence: the `ident`
+    component (capped at 1.0) lost to a competitor that accumulated
+    `lex 1.0 + title 0.1 + hier 1.0 = 2.1`, so a query that NAMES a
+    provision lost that provision from the top-8 evidence window whenever the
+    provision's own body did not contain the query's content word. On the
+    Civil Code, "What does article 1318 require?" put article 1318 at rank 10
+    (out of the window) behind article 1395, a different provision.
+
+    The fix is an ORDER, not a new weight: the node the query identifies (the
+    unique owner of an exact label the query names) comes first, and
+    everything else keeps the §3 score order. The score value itself is
+    unchanged, so the published formula and the measured component values are
+    untouched.
+
+    This key is the single source of the order, so the retrieval ranking, the
+    evidence window cut, and the context builder cannot disagree about what
+    comes first.
+    """
+    return (
+        0 if node.identified else 1,
+        -node.score,
+        node.depth,
+        node.position,
+        node.node_id,
+    )
+
+
+def evidence_rank_key(item: Any) -> tuple[int, float, int, int, str]:
+    """The same ordering, applied to an evidence-set item (a plain dict).
+
+    The evidence set is the only thing that crosses the retrieval boundary
+    (architecture.md §2: `select_evidence` owns the ScoredNode -> dict
+    boundary), so the order has to be expressible on the dict as well. The
+    agent merges several sub-questions' evidence sets and cuts the merged
+    list; if that cut used a different order than the one retrieval used, the
+    window could again drop the provision the user named.
+    """
+    return (
+        0 if bool(item.get("identified")) else 1,
+        -float(item.get("score", 0.0)),
+        int(item.get("depth", 0) or 0),
+        int(item.get("position", 0) or 0),
+        str(item.get("node_id", "")),
+    )
 
 
 def _resolve_document(conn: sqlite3.Connection, doc_id_or_slug: str) -> sqlite3.Row:
@@ -282,31 +338,87 @@ def _title_scores(
     return raw
 
 
+def _row_owns(row: Any) -> bool:
+    """True when this ident_index row says the node OWNS the label.
+
+    The ``level`` column records HOW the node carries the label: 1.0 when it
+    owns it (the node's own heading), 0.5 when it inherits it from an
+    ancestor. Only an owner can be the identified node.
+
+    The column is read by NAME, not by membership: a ``sqlite3.Row`` is a
+    sequence of VALUES, so ``"level" in row`` tests the values and is always
+    False. Getting this wrong makes every node look like an owner. A
+    database built before the column existed is read as "owns it", which is
+    the behaviour before ADR-005.
+    """
+    keys = row.keys() if hasattr(row, "keys") else ()
+    if "level" not in keys:
+        return True
+    return float(row["level"]) >= 1.0
+
+
 def _ident_lookup(
     conn: sqlite3.Connection,
     doc_id: str,
     query_labels: list[tuple[str, float]],
-) -> dict[str, float]:
-    """ident component from ident_index: 1.0 exact, 0.5 container-level."""
+) -> tuple[dict[str, float], set[str]]:
+    """ident component from ident_index, and the nodes the query IDENTIFIES.
+
+    The ident component keeps retrieval.md §3's levels: 1.0 for a node that
+    OWNS the exact label the query names, 0.5 for a node that carries a
+    container label (its own or inherited), 0.0 otherwise. The level now
+    comes from the ident_index row, which records whether the node owns the
+    label or inherits it, so a node that merely lives under "SECTION 1" is
+    0.5 on "sec 1" while the section node itself is 1.0.
+
+    The second return value is the set of nodes the query IDENTIFIES: the
+    node that uniquely owns an EXACT label the query names. A container label
+    never identifies, because container numbers repeat ("CHAPTER 2" occurs
+    34 times in the Civil Code), and an exact label owned by more than one
+    node identifies none of them. See ``_identified_nodes``.
+    """
     if not query_labels:
-        return {}
+        return {}, set()
     label_levels = {label: level for label, level in query_labels}
     placeholders = ",".join("?" * len(label_levels))
     rows = conn.execute(
-        f"SELECT normalized_label, node_id FROM ident_index WHERE document_id = ?"
-        f" AND normalized_label IN ({placeholders})",
+        f"SELECT normalized_label, node_id, level FROM ident_index"
+        f" WHERE document_id = ? AND normalized_label IN ({placeholders})",
         (doc_id, *label_levels.keys()),
     ).fetchall()
     raw: dict[str, float] = {}
+    owners: dict[str, list[str]] = {}
     for row in rows:
         label = str(row["normalized_label"])
         node_id = str(row["node_id"])
-        level = label_levels.get(label, 0.0)
-        # Container-level labels (ch/title/book) rank 0.5; exact art/sec 1.0.
-        value = level if level in (1.0, 0.5) else 0.0
+        label_level = label_levels.get(label, 0.0)
+        if label_level not in (1.0, 0.5):
+            continue
+        # The ident component's VALUE is the label's own level, exactly as
+        # retrieval.md §3 states: "1.0 exact normalized article id, 0.5
+        # chapter/title-level id, else 0". It is NOT downgraded for a node
+        # that inherits the label, because the component does not say "this
+        # node IS the provision" - it says "this label is in play". Changing
+        # the value would change every published ident and score, which
+        # §3 forbids without a recorded tuning run.
+        value = label_level
         if value > raw.get(node_id, 0.0):
             raw[node_id] = value
-    return raw
+        # The ident_index `level` column answers a DIFFERENT question: who
+        # OWNS the label. Only an owner can be the identified node, so the
+        # precedence predicate reads the level and the component does not.
+        # The column is read by NAME: a sqlite3.Row supports `row["level"]`
+        # but NOT `"level" in row`, which tests the row's VALUES and is
+        # always False.
+        if value >= 1.0 and _row_owns(row):
+            owners.setdefault(label, []).append(node_id)
+    identified = {
+        node_id
+        for label, node_ids in owners.items()
+        if len(node_ids) == 1
+        for node_id in node_ids
+    }
+    return raw, identified
 
 
 def _reachable_within_2(
@@ -381,6 +493,7 @@ def score_nodes(
         ]
 
         # --- PASS 1 --------------------------------------------------------
+        identified: set[str] = set()
         if fallback:
             # retrieval.md §6: flat fallback — ident/title/hier are 0; lex runs
             # over page-node texts (node_fts holds every node; page rows ARE
@@ -390,7 +503,7 @@ def score_nodes(
             title: dict[str, float] = {}
         else:
             lex = _lex_scores(conn, lex_tokens, [str(r["id"]) for r in candidates], real_doc_id)
-            ident = _ident_lookup(conn, real_doc_id, query_labels)
+            ident, identified = _ident_lookup(conn, real_doc_id, query_labels)
             title = _title_scores(conn, real_doc_id, query, query_label_tokens)
 
         lex_top_sorted = sorted(
@@ -441,8 +554,10 @@ def score_nodes(
                     depth=int(node["depth"]),
                     position=int(node["position"]),
                     fallback=fallback,
+                    identified=node_id in identified,
                 )
             )
-        # Deterministic order: score desc, then tree position (depth, position, id).
-        scored.sort(key=lambda s: (-s.score, s.depth, s.position, s.node_id))
+        # Deterministic order: identified first, then score desc, then tree
+        # position (depth, position, id).
+        scored.sort(key=_rank_key)
         return scored
