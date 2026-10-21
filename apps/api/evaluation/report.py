@@ -233,7 +233,7 @@ ABSTENTION_NOTE = (
 )
 
 #: The note about what the citation-accuracy number MEASURES, and the
-#: MEASURED breakdown of its failures.
+#: MEASURED breakdown of its failures under the ONE uniform rule (R9).
 #:
 #: The metric is the fraction of ANSWERS whose every citation supports the
 #: sentence it is attached to. The support check is MECHANICAL and
@@ -248,65 +248,90 @@ ABSTENTION_NOTE = (
 #: measurement does not support. So the report carries the BREAKDOWN, not
 #: just the ratio.
 #:
-#: The breakdown was obtained by RE-ADJUDICATING every failing claim of the
-#: stored run against the store, by replaying each arm to recover the
-#: citation list's MARKER NUMBERS and cross-checking the replay against
-#: the stored row (the reconstruction reproduces the stored
-#: ``citations_valid`` for 87 of 87 stored rows). A failure is:
+#: R9 is ONE rule, applied identically to every (run, arm) pair. For each
+#: (marker, sentence) pair whose cited node does not support the sentence
+#: under the shared scorer at the run's threshold:
 #:
-#: * SCORER SENSITIVITY - the cited node is ON the sentence's subject (or
-#:   IS the article the sentence names, or its text names that article),
-#:   and the string rule simply did not match. The citation is right; the
-#:   instrument is strict. The sharpest case: a sentence that says
-#:   "Article 53 and Article 64 discuss requisites for marriage", citing
-#:   Article 53, whose whole text is a 93-character lead-in. The citation
-#:   is unambiguously correct and no string rule can match a proposition
-#:   ABOUT a provision to the provision's own words.
-#: * MODEL CITED BADLY - the sentence names an article the cited node is
-#:   not (and whose text does not mention it), AND the node's heading and
-#:   text are both off the sentence's subject. A real citation error.
-#: * MARKER CONVENTION - the model wrote a STATUTORY ARTICLE NUMBER in
-#:   square brackets ("[1619]") where the prompt asks for a part number,
-#:   and the marker convention reads it as a citation marker. Measured:
-#:   in 5 of the 7 such cases the article the model named IS in the
-#:   answer's own citation list, so the model was citing the right
-#:   provision in the wrong notation, and the support check would PASS
-#:   if the marker were resolved to that article. Neither a citation error
-#:   nor scorer sensitivity: a NOTATION violation.
+#: * MARKER - the marker names no citation in the row's citation list. A
+#:   NOTATION failure, not a citation error.
+#: * MODEL - the cited node's OWN HEADING names a statutory article A, AND
+#:   the sentence does NOT name A, AND the sentence's content words have
+#:   essentially no overlap with the node's (overlap <= 0.20). A citation
+#:   to a provision the sentence is not about.
+#: * SCORER - everything else, including every case where the cited node IS
+#:   the article the sentence names.
 #:
-#: The rule for classifying a failure, so a reader can judge it: a
-#: failure is "the model cited badly" only if the sentence names an
-#: article the cited node is not AND the node's heading and text are both
-#: off the sentence's subject; a failure whose marker names no citation
-#: is a marker-convention failure; everything else is scorer sensitivity.
+#: The two definitions the rule needs, stated so a reader can reproduce it:
 #:
-#: MEASURED on the test-48 split (eval_447127eb), by the rule above:
+#: * CONTENT WORDS: the lowercase alphanumeric tokens of length >= 2 of the
+#:   text, with the repository's own versioned stoplist removed
+#:   (apps/api/agent/stoplist.py, STOPLIST, version fts5-english-v1 - the
+#:   list the run configs already pin).
+#: * OVERLAP: |sentence content words AND node content words| divided by
+#:   |sentence content words| - the subject-overlap, normalised by the
+#:   SENTENCE. The node's content words are its TITLE and its TEXT
+#:   together.
+#: * ARTICLE EXTRACTION: the node's own heading is read for "Article N";
+#:   the SENTENCE's article references are read as a LIST, so "Articles 55,
+#:   61, 68" yields all three numbers.
 #:
-#:   arm        claims  failed   scorer  model  marker
-#:   vectorless    145      56   52 (93%)   1 (2%)  3 (5%)
-#:   dense         143      62   34 (55%)  24 (39%)  4 (6%)
+#: WHAT A READER NEEDS TO REPRODUCE IT: the run's `retrieval_runs` rows
+#: (`answer_markdown`, `citation_node_ids`, `citations_valid`) and the
+#: `nodes` table (`id`, `title`, `text`). Nothing else - no model, no index,
+#: no re-run. The marker-to-node mapping is POSITIONAL: marker m is the
+#: m-th id in `citation_node_ids`.
 #:
-#: and on the dev-24 split (eval_ff373231):
+#: MEASURED, by the rule above, on the two published runs:
 #:
-#:   arm        claims  failed   scorer  model  marker
-#:   vectorless    119      45   39 (87%)   4 (9%)  2 (4%)
-#:   dense         131      52   41 (79%)  11 (21%)  0 (0%)
+#:   run / arm             failing   marker   model   remainder
+#:   test-48 vectorless         56       3       7          46
+#:   test-48 dense              62       4      11          47
+#:   dev-24  vectorless         45       2      12          31
+#:   dev-24  dense              52       0      13          39
 #:
-#: The consequence for the reader is the whole point of the note: the
-#: number is DOMINATED BY THE SCORER'S STRICTNESS, not by citation
-#: quality. For the vectorless arm 93% of the failures are the string
-#: rule failing to match a correct citation; for the dense arm 55% are,
-#: and the dense arm is the one with a real miscitation problem (39% of
-#: its failures). Reading 0.542 and 0.458 as "the model cites badly
-#: 54% and 46% of the time" would be WRONG, and the vectorless figure
-#: would be wrong by a factor of about fifty. The number is a LOWER
-#: BOUND on citation quality, not a measurement of it, and the LOWER
-#: BOUND is loose in a way that differs between the two arms.
+#: The CORRECTION, stated explicitly. The previous version of this note
+#: published 52 / 1 / 3 (vectorless) and 34 / 24 / 4 (dense) on test-48,
+#: and 39 / 4 / 2 (vectorless) and 41 / 11 / 0 (dense) on dev-24. Those
+#: numbers did not come from ONE rule. A search of 768,848 rule variants -
+#: each a (content-word definition, article-extraction rule, node side,
+#: overlap denominator, threshold) combination - found NO rule reproducing
+#: all four published splits, and NO rule reproducing the two arms'
+#: published splits of the SAME split: 3,144 of the rules reproduce both
+#: VECTORLESS published splits and 336 reproduce both DENSE published
+#: splits, but the two sets do not intersect, so the two published numbers
+#: came from two DIFFERENT rules. R9 as stated in this note reproduces
+#: NEITHER published split, and the dense split could not have come from
+#: the rule the previous note stated - that is decidable WITHOUT any
+#: search: the stated rule required the SENTENCE to name an article, and on
+#: test-48 only 6 of the dense arm's 58 resolvable failing rows have a
+#: sentence naming a DIFFERENT article, so any rule of that shape can
+#: class at most 6 rows as "model" - the published split says 24. On
+#: dev-24 the same bound is 10 and the published split says 11. So the
+#: "24 model cited badly (39%)" figure and the sentence built on it - "the
+#: dense arm is the one with a real miscitation problem, at 39% of its
+#: failures" - are WITHDRAWN. What replaces them is this note's own four
+#: counts: the mechanically decidable count is 11 of 62 (18%) and 7 of 56
+#: (13%) on test-48, and 13 of 52 (25%) and 12 of 45 (27%) on dev-24, for
+#: the dense and the vectorless arm respectively.
 #:
-#: The breakdown is not reproducible from a stored run alone, because the
-#: run records the citation list's node ids but not its marker numbers.
-#: It was measured against the store by replaying the arms, and the
-#: method above is stated so that a reader can repeat it.
+#: The number is a LOWER BOUND on citation quality, dominated by the
+#: scorer's strictness: no string rule can match a proposition ABOUT a
+#: provision to the provision's own words. The sharpest SCORER case is a
+#: sentence reading "Article 53 and Article 64 discuss requisites for
+#: marriage, not for offers or acceptances" citing Article 53, whose
+#: ENTIRE text is a 93-character lead-in - unambiguously correct, and
+#: classed SCORER. The vectorless arm's remainder is ON the sentence's
+#: subject: its median subject-overlap is 0.33, so its citations are about
+#: the sentence's subject and the string rule cannot match them.
+#:
+#: The two arms' lower bounds are NOT COMPARABLE with each other, and the
+#: dense arm's REAL weakness is the off-subject block INSIDE its
+#: remainder: 16 of its 47 test-48 remainder claims share ZERO content
+#: words with the cited node, in 5 questions - for example an answer
+#: stating "The provided evidence does not contain any information
+#: relevant to explicate spectrometer centrifuge embargo" and then citing
+#: five unrelated provisions. Those are the rows R9's MODEL bucket cannot
+#: reach, because their sentences name no article at all.
 CITATION_METRIC_NOTE = (
     "The citation-accuracy number is a MEASUREMENT OF A PAIR: the model's "
     "citations AND the support rule's sensitivity, and a reader must not "
@@ -316,54 +341,79 @@ CITATION_METRIC_NOTE = (
     "node's text is compared with the sentence by the shared scorer's "
     "rule, the normalized sentence being a substring of the node's text or "
     "the RapidFuzz token_set_ratio reaching the run's own "
-    "fuzzy_threshold. Every failing claim of this run was RE-ADJUDICATED "
-    "against the store, by replaying each arm to recover the citation "
-    "list's marker numbers and cross-checking the replay against the "
-    "stored row; the reconstruction reproduces the stored citations_valid "
-    "for 87 of 87 stored rows. MEASURED on the test-48 split: the "
-    "vectorless arm's 56 failures are 52 SCORER SENSITIVITY (93%), 1 "
-    "MODEL CITED BADLY (2%) and 3 MARKER CONVENTION (5%); the dense arm's "
-    "62 failures are 34 scorer sensitivity (55%), 24 model cited badly "
-    "(39%) and 4 marker convention (6%). On the dev-24 split: the "
-    "vectorless arm's 45 failures are 39 scorer (87%), 4 model (9%) and 2 "
-    "marker (4%); the dense arm's 52 failures are 41 scorer (79%), 11 "
-    "model (21%) and 0 marker. The rule for classifying a failure, so a "
-    "reader can judge it: a failure is 'the model cited badly' only if "
-    "the sentence names an article the cited node is not AND the node's "
-    "heading and text are both off the sentence's subject; a failure "
-    "whose marker names no citation is a marker-convention failure; "
-    "everything else is scorer sensitivity. Scorer sensitivity means the "
-    "cited node IS on the sentence's subject (or IS the article the "
-    "sentence names, or its text names that article) and the string rule "
-    "simply did not match: the sharpest case is a sentence reading "
-    "'Article 53 and Article 64 discuss requisites for marriage' citing "
-    "Article 53, whose entire text is a 93-character lead-in - the "
-    "citation is unambiguously correct and no string rule can match a "
-    "proposition ABOUT a provision to the provision's own words. Marker "
-    "convention means the model wrote a STATUTORY ARTICLE NUMBER in "
-    "square brackets ('[1619]') where the prompt asks for a part number, "
-    "and the marker convention reads it as a citation marker; in 5 of the "
-    "7 such cases the article the model named IS in the answer's own "
-    "citation list, so the model was citing the right provision in the "
-    "wrong notation, and the support check would PASS if the marker were "
-    "resolved to that article. THE CONSEQUENCE, and the reason this note "
-    "exists: the number is DOMINATED BY THE SCORER'S STRICTNESS rather "
-    "than by citation quality. For the vectorless arm 93% of the "
-    "failures are the string rule failing to match a CORRECT citation; "
-    "for the dense arm 55% are, and the dense arm is the one with a real "
-    "miscitation problem, at 39% of its failures. Reading 0.542 and 0.458 "
-    "as 'the model cites badly 54% and 46% of the time' would be WRONG, "
-    "and the vectorless figure would be wrong by a factor of about "
-    "fifty. The number is a LOWER BOUND on citation quality, not a "
-    "measurement of it, and that lower bound is loose in a way that "
-    "DIFFERS BETWEEN THE TWO ARMS, so the two arms' numbers are not "
-    "comparable with each other either. The breakdown is not reproducible "
-    "from a stored run alone, because the run records the citation list's "
-    "node ids but not its marker numbers; it was measured against the "
-    "store by replaying the arms, and the method is stated above so a "
-    "reader can repeat it."
+    "fuzzy_threshold. Every failing claim of this run was classified under "
+    "ONE UNIFORM RULE, R9, applied identically to every (run, arm) pair. "
+    "R9: for each (marker, sentence) pair whose cited node does not "
+    "support the sentence under the shared scorer at the run's threshold - "
+    "MARKER, the marker names no citation in the row's citation list (a "
+    "NOTATION failure, not a citation error); MODEL, the cited node's OWN "
+    "HEADING names a statutory article A, AND the sentence does NOT name "
+    "A, AND the sentence's content words have essentially no overlap with "
+    "the node's (overlap <= 0.20) (a citation to a provision the sentence "
+    "is not about); SCORER, everything else, including every case where "
+    "the cited node IS the article the sentence names. THE TWO DEFINITIONS "
+    "THE RULE NEEDS, so a reader can reproduce it: CONTENT WORDS are the "
+    "lowercase alphanumeric tokens of length >= 2 of the text, with the "
+    "repository's own versioned stoplist removed (apps/api/agent/stoplist."
+    "py, STOPLIST, version fts5-english-v1, the list the run configs "
+    "already pin); OVERLAP is |sentence content words AND node content "
+    "words| divided by |sentence content words| - the subject-overlap, "
+    "normalised by the SENTENCE - with the node's content words taken from "
+    "its TITLE and its TEXT together; and an ARTICLE REFERENCE is read as a "
+    "LIST, so 'Articles 55, 61, 68' yields all three numbers. WHAT A "
+    "READER NEEDS TO REPRODUCE IT: the run's retrieval_runs rows "
+    "(answer_markdown, citation_node_ids, citations_valid) and the nodes "
+    "table (id, title, text). Nothing else - no model, no index, no "
+    "re-run. The marker-to-node mapping is POSITIONAL: marker m is the "
+    "m-th id in citation_node_ids. MEASURED, by the rule above, on the two "
+    "published runs: the test-48 vectorless arm's 56 failing claims are 3 "
+    "MARKER, 7 MODEL (13%) and 46 REMAINDER; the test-48 dense arm's 62 are "
+    "4 marker, 11 model (18%) and 47 remainder; the dev-24 vectorless "
+    "arm's 45 are 2 marker, 12 model (27%) and 31 remainder; the dev-24 "
+    "dense arm's 52 are 0 marker, 13 model (25%) and 39 remainder. THE "
+    "CORRECTION, stated explicitly: the previous version of this note "
+    "published 52 / 1 / 3 (vectorless) and 34 / 24 / 4 (dense) on "
+    "test-48, and 39 / 4 / 2 (vectorless) and 41 / 11 / 0 (dense) on "
+    "come from ONE rule. A search of 768,848 rule variants - each a "
+    "(content-word definition, article-extraction rule, node side, overlap "
+    "denominator, threshold) combination - found NO rule reproducing all "
+    "four published splits, and NO rule reproducing the two arms' "
+    "published splits of the SAME split: 3,144 of the rules reproduce both "
+    "VECTORLESS published splits and 336 reproduce both DENSE published "
+    "splits, but the two sets do not intersect, so the two published "
+    "numbers came from two DIFFERENT rules. R9 as stated in this note "
+    "reproduces NEITHER published split, and the dense split could not "
+    "have come from the rule the previous note stated - which is decidable "
+    "WITHOUT any search: that rule required the SENTENCE to name an "
+    "article, and on test-48 only 6 of the dense arm's 58 resolvable "
+    "failing rows have a sentence naming a DIFFERENT article, so any rule "
+    "of that shape can class at most 6 rows as 'model' - the published "
+    "split says 24. On dev-24 the same bound is 10 and the published "
+    "split says 11. So the '24 model cited badly (39%)' figure and the "
+    "sentence built on it - 'the dense arm is the one with a real "
+    "miscitation problem, at 39% of its failures' - are WITHDRAWN. What "
+    "replaces them is this note's own four counts: the mechanically "
+    "decidable count is 11 of 62 (18%) and 7 of 56 (13%) on test-48, and "
+    "13 of 52 (25%) and 12 of 45 (27%) on dev-24, for the dense and the "
+    "vectorless arm respectively. THE NUMBER IS A LOWER BOUND on citation "
+    "quality, dominated by the SCORER's strictness: no string rule can "
+    "match a proposition ABOUT a provision to the provision's own words. "
+    "The sharpest SCORER case is a sentence reading 'Article 53 and "
+    "Article 64 discuss requisites for marriage, not for offers or "
+    "acceptances' citing Article 53, whose ENTIRE text is a 93-character "
+    "lead-in - unambiguously correct, and classed SCORER. The vectorless "
+    "arm's remainder is ON the sentence's subject: its median "
+    "subject-overlap is 0.33, so its citations are about the sentence's "
+    "subject and the string rule cannot match them. The two arms' lower "
+    "bounds are NOT COMPARABLE with each other, and the dense arm's REAL "
+    "weakness is the off-subject block INSIDE its remainder: 16 of its 47 "
+    "test-48 remainder claims share ZERO content words with the cited "
+    "node, in 5 questions - for example an answer stating 'The provided "
+    "evidence does not contain any information relevant to explicate "
+    "spectrometer centrifuge embargo' and then citing five unrelated "
+    "provisions. Those are the rows R9's MODEL bucket cannot reach, "
+    "because their sentences name no article at all."
 )
-
 
 #: The note about the two arms' abstention scores.
 #:
@@ -435,6 +485,105 @@ DENSE_GATE_NOTE = (
     "unanswerable questions there were to refuse."
 )
 
+
+#: The note about the INSTRUMENT and the STORE STATE, for a reader who holds
+#: an earlier report of the same split.
+#:
+#: The previous report of this split is PRESERVED, in
+#: ``data/eval-reports/v1-test-OLD-INSTRUMENT-AND-STORE.md`` and
+#: ``data/eval-reports/v1-dev-OLD-INSTRUMENT-AND-STORE.md``. It is
+#: preserved because it is a measurement that was actually taken, and
+#: because its run's per-question rows live in a gitignored store that will
+#: It is NOT a BASELINE: the two reports do not measure the
+#: same thing, for TWO INDEPENDENT reasons, and NEITHER of them is a change
+#: to the arm's ranking code. Measured, the retrieval layer's tree is
+#: BYTE-IDENTICAL across the two runs: the run that produced the earlier
+#: report and the run that produced this one have the SAME git tree object
+#: for apps/api/retrieval, and the earlier report's run was measured at the
+#: tree whose ROOT tree object is 4d8ad7e6. That is the whole of the
+#: ranking code: nothing in it changed between the two runs.
+#:
+#: (1) **THE INSTRUMENT CHANGED.** The retrieval metric is now computed
+#:     over the node ids the ANSWER was produced from (the union of the
+#:     agent's per-sub-question ``search_nodes`` results); the earlier
+#:     report computed it over a separate one-off search over the whole
+#:     question - a ranking the model never saw.
+#:
+#: (2) **THE LEX LAYER CHANGED, AND THE REPOSITORY DOES NOT RECORD IT.**
+#:     The earlier report was measured with the per-document BM25 artifact
+#:     ``data/indexes/<doc-id>/bm25.json`` PRESENT, so the vectorless arm's
+#:     lex component came from that document's own rank-bm25 model. This
+#:     report was measured with it ABSENT, so the retrieval layer fell back
+#:     to FTS5, whose N and average document length are TABLE-GLOBAL across
+#:     every ingested document - ``apps/api/retrieval/scoring.py`` says so
+#:     itself ("can still drift when another document is ingested;
+#:     reproducibility holds only until the next ingest").
+#:     ``data/indexes/`` is gitignored, and the run row records NEITHER the
+#:     artifact's presence nor its absence, so a reader of the run row
+#:     alone cannot tell that the two runs were measured under different
+#:     lex layers. That is a gap in the run's RECORD, not only in this
+#:     report, and it is now tracked as an open item in ``docs/TODO.md``.
+#:
+#: The measurements below are per-cause, with everything else held fixed.
+STORE_STATE_NOTE = (
+    "The previous report of this split is PRESERVED, in "
+    "data/eval-reports/v1-test-OLD-INSTRUMENT-AND-STORE.md and "
+    "data/eval-reports/v1-dev-OLD-INSTRUMENT-AND-STORE.md. It is preserved "
+    "because it is a measurement that was actually taken, and because its "
+    "run's per-question rows live in a gitignored store that will not "
+    "survive. It is NOT A BASELINE, because the two reports do not measure "
+    "the same thing, for TWO INDEPENDENT reasons, and NEITHER of them is a "
+    "change to the arm's ranking code. (1) THE INSTRUMENT CHANGED. The "
+    "retrieval metric is now computed over the node ids the ANSWER was "
+    "produced from (the union of the agent's per-sub-question search_nodes "
+    "results); the earlier report computed it over a separate one-off "
+    "search over the whole question - a ranking the model never saw. "
+    "Measured, vectorless arm on test-48: with the lex layer held fixed, "
+    "the instrument change alone moves recall@5 by -0.061 (0.7927 -> "
+    "0.7317) and mrr@10 by -0.1028. Dense arm on the same split: the "
+    "instrument change alone moves recall@5 by -0.0854 (0.7927 -> 0.7073) "
+    "at the OLD surface and -0.0610 (0.7683 -> 0.7073) at the NEW surface, "
+    "and mrr@10 by -0.1109 and -0.0918. The instrument is the LARGEST "
+    "SINGLE EFFECT in BOTH arms, and it is not the whole story in either. "
+    "(2) THE LEX LAYER CHANGED, AND THE REPOSITORY DOES NOT RECORD IT. The "
+    "earlier report was measured with the per-document BM25 artifact "
+    "data/indexes/<doc-id>/bm25.json PRESENT, so the vectorless arm's lex "
+    "component came from that document's own rank-bm25 model. This report "
+    "was measured with it ABSENT, so the retrieval layer fell back to "
+    "FTS5, whose N and average document length are TABLE-GLOBAL across "
+    "every ingested document - apps/api/retrieval/scoring.py says so itself "
+    "('can still drift when another document is ingested; reproducibility "
+    "holds only until the next ingest'). data/indexes/ is gitignored, and "
+    "the run row records NEITHER the artifact's presence nor its absence, "
+    "so a reader of the run row alone cannot tell that the two runs were "
+    "measured under different lex layers. That is a gap in the run's "
+    "RECORD, not only in this report, and it is now tracked as an open "
+    "item in docs/TODO.md. Measured, vectorless arm on test-48: the "
+    "lex-layer change alone moves recall@5 by -0.0122 (0.7927 -> 0.7805) "
+    "and mrr@10 by +0.0187, instrument held fixed; the interaction between "
+    "the two is +0.0122 on recall@5. The dense arm is NOT affected by the "
+    "lex layer at all: it builds its own index in-process and has no "
+    "persisted artifact to lose, so its whole change is the instrument plus "
+    "its three surface changes (the corpus cut to 2,392 nodes, the "
+    "de-duplicated title, the identifier-stripped query), which together "
+    "net -0.0244 of recall@5 and -0.0262 of mrr@10, of which the node-set "
+    "cut (+0.0244) and the de-duplicated title (-0.0244) cancel to within "
+    "0.001. This report does not say the vectorless arm got worse, and it "
+    "does not say it got better. The difference is attributable to the "
+    "INSTRUMENT and the STORE STATE, and to nothing in the arm's ranking "
+    "CODE: measured, the retrieval layer's tree is BYTE-IDENTICAL across "
+    "the two runs. The run that produced the earlier report was measured "
+    "at the tree whose root tree object is 4d8ad7e6, and the run that "
+    "produced this one at 04f6dcae, and both carry the SAME git tree "
+    "object for apps/api/retrieval (d19c4365) - so the whole of the "
+    "ranking code is identical, byte for byte, between the two runs, and "
+    "nothing in it changed. The run's pinned weight vector equals the "
+    "code's defaults, so the pinned weights changed no score either. The "
+    "two reports are NOT "
+    "COMPARABLE, and the old one is NOT A "
+    "BASELINE: it is preserved as a record of a measurement that was "
+    "actually taken, not as a point the current system fell from."
+)
 
 #: The note about the INSTRUMENT that produced the numbers, for a reader
 #: who holds an earlier report of the same split.
@@ -764,6 +913,24 @@ def render_report(
     lines.append(f"  stoplist version     : {config_body.get('stoplist_version')}")
     lines.append(f"  K values             : {config.get('k')}")
     lines.append(f"  arms                 : {list(aggregates.get('arms', {}).keys())}")
+    # The INSTRUMENT and the LEX PATH, named in the run's identity block.
+    # A report is only comparable with another report when these two are
+    # the same, and neither is visible from the run's row, so the report
+    # states them itself. The instrument is fixed by the harness; the lex
+    # path is a property of the WORKING TREE (whether the per-document
+    # BM25 artifact is present), so it is named as the path the scores
+    # were actually produced on.
+    lines.append(
+        "  retrieval instrument : the node ids the ANSWER was produced from "
+        "(the union of the agent's per-sub-question search_nodes results) "
+        "- NOT a separate one-off search over the whole question"
+    )
+    lines.append(
+        "  lex path             : the retrieval layer's own lex layer for "
+        "this working tree; see the STORE STATE note below, because the "
+        "run row records NEITHER the per-document BM25 artifact's "
+        "presence nor its absence"
+    )
     if vectorless_arm_description:
         lines.append(
             f"  vectorless arm       : {vectorless_arm_description.get('algorithm')}, "
@@ -843,6 +1010,7 @@ def render_report(
     lines.append("MEASURED LIMITATIONS")
     notes = [
         INSTRUMENT_CHANGE_NOTE,
+        STORE_STATE_NOTE,
         CITATION_METRIC_NOTE,
         REF_COMPONENT_NOTE,
         ABSTENTION_NOTE,
