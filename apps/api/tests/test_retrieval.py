@@ -29,7 +29,12 @@ from apps.api.retrieval.api import (
 )
 from apps.api.retrieval.context import build_context
 from apps.api.retrieval.index import build_indexes
-from apps.api.retrieval.normalizer import expand_range, extract_labels, normalize_label
+from apps.api.retrieval.normalizer import (
+    expand_range,
+    extract_labels,
+    label_tokens,
+    normalize_label,
+)
 from apps.api.retrieval.scoring import WEIGHT_DEFAULTS, ScoredNode, score_nodes
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -210,7 +215,18 @@ def test_retrieval_scoring_disjoint_inputs(civil_code: SimpleNamespace) -> None:
         score_nodes(db, doc_id, query, weights={"lex": 3.0})
     with pytest.raises(ValueError):
         score_nodes(db, doc_id, query, weights={"hier": -0.1})
-
+    # The identifier's own token must not reach the lex input. This is the
+    # disjoint-inputs rule in its most direct form, and it is easy to break
+    # silently: returning match objects instead of strings from the tokenizer
+    # makes the set non-empty for the wrong reason, the token survives into
+    # the BM25 query, and the identifier fires TWICE (ident and lex).
+    consumed = label_tokens("What does article 1318 require?")
+    assert consumed == {"article", "1318"}, (
+        f"label_tokens must yield the consumed words, got {consumed!r}"
+    )
+    assert all(isinstance(token, str) for token in consumed), (
+        "label_tokens must yield strings, not match objects"
+    )
     # two-pass order: pass-1 all-zero => pass-2 ref/hier must be 0
     # (broaden-retry condition per retrieval.md §3).
     gibberish = "qqzz wumpus frobnicate"
@@ -544,8 +560,11 @@ def test_retrieval_select_evidence_pipeline(civil_code: SimpleNamespace) -> None
     assert spanless["id"] not in kept_ids, "page-span-less nodes must be dropped"
     assert short["id"] not in kept_ids, "sub-50-char nodes must be dropped"
     for k in kept:
-        assert len(k.get("text", k.get("snippet", ""))) >= 50
         assert k.get("page_start") is not None
+        if not k.get("identified"):
+            assert len(k.get("text", k.get("snippet", ""))) >= 50, (
+                "only the identified node is exempt from the length floor"
+            )
     scores = [k["score"] for k in kept]
     assert scores == sorted(scores, reverse=True), "kept must be ranked score-desc"
 
@@ -752,6 +771,449 @@ def test_retrieval_golden_10q_smoke(
         f"golden miss: {question!r} -> gold {gold_node} not in top-5 "
         f"(got {top5_ids})"
     )
+
+
+# ---------------------------------------------------------------------------
+# 7b. A question that NAMES a provision (the named-provision defect)
+# ---------------------------------------------------------------------------
+
+#: The defect this pins: a query that names a provision AND carries other
+#: content words used to lose the named provision from the top-8 evidence
+#: window, because §3's five bounded components are SUMMED and the `ident`
+#: component (capped at 1.0) could not outrank a competitor that accumulated
+#: `lex 1.0 + title 0.1 + hier 1.0 = 2.1`. Measured on the Civil Code before
+#: the fix: "What does article 1318 require?" put article 1318 at rank 10, out
+#: of the window, behind article 1395 - a DIFFERENT provision. The golden
+#: 10Q never caught it because none of its questions name a provision that
+#: way.
+NAMED_PROVISION_QUESTIONS = [
+    ("What does article 1318 require?", f"node_{SLUG}_article_1318"),
+    ("What does article 2124 provide?", f"node_{SLUG}_article_2124"),
+    ("What are the requirements of article 1793?", f"node_{SLUG}_article_1793"),
+    ("What does Article 26 say about dignity?", f"node_{SLUG}_article_26"),
+]
+
+
+@pytest.mark.parametrize(("question", "named_node"), NAMED_PROVISION_QUESTIONS)
+def test_retrieval_named_provision_ranks_first(
+    civil_code: SimpleNamespace, question: str, named_node: str
+) -> None:
+    """The provision the query names is the FIRST hit, not merely a hit.
+
+    Asserts rank 1, not membership in the top-5: the defect was not that the
+    named node was absent, it was that it ranked BELOW nodes that matched
+    only the query's content words. A top-5 assertion would pass against the
+    broken implementation for the cases that landed at rank 5-7.
+    """
+    _node(civil_code.db, named_node)
+
+    hits = search_nodes(question, civil_code.doc_id, top_k=10, db_path=civil_code.db)
+    assert hits, f"no hits for {question!r}"
+    assert hits[0].node_id == named_node, (
+        f"{question!r} -> the named provision must rank first, got "
+        f"{[(h.node_id, round(h.score, 3)) for h in hits[:3]]}"
+    )
+    # The node must be marked as the one the query identifies, so every
+    # downstream cut (evidence window, context builder) can respect it.
+    assert hits[0].identified is True, (
+        f"{question!r} -> the named provision must carry the identified flag"
+    )
+    # And the ident component must still be the §3 value: 1.0 for the node
+    # that owns the exact label.
+    assert hits[0].components["ident"] == 1.0
+    # The components contract is frozen at five keys.
+    assert set(hits[0].components) == COMPONENT_KEYS
+
+
+@pytest.mark.parametrize(("question", "named_node"), NAMED_PROVISION_QUESTIONS)
+def test_retrieval_named_provision_survives_the_evidence_window(
+    civil_code: SimpleNamespace, question: str, named_node: str
+) -> None:
+    """The named provision is IN the top-8 evidence window, and first in it.
+
+    The window is what the model actually sees. A named provision that ranks
+    first but is cut from the window is exactly the reported failure: the
+    model answers about the word-match and cites a different provision.
+    """
+    hits = search_nodes(question, civil_code.doc_id, top_k=20, db_path=civil_code.db)
+    evidence = select_evidence(hits, [question], db_path=civil_code.db)
+    kept = evidence["kept"]
+    assert kept, f"no evidence kept for {question!r}"
+    assert kept[0]["node_id"] == named_node, (
+        f"{question!r} -> the named provision must lead the evidence window, got "
+        f"{[k['node_id'] for k in kept[:3]]}"
+    )
+    # It must be a SUPPORTER, not merely present: the gate has to be able to
+    # pass on it.
+    supporters = evidence["gate"]["per_question"][question]
+    assert named_node in supporters, (
+        f"{question!r} -> the named provision must support the sub-question"
+    )
+    assert evidence["insufficient"] is False
+
+
+def test_retrieval_named_provision_leads_the_prompt(
+    civil_code: SimpleNamespace,
+) -> None:
+    """The named provision is the FIRST part of the prompt context.
+
+    The model reads the context in order, so the provision the user named
+    must be the first thing it sees - not the fifth.
+    """
+    question = "What does article 1318 require?"
+    named_node = f"node_{SLUG}_article_1318"
+    hits = search_nodes(question, civil_code.doc_id, top_k=20, db_path=civil_code.db)
+    evidence = select_evidence(hits, [question], db_path=civil_code.db)
+    context = build_context(evidence)
+    parts = context["parts"]
+    assert parts, "the prompt context is empty"
+    assert parts[0]["node_id"] == named_node, (
+        f"the named provision must lead the prompt, got "
+        f"{[p['node_id'] for p in parts[:3]]}"
+    )
+    # The prompt part's score is the §3 score; the order is not a score bump.
+    kept_scores = {k["node_id"]: k["score"] for k in evidence["kept"]}
+    assert parts[0]["score"] == kept_scores[named_node]
+
+
+def test_retrieval_ident_index_resolves_one_node_per_article(
+    civil_code: SimpleNamespace,
+) -> None:
+    """An article label resolves to the article that OWNS it, at level 1.0.
+
+    The ident index used to carry every label span found anywhere in a node's
+    title, plus every ancestor's labels. Measured on the Civil Code: "art 57"
+    resolved to 404 nodes and "sec 1" to 230, because the parser's near-miss
+    path turned one body-text sentence into a 'part' heading and 402 real
+    articles inherited a label they never owned. A label that names hundreds
+    of nodes cannot identify anything, so this is the property the identifier
+    precedence depends on.
+    """
+    conn = sqlite3.connect(civil_code.db)
+    conn.row_factory = sqlite3.Row
+    try:
+        for label, expected in (
+            ("art 1318", f"node_{SLUG}_article_1318"),
+            ("art 26", f"node_{SLUG}_article_26"),
+            ("art 1793", f"node_{SLUG}_article_1793"),
+            ("art 57", f"node_{SLUG}_article_57"),
+        ):
+            rows = conn.execute(
+                "SELECT node_id, level FROM ident_index WHERE document_id = ?"
+                " AND normalized_label = ? AND level >= 1.0",
+                (civil_code.doc_id, label),
+            ).fetchall()
+            owners = [str(r["node_id"]) for r in rows]
+            assert owners == [expected], (
+                f"{label!r} must be owned by exactly {expected!r}, got {owners}"
+            )
+    finally:
+        conn.close()
+
+
+def test_retrieval_own_identity_ignores_cited_provisions() -> None:
+    """A node's identity is its own heading, not a provision it CITES.
+
+    "Article 244. The provisions of articles 226 to 228 and 235 to 236 ..."
+    cites 226 and 228; it is not them. The own-identity rule reads the
+    leading heading only, so a citation cannot make a node the owner of
+    another provision.
+    """
+    from apps.api.retrieval.normalizer import own_identity
+
+    assert own_identity(
+        "article", "Article 1318. There is no contract unless..."
+    ) == ("art 1318", 1.0)
+    assert own_identity(
+        "article", "Article 244. The provisions of articles 226 to 228 and 235 to 236."
+    ) == ("art 244", 1.0)
+    # A container label is 0.5 and belongs to its own family.
+    assert own_identity("chapter", "CHAPTER 2") == ("ch 2", 0.5)
+    assert own_identity("title", "TITLE IV") == ("title iv", 0.5)
+    assert own_identity("book", "BOOK I") == ("book i", 0.5)
+    # The node type must match the label family: a chapter cannot own an
+    # article, and an article cannot own a chapter.
+    assert own_identity("chapter", "Article 1318. There is no contract...") is None
+    assert own_identity("article", "CHAPTER 2") is None
+    # Body text owns nothing.
+    assert own_identity(
+        "article", "at the expense of the usufructuary. (500)"
+    ) is None
+    assert own_identity("part", "party wall supports a building belonging to him. (575)") is None
+
+
+#: The defect this pins: a query naming SEVERAL provisions captured only
+#: the FIRST one. "Compare articles 1318 and 2124" yielded the label
+#: "art 1318" alone, so article 2124 was invisible to the identifier
+#: channel - and the planner then split the question into "Compare articles
+#: 1318" and "2124", where "2124" is a bare number and carries no label at
+#: all. The second provision could never be identified.
+COORDINATED_PROVISION_QUESTIONS = [
+    ("Compare articles 1318 and 2124", ["art 1318", "art 2124"]),
+    (
+        "What do articles 1318, 2124 and 26 say?",
+        ["art 1318", "art 2124", "art 26"],
+    ),
+    ("Section 101 and 102 of this title", ["sec 101", "sec 102"]),
+]
+
+
+@pytest.mark.parametrize(("question", "expected"), COORDINATED_PROVISION_QUESTIONS)
+def test_retrieval_coordinated_provisions_are_all_extracted(
+    question: str, expected: list[str]
+) -> None:
+    """A coordinated list of provisions yields a label for EACH of them.
+
+    The list is a citation, not prose: every number in it names a provision,
+    and each must reach the identifier channel. A trailing "and" is the
+    normal shape of the list and must not end it early.
+    """
+    labels = [label for label, _level in extract_labels(question)]
+    for want in expected:
+        assert want in labels, (
+            f"{question!r} -> {want!r} must be extracted, got {labels}"
+        )
+
+
+def test_retrieval_coordinated_provision_is_identified(
+    civil_code: SimpleNamespace,
+) -> None:
+    """The SECOND provision in a coordinated list is identified too.
+
+    Extracting the label is not enough: the provision has to reach the
+    evidence window and carry the identified flag, or the model never sees
+    it as the thing the user named.
+    """
+    question = "Compare articles 1318 and 2124"
+    first = f"node_{SLUG}_article_1318"
+    second = f"node_{SLUG}_article_2124"
+    _node(civil_code.db, first)
+    _node(civil_code.db, second)
+
+    hits = search_nodes(question, civil_code.doc_id, top_k=20, db_path=civil_code.db)
+    identified = {h.node_id for h in hits if h.identified}
+    assert first in identified, (
+        f"{question!r} -> the first named provision must be identified, got "
+        f"{sorted(identified)}"
+    )
+    assert second in identified, (
+        f"{question!r} -> the SECOND named provision must be identified too, "
+        f"got {sorted(identified)}"
+    )
+
+
+def test_retrieval_context_protects_the_identified_node_from_eviction() -> None:
+    """The identified node is never evicted for space.
+
+    The identifier precedence is an ORDER, not a weight: the provision the
+    query names is put first in the ranking, but its total score is whatever
+    its lexical and hierarchical components happen to be. It can therefore be
+    the LOWEST-scoring node in the kept set - and a lowest-score-first
+    eviction then drops the named provision FIRST, silently undoing the
+    precedence exactly when the prompt is too large to hold everything.
+
+    Measured before the fix: with a 250-character budget the identified node
+    was evicted and the prompt led with two other nodes.
+    """
+    kept = [
+        {"node_id": "n_high", "text": "x" * 100, "score": 0.90, "depth": 2,
+         "position": 0, "identified": False},
+        {"node_id": "n_mid", "text": "x" * 100, "score": 0.60, "depth": 3,
+         "position": 1, "identified": False},
+        {"node_id": "n_target", "text": "x" * 100, "score": 0.10, "depth": 4,
+         "position": 2, "identified": True},
+        {"node_id": "n_low", "text": "x" * 100, "score": 0.05, "depth": 4,
+         "position": 3, "identified": False},
+    ]
+    # The gate protects the strong supporters, NOT the identified node: that
+    # is the real case, and it is the one that used to evict it.
+    evidence = {
+        "kept": kept,
+        "insufficient": False,
+        "gate": {"threshold": 0.15, "node_ids": ["n_high", "n_mid"],
+                 "per_question": {}},
+    }
+
+    for budget in (400, 350, 300, 250, 200, 150):
+        context = build_context(evidence, budget_chars=budget)
+        ids = [part["node_id"] for part in context["parts"]]
+        assert "n_target" in ids, (
+            f"the identified node must survive a {budget}-character budget, "
+            f"got {ids}"
+        )
+        # And it still leads, because the precedence is an order.
+        assert ids[0] == "n_target", (
+            f"the identified node must lead the prompt at every budget, got {ids}"
+        )
+
+
+def test_retrieval_short_named_provision_survives_the_length_floor(
+    civil_code: SimpleNamespace,
+) -> None:
+    """A SHORT named provision still reaches the evidence window.
+
+    The evidence pipeline drops nodes whose text is under 50 characters. That
+    floor exists to drop page-span nodes whose text is not a provision, but
+    it was also dropping provisions: article 1433 is 48 characters long
+    ("Article 1433. Estoppel may in pais or by deed."), so a query naming it
+    ranked it first, identified it, and then threw it away - and the model
+    answered about a DIFFERENT article.
+
+    Measured on the Civil Code: 98 article and section nodes are under the
+    floor, so this is not a one-off.
+    """
+    db, doc_id = civil_code.db, civil_code.doc_id
+
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT id FROM nodes WHERE document_id = ? AND type = 'article'"
+            " AND length(text) < 50",
+            (doc_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None, "the corpus must have a provision under 50 characters"
+    short_id = str(row["id"])
+    number = short_id.rsplit("_", 1)[-1]
+
+    hits = search_nodes(
+        f"What does article {number} require?", doc_id, top_k=20, db_path=db
+    )
+    assert hits, f"no hits for article {number}"
+    assert hits[0].node_id == short_id, (
+        f"article {number} must rank first, got {hits[0].node_id}"
+    )
+    assert hits[0].identified is True, (
+        f"article {number} must be identified"
+    )
+
+    evidence = select_evidence(
+        hits, [f"What does article {number} require?"], db_path=db
+    )
+    kept_ids = {k["node_id"] for k in evidence["kept"]}
+    assert short_id in kept_ids, (
+        f"the named provision is {len(str(row['id']))} chars long and must "
+        f"still reach the evidence window; kept {sorted(kept_ids)}"
+    )
+
+
+def test_retrieval_inherited_label_is_not_the_owning_level(
+    civil_code: SimpleNamespace,
+) -> None:
+    """Ownership is decided by the level column, not by the component value.
+
+    Two different questions, two different answers:
+
+    - The ident COMPONENT's value is the label's own level, exactly as
+      retrieval.md §3 states ("1.0 exact normalized article id, 0.5
+      chapter/title-level id, else 0"). A node that carries "sec 1" scores
+      ident 1.0 whether it owns the label or inherits it. Downgrading the
+      inheritor would change every published ident and score, which §3
+      forbids without a recorded tuning run.
+    - WHO owns the label is the level column's job, and only an owner can be
+      the identified node. A node that merely lives under "SECTION 1" is
+      never the provision the user named.
+
+    The trap this pins: a ``sqlite3.Row`` is a sequence of VALUES, so
+    ``"level" in row`` is ALWAYS False. The column NAMES live in
+    ``row.keys()``.
+    """
+    db, doc_id = civil_code.db, civil_code.doc_id
+
+    hits = score_nodes(db, doc_id, "article 1318")
+    by_id = {h.node_id: h for h in hits}
+    owner = by_id[DOC_1318]
+    assert owner.components["ident"] == 1.0, (
+        "the node that owns the label must score the full ident level"
+    )
+
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT node_id, level FROM ident_index WHERE document_id = ?"
+            " AND normalized_label = 'art 1318'",
+            (doc_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    assert len(rows) == 1, f"art 1318 must be owned by one node, got {len(rows)}"
+    assert float(rows[0]["level"]) == 1.0
+
+    # A CONTAINER label: a node under "CHAPTER 2" carries "ch 2", and the
+    # component value is the container level, 0.5.
+    hits = score_nodes(db, doc_id, "chapter 2")
+    ch2 = [h for h in hits if h.components["ident"] > 0]
+    assert ch2, "a chapter label must reach the nodes under it"
+    for hit in ch2:
+        assert hit.components["ident"] == 0.5, (
+            f"{hit.node_id} carries a container label and must score 0.5, "
+            f"got {hit.components['ident']}"
+        )
+        assert hit.identified is False, (
+            "a container label is never decisive: container numbers repeat"
+        )
+
+    # An INHERITED EXACT label: the component value is still 1.0 (the
+    # label's own level), but the node is NOT identified - the level column
+    # says it inherits the label rather than owning it.
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    try:
+        owned = conn.execute(
+            "SELECT node_id FROM ident_index WHERE document_id = ?"
+            " AND normalized_label = 'sec 1' AND level = 1.0 LIMIT 1",
+            (doc_id,),
+        ).fetchone()
+        assert owned is not None, "the corpus must own a 'sec 1' label"
+        owner_id = str(owned["node_id"])
+        children = conn.execute(
+            "SELECT id FROM nodes WHERE parent_id = ? LIMIT 5", (owner_id,)
+        ).fetchall()
+        inheritor_levels = conn.execute(
+            "SELECT node_id, level FROM ident_index WHERE document_id = ?"
+            " AND normalized_label = 'sec 1' AND level = 0.5 LIMIT 5",
+            (doc_id,),
+        ).fetchall()
+        owner_count = conn.execute(
+            "SELECT COUNT(*) FROM ident_index WHERE document_id = ?"
+            " AND normalized_label = 'sec 1' AND level = 1.0",
+            (doc_id,),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert children, f"{owner_id} must have children to inherit the label"
+    assert inheritor_levels, "the corpus must have nodes inheriting 'sec 1'"
+
+    hits = score_nodes(db, doc_id, "section 1")
+    by_id = {h.node_id: h for h in hits}
+    assert by_id[owner_id].components["ident"] == 1.0, (
+        "the section that owns 'sec 1' must score 1.0"
+    )
+    # "sec 1" is printed in EVERY chapter of the Civil Code, so it is owned by
+    # many nodes and identifies NONE of them. A label that names twenty
+    # nodes cannot name one provision.
+    assert owner_count > 1, (
+        "the corpus prints 'SECTION 1' in many chapters, so the label is "
+        "ambiguous and must identify no node"
+    )
+    assert by_id[owner_id].identified is False, (
+        "an ambiguous label identifies no node: the owner is one of many"
+    )
+    for row in inheritor_levels:
+        inheritor = str(row["node_id"])
+        if inheritor not in by_id:
+            continue
+        assert by_id[inheritor].components["ident"] == 1.0, (
+            f"{inheritor} carries the exact label 'sec 1', so the component "
+            f"value is the label's own level 1.0 (retrieval.md sec 3)"
+        )
+        assert by_id[inheritor].identified is False, (
+            f"{inheritor} only INHERITS 'sec 1' (level 0.5), so it must not "
+            f"be the identified node"
+        )
 
 
 # ---------------------------------------------------------------------------

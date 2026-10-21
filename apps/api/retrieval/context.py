@@ -81,14 +81,51 @@ def _gate_node_ids(evidence: dict[str, Any]) -> set[str]:
     return ids
 
 
-def _sort_key(item: Any) -> tuple[float, int, int, str]:
-    """score desc; ties: shallower depth, then position asc, then id (stable)."""
-    return (-_item_score(item), _item_depth(item), _item_position(item), _item_id(item))
+def _is_identified(item: Any) -> bool:
+    """True when the item is the node the query identified.
+
+    The flag travels from the retrieval ranking (scoring.ScoredNode) through
+    the evidence set. It is a fact about the query, not a score, so it does
+    not change any part's score - it only decides which part is emitted
+    FIRST, so the provision the user named is the one the model reads first.
+    """
+    return bool(_item_field(item, "identified", False))
+
+
+def _sort_key(item: Any) -> tuple[int, float, int, int, str]:
+    """identified first; then score desc; ties: shallower depth, position, id."""
+    return (
+        0 if _is_identified(item) else 1,
+        -_item_score(item),
+        _item_depth(item),
+        _item_position(item),
+        _item_id(item),
+    )
 
 
 def _evict_key(item: Any) -> tuple[float, int, int, str]:
     """Eviction order: lowest score first; ties deepest, latest, then id."""
     return (_item_score(item), -_item_depth(item), -_item_position(item), _item_id(item))
+
+
+def _protected_ids(evidence: dict[str, Any], items: list[Any]) -> set[str]:
+    """Node ids that must not be evicted for space: the gate set, plus the
+    node the query identifies.
+
+    The identified node is the provision the user named, and its score is the
+    LOWEST by construction - that is exactly why the identifier precedence
+    exists (§3 sums five bounded components, so `ident` 1.0 loses to
+    `lex 1.0 + title 0.1 + hier 1.0 = 2.1`). Evicting by lowest score
+    therefore drops the named provision FIRST, silently undoing the fix at
+    exactly the moment the prompt is too large to hold everything. It is
+    protected alongside the gate set for the same reason the gate set is: the
+    answer must be able to speak about it.
+    """
+    protected = _gate_node_ids(evidence)
+    for item in items:
+        if _is_identified(item):
+            protected.add(_item_id(item))
+    return protected
 
 
 def _part(item: Any, text: str) -> dict[str, Any]:
@@ -110,7 +147,7 @@ def build_context(
     items = sorted(
         (item for item in evidence.get("kept", []) if _is_item(item)), key=_sort_key
     )
-    gate_ids = _gate_node_ids(evidence)
+    protected_ids = _protected_ids(evidence, items)
     texts = {id(item): _item_text(item) for item in items}
     total = sum(len(texts[id(item)]) for item in items)
 
@@ -118,13 +155,13 @@ def build_context(
         parts = [_part(item, texts[id(item)]) for item in items]
         return {"parts": parts, "total_chars": total, "context_truncated": False}
 
-    gate_items = [item for item in items if _item_id(item) in gate_ids]
+    gate_items = [item for item in items if _item_id(item) in protected_ids]
     gate_total = sum(len(texts[id(item)]) for item in gate_items)
 
     if gate_total > budget_chars:
-        # Gate alone overflows: truncate each gate part PROPORTIONALLY to its
-        # text length (largest-remainder), so longer texts give up more
-        # characters; free parts emit nothing.
+        # The protected set alone overflows: truncate each protected part
+        # PROPORTIONALLY to its text length (largest-remainder), so longer
+        # texts give up more characters; free parts emit nothing.
         parts = []
         if budget_chars < len(gate_items):
             # Not enough budget for 1 char each; floor at 1 char per part.
@@ -153,12 +190,14 @@ def build_context(
         emitted = sum(len(part["text"]) for part in parts)
         return {"parts": parts, "total_chars": emitted, "context_truncated": True}
 
-    # Overflow eviction: drop lowest-score NON-GATE parts first until it fits.
-    # ``items`` is already in emission order; removing victims preserves the
-    # order of the survivors, so output order stays score-desc/depth/position.
+    # Overflow eviction: drop lowest-score NON-PROTECTED parts first until it
+    # fits. ``items`` is already in emission order; removing victims preserves
+    # the order of the survivors, so output order stays score-desc/depth/position.
     selected = list(items)
     while total > budget_chars:
-        evictable = [item for item in selected if _item_id(item) not in gate_ids]
+        evictable = [
+            item for item in selected if _item_id(item) not in protected_ids
+        ]
         if not evictable:
             break
         victim = min(evictable, key=_evict_key)
