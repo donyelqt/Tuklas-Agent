@@ -34,6 +34,23 @@ score(n, q) = w_lex*lex + w_ident*ident + w_title*title + w_ref*ref + w_hier*hie
 - `hier`: 1.0 if sharing a parent with a pass-1 lex-top-3 node, else 0 (captures Art. 1318/1319/1320 clustering).
 - **Two-pass order:** pass 1 computes lex/ident/title and fixes lex-top-5/top-3 sets; pass 2 computes ref/hier against those frozen sets. With all-zero lex (below-threshold case), ref/hier = 0 and the broaden-retry fires.
 
+**Identifier precedence (ORDER, not a weight — ADR-005).** The five components are
+bounded and SUMMED, so no single one can outrank the sum of the others: `ident`
+(capped at 1.0) lost to a competitor that accumulated `lex 1.0 + title 0.1 +
+hier 1.0 = 2.1`, and a query naming a provision lost that provision from the
+top-8 evidence window. The node that UNIQUELY OWNS an exact label the query names
+therefore sorts FIRST; every other node keeps the §3 score order. The score
+VALUE, the five components and the formula above are unchanged: no new weight
+and no tuned constant. A container label (chapter/title/book) never identifies,
+because container numbers repeat ("CHAPTER 2" occurs 34 times in the Civil Code),
+and an exact label owned by more than one node identifies none of them.
+
+`scoring.evidence_rank_key` is the single source of this order. The retrieval
+ranking, the evidence-window cut, the context builder's prompt order and the
+agent's merged evidence set all use it, so the provision the user named is the
+first thing the model reads. The `ident` component's VALUE is set by §4's
+own-identity rule and the ident index's `level` column.
+
 **Defaults (starting points, NOT optima):** all weights 1.0; phrase/fuzzy bonuses off by default and enabled only via tuning. Tunable ranges: weights ∈ [0,2], fuzzy threshold ∈ [80,95]. Tuning procedure: grid/random search on the **dev split only**; winning config frozen into the eval run record; test split touched once. Any number reported without this record is invalid.
 
 **Stoplist for broaden-retry:** SQLite FTS5 default English stopwords + `{said, provision, provides, article, section}` — versioned in code, not ad hoc.
@@ -41,6 +58,33 @@ score(n, q) = w_lex*lex + w_ident*ident + w_title*title + w_ref*ref + w_hier*hie
 ## 4. Identifier normalization (required)
 
 Lowercase → strip punctuation → canonical map: `article|art\.?|arts\.? → art`, `section|sec\.? → sec`, `chapter|ch\.? → ch`, `subchapters?|subch\.? → subch`, `title → title`, `book → book`; digits preserved; ranges expanded (`1318–1320` → 1318,1319,1320); plurals handled. `Art. 1318`, `Article 1318`, `§1318` → `art 1318` and `sec 1318` (a bare § sign bridges to both section label families, so §-printed and word-printed provisions resolve to the same ident component). `subch` is a 0.5 container-level label like `ch`. Query and node labels both normalized before matching.
+
+**Own identity (ADR-005).** A node OWNS the label in its own heading and
+INHERITS the labels of its ancestors. Ownership requires all three of:
+
+1. the label word starts the title (so "the provisions of articles 226 to 228"
+   owns nothing — it cites, it does not own);
+2. the number is terminated by a period or the end of the string;
+3. the node type matches the label family (an `article` node may own `art N`, a
+   `chapter` node `ch N`).
+
+The ident index records which is which: `level` 1.0 for an owner, 0.5 for an
+inheritor. **The `ident` component's VALUE is the label's own level** - 1.0 for
+any node carrying an exact label, 0.5 for a container label - exactly as the
+§3 bullet above states; the value is a property of the LABEL, not of the node.
+**The `level` column decides OWNERSHIP**: only a node at level 1.0 may be the
+identified node. Changing the value for an inheritor would change every published
+ident and every score, which §3 forbids without a recorded tuning run.
+Measured on the Civil Code, ownership is the difference between `art 57` naming
+404 nodes and naming 1.
+
+**Coordinated lists (ADR-005).** A list of provisions joined by a comma, "and",
+"or" or "to" yields a label for EACH of them: "Compare articles 1318 and 2124"
+-> `art 1318`, `art 2124`. The list is bounded at eight numbers, and it must be
+a real list - a separator word is never read as a number, and a word that is
+not a number ends the list. Without this, only the first provision in the list
+reached the identifier channel, and the planner's split left the rest as bare
+numbers, which carry no label at all.
 
 ## 5. Tool contracts (agent's ONLY tree access — no direct reads)
 
@@ -60,6 +104,9 @@ get_source(node_id: str) -> Source                # single node text + pages + p
 select_evidence(hits: list[NodeHit], sub_questions: list[str]) -> EvidenceSet
   # retrieval-owned: dedup → drop <50 chars → drop page-span-less →
   # rank by score → keep top 8 → per-sub-question support check (threshold 0.15)
+  # The <50-char floor and the page-span filter do NOT apply to the identified
+  # node: it is the provision the user named, and a short provision is still
+  # a provision (ADR-005).
 ```
 
 `NodeHit { node_id, title, snippet ≤400 chars, score, components{lex,ident,title,ref,hier}, page_start, fallback }`. Every tool logs `(tool, args, latency_ms, result_ids)`.

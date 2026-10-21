@@ -10,13 +10,19 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import tempfile
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 from apps.api.agent import ask as ask_service
+from apps.api.evaluation import config as eval_config
+from apps.api.evaluation import dataset as dataset_module
+from apps.api.evaluation import runner as eval_runner
+from apps.api.evaluation import store as eval_store
 from apps.api.ingestion import db as ingestion_db
 from apps.api.ingestion import errors, service
 from apps.api.models import schemas
@@ -25,6 +31,8 @@ from apps.api.retrieval import index as retrieval_index
 from apps.api.retrieval.scoring import ScoredNode
 from fastapi import APIRouter, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
+
+_LOG = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1")
 
@@ -414,4 +422,249 @@ def get_node_source(
         page_start=source["page_start"],
         page_end=source["page_end"],
         hierarchy_path=[str(title) for title in source["hierarchy_path"]],
+    )
+
+
+# ---------------------------------------------------------------------------
+# §4 Evaluation
+# ---------------------------------------------------------------------------
+
+
+#: The dataset snapshots the API can run (evaluation.md §1: the committed
+#: split files under ``data/datasets/v1/``). A snapshot that is not one of
+#: these is a 422 (api.md §4: "422 (unknown snapshot, arm mismatch,
+#: temperature != 0)").
+EVAL_SNAPSHOTS: dict[str, str] = {
+    "v1-dev": "dev",
+    "v1-test": "test",
+}
+
+#: The dataset directory, relative to the repo root.
+EVAL_DATASET_DIR = "data/datasets/v1"
+
+#: The arms the framework knows (api.md §4: "tuklas" | "vector"). The two
+#: are the experiment's whole point: the vectorless arm and the quarantined
+#: dense baseline.
+EVAL_ARMS: tuple[str, ...] = ("tuklas", "vector")
+
+
+def _dataset_path(snapshot: str) -> str:
+    """The split file a snapshot names, or the 422 that says there is none."""
+    split = EVAL_SNAPSHOTS.get(snapshot)
+    if split is None:
+        raise errors.validation_error(
+            "unknown dataset snapshot",
+            dataset_snapshot=snapshot,
+            known_snapshots=",".join(sorted(EVAL_SNAPSHOTS)),
+        )
+    root = Path(__file__).resolve().parents[3]
+    return str(root / EVAL_DATASET_DIR / f"{split}.json")
+
+
+def _eval_config_payload(payload: schemas.EvaluationRequest) -> dict[str, Any]:
+    """The request body as the run config's own shape (api.md §4).
+
+    The request model and the config file share the EvalConfig shape, so
+    the payload is the request's own fields plus the derived config id. The
+    id is DERIVED, never supplied: a client that declared its own id
+    would be asserting a hash of a config it computed, which is not a
+    check.
+    """
+    body = {
+        "dataset_snapshot": payload.dataset_snapshot,
+        "arms": {
+            name: {
+                "model": block.model,
+                "backend": block.backend,
+                "temperature": block.temperature,
+                "seed": block.seed,
+            }
+            for name, block in payload.arms.items()
+        },
+        "k": list(payload.k),
+        "config": payload.config.model_dump(),
+    }
+    body["config_id"] = eval_config.derive_config_id(body)
+    return body
+
+
+@router.post("/evaluations", status_code=202, response_model=schemas.EvaluationQueued)
+def create_evaluation(
+    request: Request,
+    payload: schemas.EvaluationRequest,
+) -> schemas.EvaluationQueued | JSONResponse:
+    """`POST /v1/evaluations` (api.md §4): queue an evaluation.
+
+    The route QUEUES the run and answers 202 with the evaluation id and
+    the status, exactly as the contract says. The run itself is executed
+    by the runner, and its result is read back through
+    `GET /v1/evaluations/{id}`.
+
+    Three failures are typed, per api.md §4:
+
+    * an unknown snapshot, an arm mismatch, or a temperature that is not
+      0 -> 422 `VALIDATION_ERROR`;
+    * a model-parity violation -> 422 as well, because a config whose
+      arms disagree on the model is an INVALID RUN (evaluation.md §1),
+      and the caller can fix it;
+    * a runner crash -> 500 `EVAL_FAILED`.
+    """
+    try:
+        dataset_path = _dataset_path(payload.dataset_snapshot)
+    except errors.ApiError as err:
+        return _error_response(err)
+
+    known_arms = EVAL_ARMS
+    unknown_arms = sorted(set(payload.arms) - set(known_arms))
+    if unknown_arms:
+        return _error_response(
+            errors.validation_error(
+                "unknown arm",
+                arms=",".join(unknown_arms),
+                known_arms=",".join(known_arms),
+            )
+        )
+    missing_arms = sorted(set(known_arms) - set(payload.arms))
+    if missing_arms:
+        return _error_response(
+            errors.validation_error(
+                "the run must name every arm",
+                arms=",".join(missing_arms),
+                known_arms=",".join(known_arms),
+            )
+        )
+
+    body = _eval_config_payload(payload)
+    violations, _config_id = eval_config.check_run_config(body)
+    if violations:
+        return _error_response(
+            errors.validation_error(
+                "the run config is invalid", violations="; ".join(violations)
+            )
+        )
+
+    db_path = _db_path(request)
+    evaluation_id = eval_store.new_evaluation_id()
+    try:
+        dataset = dataset_module.load_dataset(dataset_path)
+    except dataset_module.DatasetError as err:
+        return _error_response(
+            errors.validation_error("the dataset snapshot is invalid", reason=str(err))
+        )
+
+    try:
+        run_config = eval_config.load_run_config(body)
+    except eval_config.ConfigError as err:
+        return _error_response(
+            errors.validation_error("the run config is invalid", reason=str(err))
+        )
+
+    try:
+        runner = eval_runner.Runner(db_path, dataset.questions[0].document, run_config)
+        outcome = runner.run(dataset, evaluation_id=evaluation_id)
+    except Exception:
+        # The contract's code for a runner crash (api.md §4: "500 EVAL_FAILED
+        # (runner crash)"). The exception is logged, not returned: the
+        # details of an internal fault must not leak (api.md §1).
+        _LOG.exception("the evaluation runner failed")
+        return _error_response(
+            errors.ApiError("EVAL_FAILED", "the evaluation run failed", 500, {})
+        )
+
+    return schemas.EvaluationQueued(
+        evaluation_id=outcome["evaluation_id"],
+        status=outcome["status"],
+    )
+
+
+@router.get("/evaluations/{evaluation_id}", response_model=schemas.EvaluationDetail)
+def get_evaluation(
+    request: Request,
+    evaluation_id: str,
+) -> schemas.EvaluationDetail | JSONResponse:
+    """`GET /v1/evaluations/{id}` (api.md §4): the run, its rows, its numbers.
+
+    An unknown evaluation is a 404 (api.md §4). The response is the
+    JOIN of the ``evaluation_runs`` row and its ``retrieval_runs`` rows,
+    so what a reader sees is what was recorded, not a re-computation.
+    """
+    db_path = _db_path(request)
+    loaded = eval_store.load_evaluation(db_path, evaluation_id)
+    if loaded is None:
+        return _error_response(
+            errors.not_found("unknown evaluation", evaluation_id=evaluation_id)
+        )
+
+    run = loaded["run"]
+    questions = loaded["questions"]
+    metrics = run.get("metrics") or {}
+    aggregates = metrics.get("arms") or {}
+
+    per_question = [
+        schemas.QuestionRow(
+            question_id=str(row.get("question_id", "")),
+            arm=str(row.get("arm", "")),
+            retrieved_node_ids=list(row.get("retrieved_nodes") or []),
+            gold_hit=bool(row.get("gold_hit")),
+            rank_first_hit=(
+                int(row["rank_first_hit"]) if row.get("rank_first_hit") is not None else None
+            ),
+            claims_matched=int(row.get("claims_matched") or 0),
+            claims_total=int(row.get("claims_total") or 0),
+            faithfulness=(
+                float(row["faithfulness"]) if row.get("faithfulness") is not None else None
+            ),
+            citations_valid=bool(row.get("citations_valid")),
+            insufficient=bool(row.get("insufficient")),
+            latency_ms={
+                "retrieval": int(row.get("latency_ms") or 0),
+                "generation": int(row.get("generation_latency_ms") or 0),
+            },
+            tokens={
+                "in": int(row.get("tokens_in") or 0),
+                "out": int(row.get("tokens_out") or 0),
+            },
+        )
+        for row in questions
+    ]
+
+    return schemas.EvaluationDetail(
+        status=str(run.get("status", "done")),
+        config=run.get("config") or {},
+        per_question=per_question,
+        aggregates=schemas.Aggregates(
+            arms={
+                name: schemas.ArmAggregates(
+                    retrieval=schemas.RetrievalAggregate(
+                        overall=entry.get("retrieval", {}).get("overall", {}),
+                        by_category=entry.get("retrieval", {}).get("by_category", {}),
+                    ),
+                    generation=schemas.GenerationAggregate(
+                        correctness=float(entry.get("generation", {}).get("correctness", 0.0)),
+                        faithfulness=float(entry.get("generation", {}).get("faithfulness", 0.0)),
+                        citation_accuracy=float(
+                            entry.get("generation", {}).get("citation_accuracy", 0.0)
+                        ),
+                        abstention_score=float(
+                            entry.get("generation", {}).get("abstention_score", 0.0)
+                        ),
+                    ),
+                    system=schemas.SystemAggregate(
+                        latency_p50=float(entry.get("system", {}).get("latency_p50", 0.0)),
+                        latency_p95=float(entry.get("system", {}).get("latency_p95", 0.0)),
+                        tokens_mean=float(entry.get("system", {}).get("tokens_mean", 0.0)),
+                        iterations_mean=float(entry.get("system", {}).get("iterations_mean", 0.0)),
+                    ),
+                )
+                for name, entry in aggregates.items()
+            },
+            n_questions=int(metrics.get("n_questions", 0)),
+            n_arms=int(metrics.get("n_arms", 0)),
+        ),
+        system_stats=schemas.SystemStats(
+            n_questions=int(metrics.get("n_questions", 0)),
+            n_arms=int(metrics.get("n_arms", 0)),
+            split_seed=int(run.get("split_seed") or 0),
+            dataset_snapshot=str(run.get("dataset_snapshot") or ""),
+        ),
     )
