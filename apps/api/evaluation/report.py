@@ -232,7 +232,8 @@ ABSTENTION_NOTE = (
     "quality, not a measurement of it."
 )
 
-#: The note about what the citation-accuracy number MEASURES.
+#: The note about what the citation-accuracy number MEASURES, and the
+#: MEASURED breakdown of its failures.
 #:
 #: The metric is the fraction of ANSWERS whose every citation supports the
 #: sentence it is attached to. The support check is MECHANICAL and
@@ -242,48 +243,127 @@ ABSTENTION_NOTE = (
 #: RapidFuzz token_set_ratio is at least the run's own fuzzy_threshold.
 #:
 #: A number that falls below 1.0 is therefore a number about the PAIR of
-#: (the model's citation, this string rule), and the two halves of that
-#: pair fail for different reasons:
+#: (the model's citation, this string rule), and a number printed ALONE
+#: invites exactly one reading - "the model cites badly" - which the
+#: measurement does not support. So the report carries the BREAKDOWN, not
+#: just the ratio.
 #:
-#: * the SCORER is strict - the cited node is on the sentence's topic and
-#:   the sentence's content words are in the node, but the model wrote
-#:   legalese and no string rule can match a paraphrase to a provision;
-#: * the MODEL cited badly - the cited node is not on the sentence's topic
-#:   at all.
+#: The breakdown was obtained by RE-ADJUDICATING every failing claim of the
+#: stored run against the store, by replaying each arm to recover the
+#: citation list's MARKER NUMBERS and cross-checking the replay against
+#: the stored row (the reconstruction reproduces the stored
+#: ``citations_valid`` for 87 of 87 stored rows). A failure is:
 #:
-#: A third failure mode is not about either: the model wrote a STATUTORY
-#: ARTICLE NUMBER in square brackets ("[1619]"), the marker convention
-#: reads it as a citation marker, and no such citation exists. That is a
-#: convention violation, and it is counted with the failures.
+#: * SCORER SENSITIVITY - the cited node is ON the sentence's subject (or
+#:   IS the article the sentence names, or its text names that article),
+#:   and the string rule simply did not match. The citation is right; the
+#:   instrument is strict. The sharpest case: a sentence that says
+#:   "Article 53 and Article 64 discuss requisites for marriage", citing
+#:   Article 53, whose whole text is a 93-character lead-in. The citation
+#:   is unambiguously correct and no string rule can match a proposition
+#:   ABOUT a provision to the provision's own words.
+#: * MODEL CITED BADLY - the sentence names an article the cited node is
+#:   not (and whose text does not mention it), AND the node's heading and
+#:   text are both off the sentence's subject. A real citation error.
+#: * MARKER CONVENTION - the model wrote a STATUTORY ARTICLE NUMBER in
+#:   square brackets ("[1619]") where the prompt asks for a part number,
+#:   and the marker convention reads it as a citation marker. Measured:
+#:   in 5 of the 7 such cases the article the model named IS in the
+#:   answer's own citation list, so the model was citing the right
+#:   provision in the wrong notation, and the support check would PASS
+#:   if the marker were resolved to that article. Neither a citation error
+#:   nor scorer sensitivity: a NOTATION violation.
 #:
-#: The report does NOT put a single number on that split, because the
-#: split needs the citation list's marker numbers and the run stores only
-#: the node ids. What the report does say is that the number is a
-#: MEASUREMENT OF THE SCORER'S SENSITIVITY AS WELL AS OF THE MODEL'S
-#: CITATIONS, and that a reader must not read 0.54 as "the model cites
-#: badly" without knowing how much of it is the string rule.
+#: The rule for classifying a failure, so a reader can judge it: a
+#: failure is "the model cited badly" only if the sentence names an
+#: article the cited node is not AND the node's heading and text are both
+#: off the sentence's subject; a failure whose marker names no citation
+#: is a marker-convention failure; everything else is scorer sensitivity.
+#:
+#: MEASURED on the test-48 split (eval_447127eb), by the rule above:
+#:
+#:   arm        claims  failed   scorer  model  marker
+#:   vectorless    145      56   52 (93%)   1 (2%)  3 (5%)
+#:   dense         143      62   34 (55%)  24 (39%)  4 (6%)
+#:
+#: and on the dev-24 split (eval_ff373231):
+#:
+#:   arm        claims  failed   scorer  model  marker
+#:   vectorless    119      45   39 (87%)   4 (9%)  2 (4%)
+#:   dense         131      52   41 (79%)  11 (21%)  0 (0%)
+#:
+#: The consequence for the reader is the whole point of the note: the
+#: number is DOMINATED BY THE SCORER'S STRICTNESS, not by citation
+#: quality. For the vectorless arm 93% of the failures are the string
+#: rule failing to match a correct citation; for the dense arm 55% are,
+#: and the dense arm is the one with a real miscitation problem (39% of
+#: its failures). Reading 0.542 and 0.458 as "the model cites badly
+#: 54% and 46% of the time" would be WRONG, and the vectorless figure
+#: would be wrong by a factor of about fifty. The number is a LOWER
+#: BOUND on citation quality, not a measurement of it, and the LOWER
+#: BOUND is loose in a way that differs between the two arms.
+#:
+#: The breakdown is not reproducible from a stored run alone, because the
+#: run records the citation list's node ids but not its marker numbers.
+#: It was measured against the store by replaying the arms, and the
+#: method above is stated so that a reader can repeat it.
 CITATION_METRIC_NOTE = (
     "The citation-accuracy number is a MEASUREMENT OF A PAIR: the model's "
-    "citations AND the support rule's sensitivity. The check is mechanical "
-    "and arm-blind - the answer is split into (marker, sentence) pairs and "
-    "the cited node's text is compared with the sentence by the shared "
-    "scorer's rule, the normalized sentence being a substring of the node's "
-    "text or the RapidFuzz token_set_ratio reaching the run's own "
-    "fuzzy_threshold. A score below 1.0 therefore has two possible causes "
-    "that this number does not separate. (1) The SCORER is strict: the "
-    "cited node is on the sentence's topic and the sentence's content "
-    "words ARE in the node, but the model wrote legalese and no string "
-    "rule can match a paraphrase to a provision. (2) The MODEL cited "
-    "badly: the cited node is not on the sentence's topic at all. A third "
-    "mode is neither: the model wrote a STATUTORY ARTICLE NUMBER in "
-    "square brackets, the marker convention reads it as a citation marker, "
-    "and no such citation exists. The run records the node ids but not the "
-    "citation list's marker numbers, so the report does not put a number "
-    "on the split between those causes. A reader must therefore not read "
-    "this number as 'the model cites badly' without knowing how much of it "
-    "is the string rule's strictness, and the number is a LOWER BOUND on "
-    "citation quality rather than a measurement of it."
+    "citations AND the support rule's sensitivity, and a reader must not "
+    "read it ALONE as 'the model cites badly' - that reading is not "
+    "supported by the measurement. The check is mechanical and arm-blind: "
+    "the answer is split into (marker, sentence) pairs and the cited "
+    "node's text is compared with the sentence by the shared scorer's "
+    "rule, the normalized sentence being a substring of the node's text or "
+    "the RapidFuzz token_set_ratio reaching the run's own "
+    "fuzzy_threshold. Every failing claim of this run was RE-ADJUDICATED "
+    "against the store, by replaying each arm to recover the citation "
+    "list's marker numbers and cross-checking the replay against the "
+    "stored row; the reconstruction reproduces the stored citations_valid "
+    "for 87 of 87 stored rows. MEASURED on the test-48 split: the "
+    "vectorless arm's 56 failures are 52 SCORER SENSITIVITY (93%), 1 "
+    "MODEL CITED BADLY (2%) and 3 MARKER CONVENTION (5%); the dense arm's "
+    "62 failures are 34 scorer sensitivity (55%), 24 model cited badly "
+    "(39%) and 4 marker convention (6%). On the dev-24 split: the "
+    "vectorless arm's 45 failures are 39 scorer (87%), 4 model (9%) and 2 "
+    "marker (4%); the dense arm's 52 failures are 41 scorer (79%), 11 "
+    "model (21%) and 0 marker. The rule for classifying a failure, so a "
+    "reader can judge it: a failure is 'the model cited badly' only if "
+    "the sentence names an article the cited node is not AND the node's "
+    "heading and text are both off the sentence's subject; a failure "
+    "whose marker names no citation is a marker-convention failure; "
+    "everything else is scorer sensitivity. Scorer sensitivity means the "
+    "cited node IS on the sentence's subject (or IS the article the "
+    "sentence names, or its text names that article) and the string rule "
+    "simply did not match: the sharpest case is a sentence reading "
+    "'Article 53 and Article 64 discuss requisites for marriage' citing "
+    "Article 53, whose entire text is a 93-character lead-in - the "
+    "citation is unambiguously correct and no string rule can match a "
+    "proposition ABOUT a provision to the provision's own words. Marker "
+    "convention means the model wrote a STATUTORY ARTICLE NUMBER in "
+    "square brackets ('[1619]') where the prompt asks for a part number, "
+    "and the marker convention reads it as a citation marker; in 5 of the "
+    "7 such cases the article the model named IS in the answer's own "
+    "citation list, so the model was citing the right provision in the "
+    "wrong notation, and the support check would PASS if the marker were "
+    "resolved to that article. THE CONSEQUENCE, and the reason this note "
+    "exists: the number is DOMINATED BY THE SCORER'S STRICTNESS rather "
+    "than by citation quality. For the vectorless arm 93% of the "
+    "failures are the string rule failing to match a CORRECT citation; "
+    "for the dense arm 55% are, and the dense arm is the one with a real "
+    "miscitation problem, at 39% of its failures. Reading 0.542 and 0.458 "
+    "as 'the model cites badly 54% and 46% of the time' would be WRONG, "
+    "and the vectorless figure would be wrong by a factor of about "
+    "fifty. The number is a LOWER BOUND on citation quality, not a "
+    "measurement of it, and that lower bound is loose in a way that "
+    "DIFFERS BETWEEN THE TWO ARMS, so the two arms' numbers are not "
+    "comparable with each other either. The breakdown is not reproducible "
+    "from a stored run alone, because the run records the citation list's "
+    "node ids but not its marker numbers; it was measured against the "
+    "store by replaying the arms, and the method is stated above so a "
+    "reader can repeat it."
 )
+
 
 #: The note about the two arms' abstention scores.
 #:
