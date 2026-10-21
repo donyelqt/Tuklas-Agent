@@ -1,0 +1,407 @@
+{
+  "name": "dev",
+  "snapshot_id": "v1-dev",
+  "seed": 42,
+  "notes": "The dev split of the frozen 72-question benchmark (evaluation.md §1). Split seed 42, stratified by category. The dev split is the tuning split: a weight tuned on it may not be reported on it. The answerable: false rows are built so that EVERY token of the question is absent from the corpus - not only the content tokens - and the generator MEASURES that against a real ingest before it writes the split. The reason is a measured one: the abstention gate is lexical, and the lex component is min-max normalized per query, so a single matching token gives lex = 1.0. Measured on the Civil Code, 'Elucidate zeppelin airship quantum observatory' refuses with no citations, while 'How does a zeppelin airship quantum observatory work?' is ANSWERED with 8 citations - the difference is entirely the scaffolding words, which occur in the corpus. A planted unanswerable question that shares ordinary vocabulary with the corpus is therefore ANSWERED, with citations, and the abstention metric then measures the dataset rather than the system. The honest limitation: refusing a question whose vocabulary is absent is a WEAKER test than refusing a question that is out-of-domain in substance. The abstention score this split produces is a lower bound on the system's refusal quality, not a measurement of it.",
+  "questions": [
+    {
+      "id": "q001",
+      "question": "Compare how a legal separation is granted and how it takes effect on the spouses' property.",
+      "document": "civil-code-public",
+      "category": "comparison",
+      "gold_nodes": [
+        "node_civil-code-public_article_101",
+        "node_civil-code-public_article_104"
+      ],
+      "expected_claims": [
+        "no decree upon a stipulation of facts",
+        "collusion",
+        "live separately",
+        "manage their respective property"
+      ],
+      "answerable": true,
+      "notes": "101 is the grant and 104 the effect."
+    },
+    {
+      "id": "q002",
+      "question": "Compare the ownership of a swarm of bees with the ownership of pigeons and fish that fly to another owner.",
+      "document": "civil-code-public",
+      "category": "comparison",
+      "gold_nodes": [
+        "node_civil-code-public_article_716",
+        "node_civil-code-public_article_717"
+      ],
+      "expected_claims": [
+        "the owner of a swarm of bees",
+        "pursue them to another's land",
+        "pigeons and fish",
+        "provided they have not been enticed"
+      ],
+      "answerable": true,
+      "notes": "Two adjacent acquisition articles with different conditions."
+    },
+    {
+      "id": "q003",
+      "question": "How do the effects of legal separation on the spouses differ from its effects on the family home?",
+      "document": "civil-code-public",
+      "category": "comparison",
+      "gold_nodes": [
+        "node_civil-code-public_article_104",
+        "node_civil-code-public_article_237"
+      ],
+      "expected_claims": [
+        "live separately",
+        "manage their respective property",
+        "the family home shall be dissolved",
+        "cease to be exempt from execution"
+      ],
+      "answerable": true,
+      "notes": "The same pair as the multi-section row above, asked as a comparison. The questions differ; the golds are the same provisions."
+    },
+    {
+      "id": "q004",
+      "question": "Article 120 refers to the persons designated by law to give consent to the marriage of a minor. What does article 121 require for a modification of the marriage settlements?",
+      "document": "civil-code-public",
+      "category": "cross-reference",
+      "gold_nodes": [
+        "node_civil-code-public_article_121"
+      ],
+      "expected_claims": [
+        "made before the celebration of the marriage",
+        "subject to the provisions of Art. 191"
+      ],
+      "answerable": true,
+      "notes": "The question names the consent article to lead to the modification article."
+    },
+    {
+      "id": "q005",
+      "question": "Article 1624 refers to article 1475. What does article 1475 provide about the perfection of the contract of sale?",
+      "document": "civil-code-public",
+      "category": "cross-reference",
+      "gold_nodes": [
+        "node_civil-code-public_article_1475"
+      ],
+      "expected_claims": [
+        "perfected at the moment there is a meeting of minds",
+        "upon the thing which is the object",
+        "upon the price"
+      ],
+      "answerable": true,
+      "notes": "The cited provision is the rule on when a sale is perfected. Article 1466 is the construing distractor."
+    },
+    {
+      "id": "q006",
+      "question": "Article 718 grants the finder of hidden treasure the right given by article 438. What does article 438 provide?",
+      "document": "civil-code-public",
+      "category": "cross-reference",
+      "gold_nodes": [
+        "node_civil-code-public_article_438"
+      ],
+      "expected_claims": [
+        "hidden treasure",
+        "owner",
+        "half",
+        "fruits"
+      ],
+      "answerable": true,
+      "notes": "A direct cross-reference. The treasure article is short, and 719 is the found-movable distractor."
+    },
+    {
+      "id": "q007",
+      "question": "What does the Code call the part of the testator's property that cannot be disposed of in favour of the compulsory heirs?",
+      "document": "civil-code-public",
+      "category": "definition",
+      "gold_nodes": [
+        "node_civil-code-public_article_886"
+      ],
+      "expected_claims": [
+        "legitime",
+        "reserved by the law",
+        "compulsory heirs"
+      ],
+      "answerable": true,
+      "notes": "A paraphrase question: the question never says 'legitime', so this row tests whether the answer can be located without the term."
+    },
+    {
+      "id": "q008",
+      "question": "What is a substitution in the law of succession?",
+      "document": "civil-code-public",
+      "category": "definition",
+      "gold_nodes": [
+        "node_civil-code-public_article_857"
+      ],
+      "expected_claims": [
+        "appointment of another heir",
+        "in default of the heir originally instituted"
+      ],
+      "answerable": true,
+      "notes": "The definition article for substitution. Articles 860-868 are its distractors."
+    },
+    {
+      "id": "q009",
+      "question": "What is the rule for a movable that is not treasure and is found by someone else?",
+      "document": "civil-code-public",
+      "category": "definition",
+      "gold_nodes": [
+        "node_civil-code-public_article_719"
+      ],
+      "expected_claims": [
+        "must return it to its previous possessor",
+        "deposit it with the mayor",
+        "publicly announced"
+      ],
+      "answerable": true,
+      "notes": "A rule expressed as a procedure. The gold is the found-movable article, not the treasure article beside it."
+    },
+    {
+      "id": "q010",
+      "question": "What does Article 1231 provide about the causes that extinguish obligations?",
+      "document": "civil-code-public",
+      "category": "direct-lookup",
+      "gold_nodes": [
+        "node_civil-code-public_article_1231"
+      ],
+      "expected_claims": [
+        "payment",
+        "performance",
+        "loss of the thing due",
+        "condonation",
+        "compensation",
+        "novation"
+      ],
+      "answerable": true,
+      "notes": "Carried over from the golden 10Q, reworded to name the article. The gold is the enumerated list, not one of the items."
+    },
+    {
+      "id": "q011",
+      "question": "What does Article 3 provide about ignorance of the law?",
+      "document": "civil-code-public",
+      "category": "direct-lookup",
+      "gold_nodes": [
+        "node_civil-code-public_article_3"
+      ],
+      "expected_claims": [
+        "ignorance",
+        "excuses",
+        "compliance"
+      ],
+      "answerable": true,
+      "notes": "Carried over from the golden 10Q. A short provision (under the 50-character evidence floor) and the identified node's exemption from it is what makes this row interesting."
+    },
+    {
+      "id": "q012",
+      "question": "What does Article 361 provide about juvenile courts?",
+      "document": "civil-code-public",
+      "category": "direct-lookup",
+      "gold_nodes": [
+        "node_civil-code-public_article_361"
+      ],
+      "expected_claims": [
+        "juvenile courts",
+        "chartered city",
+        "large municipality"
+      ],
+      "answerable": true,
+      "notes": "Carried over from the golden 10Q. The shortest gold in the dataset, which makes it a good test of the evidence floor."
+    },
+    {
+      "id": "q013",
+      "question": "What does Article 774 define as succession?",
+      "document": "civil-code-public",
+      "category": "direct-lookup",
+      "gold_nodes": [
+        "node_civil-code-public_article_774"
+      ],
+      "expected_claims": [
+        "mode of acquisition",
+        "transmitted",
+        "death",
+        "by his will or by operation of law"
+      ],
+      "answerable": true,
+      "notes": "Carried over from the golden 10Q."
+    },
+    {
+      "id": "q014",
+      "question": "What must the vendor return when he exercises the right of repurchase?",
+      "document": "civil-code-public",
+      "category": "direct-lookup",
+      "gold_nodes": [
+        "node_civil-code-public_article_1616"
+      ],
+      "expected_claims": [
+        "the price of the sale",
+        "the expenses of the contract",
+        "the necessary and useful expenses"
+      ],
+      "answerable": true,
+      "notes": "The central provision of the redemption chapter. Articles 1617 and 1618 are its neighbours."
+    },
+    {
+      "id": "q015",
+      "question": "Article 2000 makes the hotel-keeper responsible for the loss of guests' property. What does article 2001 say about the act of a thief?",
+      "document": "civil-code-public",
+      "category": "exception",
+      "gold_nodes": [
+        "node_civil-code-public_article_2001"
+      ],
+      "expected_claims": [
+        "not deemed force majeure",
+        "use of arms",
+        "irresistible force"
+      ],
+      "answerable": true,
+      "notes": "A second route to the same gold as the row above, worded differently. The gold is the same provision; the questions are not."
+    },
+    {
+      "id": "q016",
+      "question": "Recite quantum spectrometer embargo",
+      "document": "civil-code-public",
+      "category": "exception",
+      "gold_nodes": [],
+      "expected_claims": [],
+      "answerable": false,
+      "notes": "Unanswerable: 'recite', 'quantum', 'spectrometer' and 'embargo' are absent from the corpus. The verb is part of the constraint: 'define' occurs in the U.S. Code Title 11 corpus, and a question whose verb is a word the corpus contains can be answered by vocabulary alone."
+    },
+    {
+      "id": "q017",
+      "question": "Under what exception is a minor who may not contract marriage without parental consent still able to acknowledge a natural child?",
+      "document": "civil-code-public",
+      "category": "exception",
+      "gold_nodes": [
+        "node_civil-code-public_article_279"
+      ],
+      "expected_claims": [
+        "parent or guardian approves"
+      ],
+      "answerable": true,
+      "notes": "Article 279's own exception. Article 281 is the child-of-age distractor."
+    },
+    {
+      "id": "q018",
+      "question": "A contract is voidable under article 1390. Which article provides for the requisites of a contract, and what are they?",
+      "document": "civil-code-public",
+      "category": "multi-hop",
+      "gold_nodes": [
+        "node_civil-code-public_article_1318",
+        "node_civil-code-public_article_1390"
+      ],
+      "expected_claims": [
+        "consent",
+        "object",
+        "cause",
+        "incapable",
+        "fraud",
+        "mistake",
+        "undue influence"
+      ],
+      "answerable": true,
+      "notes": "The question reaches the voidability list and then the requisites, so the answer needs both articles."
+    },
+    {
+      "id": "q019",
+      "question": "How is the obligation extinguished by a payment made by one of the solidary debtors, and what may that debtor claim from his co-debtors?",
+      "document": "civil-code-public",
+      "category": "multi-hop",
+      "gold_nodes": [
+        "node_civil-code-public_article_1217",
+        "node_civil-code-public_article_1216"
+      ],
+      "expected_claims": [
+        "Payment made by one of the solidary debtors extinguishes the obligation",
+        "the creditor may choose which offer to accept",
+        "claim from his co-debtors only the share that corresponds to each"
+      ],
+      "answerable": true,
+      "notes": "1217 is the payment and 1216 the creditor's right to proceed against any one of the solidary debtors. Article 1214 is the payment-to-one-creditor distractor."
+    },
+    {
+      "id": "q020",
+      "question": "What is a legacy or devise of a thing that belongs to another person, and when is it void?",
+      "document": "civil-code-public",
+      "category": "multi-hop",
+      "gold_nodes": [
+        "node_civil-code-public_article_929",
+        "node_civil-code-public_article_930"
+      ],
+      "expected_claims": [
+        "limited to such part or interest",
+        "void",
+        "erroneously believed that the thing pertained to him"
+      ],
+      "answerable": true,
+      "notes": "929 limits the legacy and 930 makes it void on the testator's mistake. Article 931 is the acquisition distractor."
+    },
+    {
+      "id": "q021",
+      "question": "How is the partition of a thing owned in common made, and what accounting follows it?",
+      "document": "civil-code-public",
+      "category": "multi-section",
+      "gold_nodes": [
+        "node_civil-code-public_article_496",
+        "node_civil-code-public_article_500"
+      ],
+      "expected_claims": [
+        "by agreement between the parties or by judicial proceedings",
+        "mutual accounting",
+        "damages caused by reason of his negligence or fraud"
+      ],
+      "answerable": true,
+      "notes": "496 is the manner and 500 the accounting. Article 494 (the right to demand partition) is the distractor."
+    },
+    {
+      "id": "q022",
+      "question": "What are the effects of legal separation on the spouses, and on the family home?",
+      "document": "civil-code-public",
+      "category": "multi-section",
+      "gold_nodes": [
+        "node_civil-code-public_article_104",
+        "node_civil-code-public_article_237"
+      ],
+      "expected_claims": [
+        "live separately",
+        "manage their respective property",
+        "the family home shall be dissolved",
+        "cease to be exempt from execution"
+      ],
+      "answerable": true,
+      "notes": "104 is the effect on the spouses and 237 the effect on the family home."
+    },
+    {
+      "id": "q023",
+      "question": "What are the requisites for the celebration of marriage, and who may solemnize it?",
+      "document": "civil-code-public",
+      "category": "multi-section",
+      "gold_nodes": [
+        "node_civil-code-public_article_53",
+        "node_civil-code-public_article_56"
+      ],
+      "expected_claims": [
+        "requisites",
+        "solemnized by",
+        "judges",
+        "mayors",
+        "priests"
+      ],
+      "answerable": true,
+      "notes": "Article 53 lists the requisites and 56 lists who may solemnize. Article 57 is the place-of-solemnization distractor."
+    },
+    {
+      "id": "q024",
+      "question": "What happens to parental authority, and when does it terminate?",
+      "document": "civil-code-public",
+      "category": "multi-section",
+      "gold_nodes": [
+        "node_civil-code-public_article_313",
+        "node_civil-code-public_article_327"
+      ],
+      "expected_claims": [
+        "cannot be renounced or transferred",
+        "upon emancipation",
+        "upon adoption"
+      ],
+      "answerable": true,
+      "notes": "313 states the rule and 327 the four terminating events. Article 321 is the usufruct-over-the-child's-property distractor."
+    }
+  ]
+}
