@@ -36,14 +36,17 @@ engine, or a live model. The fixtures are synthetic JSON written into
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -499,7 +502,7 @@ def test_the_gitleaks_archive_is_downloaded_under_the_name_the_checksum_lists() 
     # The download writes THAT name, not a generic one.
     assert '-o "$archive"' in script, "the download must write the archive under $archive"
     # And the checksum check is driven by the same name.
-    assert 'grep -F " ${archive}" checksums.txt' in script, (
+    assert 'awk -v name="${archive}"' in script, (
         "the checksum lookup must select the line for $archive"
     )
     # The old failure mode: a hardcoded generic name on disk.
@@ -522,7 +525,7 @@ def test_the_gitleaks_step_fails_closed_when_the_checksum_is_wrong() -> None:
     assert "sha256sum --check --strict" in script, "the checksum check must stay"
     # The checksum line is SELECTED first, so a missing entry fails loudly
     # instead of producing an empty checksum list.
-    assert 'if [ -z "$expected_line" ]' in script, (
+    assert 'if [ -z "${expected_line}" ]' in script, (
         "a checksums file that does not list the archive must fail by name"
     )
     # The version the binary reports is checked against the pin.
@@ -625,3 +628,267 @@ def _git_bash() -> str | None:
         if Path(candidate).is_file():
             return candidate
     return None
+
+
+# ---------------------------------------------------------------------------
+# 5. the gitleaks step, EXECUTED
+# ---------------------------------------------------------------------------
+
+#: A `curl` that serves the staged files instead of the network, and records
+#: the directory it was called in, so the test can see WHERE the download
+#: went. The archive's bytes are the staged ones, and the checksums file
+#: lists the real sha256 of those bytes, so the checksum check is exercised
+#: for real rather than stubbed.
+_CURL_STUB = """#!/usr/bin/env bash
+out=""; prev=""
+for a in "$@"; do
+  if [ "$prev" = "-o" ]; then out="$a"; fi
+  prev="$a"
+done
+[ -n "$out" ] || exit 2
+src="${STAGING_DIR}/$(basename "$out")"
+[ -f "$src" ] || exit 22
+cat "$src" > "$out"
+pwd > "${RECORD_DIR}/download_dir.txt"
+"""
+
+#: `sudo install` is the privileged part of the step; the test does not need
+#: it and cannot have it, so it is a no-op.
+_SUDO_STUB = """#!/usr/bin/env bash
+exit 0
+"""
+
+#: A `gitleaks` that reports the version the test wants it to report, so
+#: the version assertion can be driven from both sides.
+_GITLEAKS_STUB = """#!/usr/bin/env bash
+echo "${FAKE_GITLEAKS_VERSION}"
+"""
+
+
+def _gzip_tarball_with_gitleaks() -> bytes:
+    """A real gzip tarball holding a `gitleaks` file, built in memory.
+
+    The step untars the archive it downloaded, so the staged archive has to
+    be a real one. It is built in memory rather than on disk so the test
+    does not depend on `tar` being on the PATH of the machine running it.
+    """
+    import io
+    import tarfile
+
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        payload = b"#!/bin/sh\necho 8.30.1\n"
+        info = tarfile.TarInfo(name="gitleaks")
+        info.size = len(payload)
+        archive.addfile(info, io.BytesIO(payload))
+    return buffer.getvalue()
+
+
+@dataclass
+class _StepRun:
+    """What running a workflow step against stubs produced."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+    #: The directory the step downloaded into, as the step's own bash
+    #: reported it. This is a POSIX path (Git Bash's `/tmp/...`), so it is
+    #: NOT a Windows path and must be checked with bash, not with
+    #: `pathlib`.
+    download_dir: str
+    #: The sandbox the step ran in.
+    sandbox: str
+    bash: str
+
+    @property
+    def output(self) -> str:
+        return self.stdout + self.stderr
+
+    def dir_exists(self, path: str) -> bool:
+        """Whether `path` is a directory, as this step's own bash sees it."""
+        probe = subprocess.run(
+            [self.bash, "-c", '[ -d "$1" ] && echo yes || echo no', "_", path],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return probe.stdout.strip() == "yes"
+
+
+def _run_gitleaks_step(
+    tmp_path: Path,
+    checksums: str,
+    *,
+    reported_version: str = "8.30.1",
+) -> _StepRun:
+    """Run the workflow's `Install gitleaks` step against stubs.
+
+    The step is the REAL `run:` block out of the workflow file, executed by
+    a real bash, with `curl`, `sudo` and `gitleaks` replaced by stubs. That
+    is what makes the assertions below about BEHAVIOUR rather than about
+    the shape of the script: a step that reads correctly but dies on the
+    wrong exit status fails here, and no amount of reading the source would
+    have said so.
+    """
+    bash = _git_bash() or shutil.which("bash")
+    if bash is None:
+        pytest.skip("no bash on PATH to execute the gitleaks step with")
+
+    sandbox = tmp_path / "sandbox"
+    bin_dir = sandbox / "bin"
+    staging = sandbox / "staging"
+    record = sandbox / "record"
+    for directory in (bin_dir, staging, record):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    (bin_dir / "curl").write_text(_CURL_STUB, encoding="utf-8", newline="\n")
+    (bin_dir / "sudo").write_text(_SUDO_STUB, encoding="utf-8", newline="\n")
+    (bin_dir / "gitleaks").write_text(_GITLEAKS_STUB, encoding="utf-8", newline="\n")
+
+    # The archive's real bytes, and the checksums file that lists them
+    # under the archive's own name. The archive is a REAL gzip tarball,
+    # because the step untars it, and a stub that could not be untarred
+    # would fail the step for a reason that has nothing to do with the
+    # gate under test.
+    archive_name = "gitleaks_8.30.1_linux_x64.tar.gz"
+    archive_bytes = _gzip_tarball_with_gitleaks()
+    (staging / archive_name).write_bytes(archive_bytes)
+    digest = hashlib.sha256(archive_bytes).hexdigest()
+    (staging / "checksums.txt").write_text(checksums.format(digest=digest), encoding="utf-8")
+
+    script = _step_script(_workflow(), "Install gitleaks")
+    step_file = sandbox / "step.sh"
+    step_file.write_text(script, encoding="utf-8", newline="\n")
+
+    env = dict(os.environ)
+    env["GITLEAKS_VERSION"] = "8.30.1"
+    env["FAKE_GITLEAKS_VERSION"] = reported_version
+    # The stubs are found by PATH; the staged files and the record of the
+    # download directory are found by the variables the stubs read.
+    wrapper = (
+        'cd "$1" && export PATH="$PWD/bin:$PATH" '
+        '&& export STAGING_DIR="$PWD/staging" '
+        '&& export RECORD_DIR="$PWD/record" '
+        '&& exec bash "$2"'
+    )
+    result = subprocess.run(
+        [bash, "-c", wrapper, "_", str(sandbox), str(step_file)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    recorded = record / "download_dir.txt"
+    download_dir = recorded.read_text(encoding="utf-8").strip() if recorded.is_file() else ""
+    return _StepRun(
+        returncode=result.returncode,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        download_dir=download_dir,
+        sandbox=str(sandbox),
+        bash=bash,
+    )
+
+
+def test_the_gitleaks_step_names_the_missing_archive_when_it_is_not_listed(
+    tmp_path: Path,
+) -> None:
+    """A checksums file that omits the archive must fail BY NAME.
+
+    The defect this pins: the step selected the checksum line with
+    `grep`, which exits 1 when it matches nothing. Under `set -e` a
+    failing command substitution in an assignment aborts the shell, so the
+    "the checksums file does not list ..." branch was DEAD CODE: the step
+    died on the bare grep exit status, with no message naming the archive
+    that was missing. The step still failed, but it failed the way an
+    unexplained failure does.
+
+    This asserts the message is actually PRINTED, by running the step.
+    """
+    result = _run_gitleaks_step(
+        tmp_path,
+        # a checksums file that lists a DIFFERENT asset, and not the archive
+        "{digest}  gitleaks_8.30.1_darwin_x64.tar.gz\n",
+    )
+    assert result.returncode != 0, "the step must fail when the archive is not listed"
+    assert "gitleaks_8.30.1_linux_x64.tar.gz" in result.output, (
+        "the failure must name the archive that was expected:\n" + result.output
+    )
+    assert "does not list" in result.output, (
+        "the failure must say the checksums file does not list the archive:\n"
+        + result.output
+    )
+
+
+def test_the_gitleaks_step_passes_when_the_checksums_file_lists_the_archive(
+    tmp_path: Path,
+) -> None:
+    """The happy path must still work, and must install the pinned version.
+
+    The counterpart of the fail-closed case: a step that fails everything
+    is not a gate either. The archive is downloaded, its bytes are checked
+    against the checksums file, and the version the binary reports is
+    compared against the pin.
+    """
+    result = _run_gitleaks_step(
+        tmp_path,
+        "{digest}  gitleaks_8.30.1_linux_x64.tar.gz\n",
+    )
+    assert result.returncode == 0, (
+        "the step must succeed when the checksums file lists the archive:\n"
+        + result.output
+    )
+    assert "gitleaks_8.30.1_linux_x64.tar.gz: OK" in result.stdout, (
+        "the checksum must have been verified:\n" + result.stdout
+    )
+    assert "installed: gitleaks 8.30.1" in result.stdout
+
+
+def test_the_gitleaks_step_rejects_a_binary_that_reports_another_version(
+    tmp_path: Path,
+) -> None:
+    """The reported version must be the pinned one.
+
+    The checksum proves the bytes are the ones the release published; it
+    does not prove the release is the one the workflow asked for. A
+    binary that reports a different version must be rejected.
+    """
+    result = _run_gitleaks_step(
+        tmp_path,
+        "{digest}  gitleaks_8.30.1_linux_x64.tar.gz\n",
+        reported_version="8.29.0",
+    )
+    assert result.returncode != 0, "a wrong version must fail the step"
+    assert "8.29.0" in result.output and "8.30.1" in result.output, (
+        "the failure must name both the expected and the reported version:\n"
+        + result.output
+    )
+
+
+def test_the_gitleaks_step_downloads_outside_the_checkout_and_cleans_up(
+    tmp_path: Path,
+) -> None:
+    """The download must not land in the checkout, and must not be left behind.
+
+    The `gitleaks` step runs `gitleaks detect --source .` in the checkout.
+    The install step used to drop the archive and the checksums file into
+    that same tree, so the scan's input was not the repository. The
+    download goes to its own directory -- and that directory is removed
+    again, on the way out, however the step ends.
+    """
+    result = _run_gitleaks_step(
+        tmp_path,
+        "{digest}  gitleaks_8.30.1_linux_x64.tar.gz\n",
+    )
+    assert result.returncode == 0
+    download_dir = result.download_dir
+    assert download_dir, "the step must record where it downloaded to"
+    assert not download_dir.startswith(result.sandbox), (
+        f"the download must go outside the checkout, not into {result.sandbox}"
+    )
+    # The trap removes the work directory on the way out, so the runner is
+    # not left with the archive and the checksums file under /tmp. The path
+    # is a POSIX one, so it is checked with the step's own bash.
+    assert not result.dir_exists(download_dir), (
+        f"the download directory {download_dir} must be removed again"
+    )
