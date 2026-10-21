@@ -21,6 +21,7 @@ prefilter, never the score source.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -84,7 +85,7 @@ _FTS_WEIGHTS = "0.0, 0.0, 1.0"
 #: process; no eviction needed for v1 because each entry is small (term-freq
 #: dicts for one document's corpus) and document indexes are rebuilt rarely,
 #: with the mtime key invalidating stale entries on rebuild.
-_BM25_CACHE: dict[tuple[str, float], tuple[BM25Okapi, list[str]]] = {}
+_BM25_CACHE: dict[tuple[str, float], tuple[BM25Okapi, list[str], LexPathInfo]] = {}
 
 #: How many top-lex nodes seed the pass-2 ref walk / hier sibling set.
 _LEX_TOP_FOR_REF = 5
@@ -92,6 +93,71 @@ _LEX_TOP_FOR_HIER = 3
 
 #: Unicode word token for title/heading Jaccard and BM25 query tokenization.
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+#: Version tag of the BM25 tokenizer; persisted in bm25.json so stale
+#: pre-fold artifacts are detectable at load time.
+_TOKENIZER_VERSION = "fold-alnum-v2"
+
+
+@dataclass(frozen=True)
+class LexPathInfo:
+    """WHICH lex source produced the scores of one ``score_nodes`` call.
+
+    The choice between the per-document BM25 artifact and the FTS5
+    fallback is made INSIDE this module, at scoring time — it depends on
+    the artifact's presence AND on its tokenizer version (a stale
+    artifact falls back too). A caller who re-derived the fact by
+    re-stat-ing ``bm25.json`` could disagree with what actually ran, so
+    the layer REPORTS the decision instead: every ``ScoredNode`` carries
+    the info of the call that produced it, and the evaluation harness
+    records the rendered form in the run row.
+
+    ``path`` is one of the two ``LEX_PATH_*`` constants below.
+    ``tokenizer_version`` and ``artifact_sha256_16`` are facts about the
+    persisted artifact and are set only on the per-document path. The
+    hash is sha256 over the artifact's FILE CONTENT, truncated to 16 hex
+    chars: it is content-addressed, so two reads of the same artifact
+    hash the same regardless of mtime, and it changes only when the
+    artifact's content changes.
+    """
+
+    path: str
+    tokenizer_version: str | None = None
+    artifact_sha256_16: str | None = None
+
+
+#: The lex path where the document's own persisted rank-bm25 model
+#: (``data/indexes/{doc_id}/bm25.json``) produced the scores.
+LEX_PATH_PER_DOCUMENT_BM25 = "per-document-bm25"
+
+#: The lex path where no usable artifact was found (absent, or persisted
+#: under a stale tokenizer version) and the scores came from FTS5's
+#: bm25() over the MATCH prefilter. FTS5's N/avgdl are TABLE-GLOBAL, so
+#: scores on this path can drift when another document is ingested;
+#: reproducibility holds only until the next ingest.
+LEX_PATH_FTS5_FALLBACK = "fts5-fallback"
+
+#: The info for the fallback path; a module constant because the path
+#: carries no per-artifact facts.
+LEX_PATH_FTS5_FALLBACK_INFO = LexPathInfo(path=LEX_PATH_FTS5_FALLBACK)
+
+
+def format_lex_path(info: LexPathInfo) -> str:
+    """The lex path as the run row records it.
+
+    Per-document: ``per-document-bm25@<sha256-16>@tokenizer=<version>``.
+    Fallback: ``fts5-fallback``. The rendered string is self-describing —
+    a reader of the run row can tell WHICH layer scored the lex
+    component, and on the per-document path can check the hash against
+    the artifact — without this module's types.
+    """
+    if info.path == LEX_PATH_PER_DOCUMENT_BM25:
+        return (
+            f"{LEX_PATH_PER_DOCUMENT_BM25}@{info.artifact_sha256_16}"
+            f"@tokenizer={info.tokenizer_version}"
+        )
+    return info.path
 
 
 @dataclass(frozen=True)
@@ -116,11 +182,12 @@ class ScoredNode:
     #: ORDER (see ``_rank_key``). The components dict stays frozen at the five
     #: §3 components; a sixth would change the published component contract.
     identified: bool = False
-
-
-#: Version tag of the BM25 tokenizer; persisted in bm25.json so stale
-#: pre-fold artifacts are detectable at load time.
-_TOKENIZER_VERSION = "fold-alnum-v2"
+    #: The lex path info of the ``score_nodes`` call that produced this
+    #: node's scores — which lex source the layer actually used. Every
+    #: node of one call carries the SAME info; it is a property of the
+    #: CALL, duplicated onto the nodes so it reaches the caller without
+    #: a second channel.
+    lex_path: LexPathInfo = LEX_PATH_FTS5_FALLBACK_INFO
 
 
 def _fold(token: str) -> str:
@@ -249,14 +316,16 @@ def _load_candidates(conn: sqlite3.Connection, doc_id: str) -> list[sqlite3.Row]
     )
 
 
-def _load_doc_bm25(doc_id: str) -> tuple[BM25Okapi, list[str]] | None:
+def _load_doc_bm25(doc_id: str) -> tuple[BM25Okapi, list[str], LexPathInfo] | None:
     """Load the per-document persisted BM25 model (bm25.json), cached.
 
-    Returns the model plus its aligned ``doc_ids`` (1:1 with the model's
-    corpus rows). Cache key is (absolute path, mtime) so a rebuild invalidates
-    the stale model automatically; no eviction is needed because one entry
-    holds a single document's corpus and the count of touched documents is
-    small.
+    Returns the model, its aligned ``doc_ids`` (1:1 with the model's
+    corpus rows), and the artifact's lex-path facts (its tokenizer
+    version and a content hash). Cache key is (absolute path, mtime) so a
+    rebuild invalidates the stale model automatically; no eviction is
+    needed because one entry holds a single document's corpus and the
+    count of touched documents is small. The hash is computed once per
+    load — the cache makes it no more expensive than the model itself.
     """
     path = INDEX_ROOT / doc_id / "bm25.json"
     if not path.exists():
@@ -270,7 +339,8 @@ def _load_doc_bm25(doc_id: str) -> tuple[BM25Okapi, list[str]] | None:
     cached = _BM25_CACHE.get(key)
     if cached is not None:
         return cached
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    content = path.read_bytes()
+    payload = json.loads(content.decode("utf-8"))
     if payload.get("tokenizer") != _TOKENIZER_VERSION:
         # Stale artifact (pre-fold term_freqs); fall back to the FTS5 path.
         return None
@@ -283,8 +353,13 @@ def _load_doc_bm25(doc_id: str) -> tuple[BM25Okapi, list[str]] | None:
     params = payload["params"]
     model = BM25Okapi(corpus_tokens, k1=float(params["k1"]), b=float(params["b"]))
     doc_ids = [str(nid) for nid in payload["doc_ids"]]
-    _BM25_CACHE[key] = (model, doc_ids)
-    return model, doc_ids
+    info = LexPathInfo(
+        path=LEX_PATH_PER_DOCUMENT_BM25,
+        tokenizer_version=str(payload["tokenizer"]),
+        artifact_sha256_16=hashlib.sha256(content).hexdigest()[:16],
+    )
+    _BM25_CACHE[key] = (model, doc_ids, info)
+    return model, doc_ids, info
 
 
 def _lex_scores(
@@ -292,7 +367,7 @@ def _lex_scores(
     tokens: list[str],
     candidate_ids: list[str],
     doc_id: str,
-) -> dict[str, float]:
+) -> tuple[dict[str, float], LexPathInfo]:
     """Lex component: BM25 over the document's own corpus, min-maxed to [0,1].
 
     The score source is the persisted per-document rank-bm25 model
@@ -306,21 +381,27 @@ def _lex_scores(
     All candidates participate in the normalization: nodes with zero matched
     terms take lex 0.0, so a query matching a single node yields 1.0 for that
     node (its raw score is the max, every other candidate is the min).
+
+    Returns the scores AND the lex path the layer actually took: the
+    per-document model's own facts when the artifact was usable, or the
+    FTS5-fallback info when it was not. The caller records what is
+    returned — it does NOT re-derive the choice, because a re-derivation
+    (a re-stat of the artifact) can disagree with what actually ran.
     """
     if not tokens:
-        return {}
+        return {}, LEX_PATH_FTS5_FALLBACK_INFO
     candidates = set(candidate_ids)
     loaded = _load_doc_bm25(doc_id)
     if loaded is not None:
         # Per-document runtime-truth model: deterministic per (doc, query).
-        model, doc_ids = loaded
+        model, doc_ids, info = loaded
         raw_scores = model.get_scores(tokens)
         raw = {
             nid: float(score)
             for nid, score in zip(doc_ids, raw_scores, strict=True)
             if nid in candidates
         }
-        return _min_max(raw, candidates)
+        return _min_max(raw, candidates), info
     # Fallback for legacy DBs with no persisted bm25.json: score via FTS5 bm25
     # with the MATCH restricted to this document. CAVEAT: FTS5's N/avgdl are
     # table-global, so these scores can still drift when another document is
@@ -339,7 +420,7 @@ def _lex_scores(
         if node_id in candidates:
             # bm25() is negative-better; invert so larger == better.
             fts_raw[node_id] = -float(row["rank"])
-    return _min_max(fts_raw, candidates)
+    return _min_max(fts_raw, candidates), LEX_PATH_FTS5_FALLBACK_INFO
 
 
 def _title_scores(
@@ -492,7 +573,7 @@ def score_nodes(
     doc_id: str,
     query: str,
     weights: dict[str, float] = WEIGHT_DEFAULTS,
-) -> list[ScoredNode]:
+) -> tuple[list[ScoredNode], LexPathInfo]:
     """Rank all nodes of one document; retrieval.md §3 exactly.
 
     Pass 1 computes lex/ident/title and freezes the lex-top-5 and lex-top-3
@@ -501,6 +582,12 @@ def score_nodes(
     invariant to other documents' ingests. With an all-zero lex layer, ref/hier
     are forced to 0 so the broaden-retry precondition holds. Deterministic: no
     RNG, stable tiebreak on (depth, position, id).
+
+    Returns the ranked nodes AND the lex path the layer actually took
+    (see :class:`LexPathInfo`): the per-document BM25 artifact's facts,
+    or the FTS5 fallback. The caller records what is returned rather
+    than re-deriving the choice, because a re-derivation (a re-stat of
+    the artifact) can disagree with what actually ran.
     """
     w = _clamp_weights(weights)
     with db.connect(db_path) as conn:
@@ -510,7 +597,7 @@ def score_nodes(
         fallback = parse_confidence < 0.5
         candidates = _load_candidates(conn, real_doc_id)
         if not candidates:
-            return []
+            return [], LEX_PATH_FTS5_FALLBACK_INFO
         by_id = {str(r["id"]): r for r in candidates}
 
         # --- Disjoint-inputs token surgery --------------------------------
@@ -526,11 +613,15 @@ def score_nodes(
             # retrieval.md §6: flat fallback — ident/title/hier are 0; lex runs
             # over page-node texts (node_fts holds every node; page rows ARE
             # the lex surface, so FTS5 over text covers the page corpus).
-            lex = _lex_scores(conn, lex_tokens, [str(r["id"]) for r in candidates], real_doc_id)
+            lex, lex_path_info = _lex_scores(
+                conn, lex_tokens, [str(r["id"]) for r in candidates], real_doc_id
+            )
             ident: dict[str, float] = {}
             title: dict[str, float] = {}
         else:
-            lex = _lex_scores(conn, lex_tokens, [str(r["id"]) for r in candidates], real_doc_id)
+            lex, lex_path_info = _lex_scores(
+                conn, lex_tokens, [str(r["id"]) for r in candidates], real_doc_id
+            )
             ident, identified = _ident_lookup(conn, real_doc_id, query_labels)
             title = _title_scores(conn, real_doc_id, query, query_label_tokens)
 
@@ -583,9 +674,10 @@ def score_nodes(
                     position=int(node["position"]),
                     fallback=fallback,
                     identified=node_id in identified,
+                    lex_path=lex_path_info,
                 )
             )
         # Deterministic order: identified first, then score desc, then tree
         # position (depth, position, id).
         scored.sort(key=_rank_key)
-        return scored
+        return scored, lex_path_info
