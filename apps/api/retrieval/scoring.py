@@ -8,9 +8,12 @@ the lex-top-5 and lex-top-3 sets after pass 1 makes pass 2 a single cheap
 graph lookup per candidate and keeps the total score a deterministic pure
 function of (db, query, weights).
 
-Disjoint inputs (BINDING, §3): identifier tokens are stripped from the lex
-input and from the title tokens, so a heading term fires in exactly one
-component. Lex scores come from the per-document persisted rank-bm25 model
+Disjoint inputs (BINDING, §3) are enforced on the QUERY side: identifier
+tokens are stripped from the lex input and from the title tokens, so an
+IDENTIFIER term fires only in the ident component. A heading's ordinary words
+are a different matter - the parser stores the heading line at the start of
+the node's body, so they are lexical surface as well and can fire in lex and
+title together. Lex scores come from the per-document persisted rank-bm25 model
 (``bm25.json``, §2) so they are invariant to other documents' ingests; SQLite
 FTS5 (title column weighted 0 at query time) remains only the candidate MATCH
 prefilter, never the score source.
@@ -38,6 +41,27 @@ WEIGHT_DEFAULTS: dict[str, float] = {
     "hier": 1.0,
 }
 
+#: The bonus flags the retrieval layer ACTUALLY applies.
+#:
+#: retrieval.md §3 names two bonuses - the phrase bonus and the fuzzy
+#: bonus - and says they are "off by default and enabled only via tuning".
+#: It does not define their magnitude, their component, or how they enter
+#: the §3 formula, and this layer implements NEITHER of them. The §3
+#: formula has exactly five terms and this module does not add a sixth:
+#: a bonus term with an invented weight would be an unrecorded design
+#: decision inside a scoring function, and the numbers this harness
+#: publishes would then carry a constant nobody chose on the record.
+#:
+#: The constant exists so that the truth about the bonuses lives in ONE
+#: place and the run config can be checked AGAINST it. A config that
+#: claims a bonus this layer does not apply is a config that records what
+#: was ASKED for and not what was APPLIED, which is the failure this
+#: whole value is here to prevent.
+APPLIED_BONUS_FLAGS: dict[str, bool] = {
+    "phrase": False,
+    "fuzzy": False,
+}
+
 #: Component names, canonical order for the components dict.
 COMPONENTS: tuple[str, ...] = ("lex", "ident", "title", "ref", "hier")
 
@@ -45,10 +69,14 @@ COMPONENTS: tuple[str, ...] = ("lex", "ident", "title", "ref", "hier")
 _WEIGHT_MIN = 0.0
 _WEIGHT_MAX = 2.0
 
-#: FTS5 column weights: (node_id UNINDEXED, title, text) — text only. This is
-#: the disjoint-inputs enforcement at the FTS5 surface, which serves ONLY as
-#: the candidate MATCH prefilter; the lex score itself comes from the persisted
-#: per-document rank-bm25 model (see _lex_scores).
+#: FTS5 column weights: (node_id UNINDEXED, title, text) — text only. The
+#: title column is weighted 0 so the FTS5 candidate MATCH prefilter never
+#: ranks on it; the lex score itself comes from the persisted per-document
+#: rank-bm25 model (see _lex_scores). NOTE this is NOT the section 3
+#: disjointness rule: that rule is enforced on the QUERY side (identifier
+#: tokens are stripped from the lex and title inputs), and a heading's
+#: ordinary words are lexical surface as well because the parser stores the
+#: heading line at the start of a node's body text (ADR-007).
 _FTS_WEIGHTS = "0.0, 0.0, 1.0"
 
 #: Cache of loaded per-document BM25 models, keyed by (bm25.json abs path,

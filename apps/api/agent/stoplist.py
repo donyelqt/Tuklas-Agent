@@ -56,6 +56,25 @@ _LABEL_WORDS: frozenset[str] = frozenset(
 #: Binding stoplist (retrieval.md §3): FTS5 defaults + label words.
 STOPLIST: frozenset[str] = _FTS5_DEFAULT_STOPWORDS | _LABEL_WORDS
 
+#: The version id of the list above.
+#:
+#: The list is "versioned in code, not ad hoc" (retrieval.md §3), and a
+#: list that is versioned in code but not NAMED is not versioned at all:
+#: a run record that pins a "stoplist version" has to name a version the
+#: code actually has, or the record describes a list nobody can identify.
+#:
+#: The id covers the WHOLE list - the FTS5 default stopwords AND the
+#: label/filler words - because both are in :data:`STOPLIST` and the
+#: broaden-retry drops both. A change to either part changes what the
+#: retry drops, so it changes the version.
+#:
+#: The name is a label, not an enumeration: it says which list the code
+#: has, and the constant's definition says what that list is. The run
+#: config checker compares the config's pinned version against THIS
+#: constant, so a config naming a version the code does not have is
+#: refused rather than recorded.
+STOPLIST_VERSION: str = "fts5-english-v1"
+
 
 def _tokens(query: str) -> list[str]:
     """Whitespace split, lowercased, punctuation stripped per token."""

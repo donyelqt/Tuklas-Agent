@@ -26,6 +26,9 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from apps.api.agent.stoplist import STOPLIST_VERSION
+from apps.api.retrieval.scoring import APPLIED_BONUS_FLAGS
+
 #: The backends api.md §4 allows.
 ALLOWED_BACKENDS: frozenset[str] = frozenset({"ollama", "llamacpp", "vllm"})
 
@@ -215,7 +218,24 @@ def _check_weights(config: dict[str, Any], violations: list[str]) -> None:
 
 
 def _check_bonus_flags(config: dict[str, Any], violations: list[str]) -> None:
-    """The two bonus flags (api.md §4)."""
+    """The two bonus flags (api.md §4), checked against what is APPLIED.
+
+    The flags are not free-form: a run config that pins a bonus the
+    retrieval layer does not apply records what was ASKED for and not
+    what was APPLIED, and evaluation.md §6's run record would then
+    misdescribe the numbers it holds. So the config's flags must equal
+    the retrieval layer's applied state, and a config that claims a
+    bonus the layer does not implement is REFUSED here rather than
+    accepted and recorded.
+
+    retrieval.md §3 names the two bonuses and says they are "off by
+    default and enabled only via tuning", but it gives no magnitude, no
+    component and no place in the five-term formula, so the layer
+    implements neither. The applied state lives in the retrieval layer
+    itself (``retrieval.scoring.APPLIED_BONUS_FLAGS``), and this check
+    compares the config against it, so the two cannot drift apart
+    without a test failing.
+    """
     flags = config.get("bonus_flags")
     if not isinstance(flags, dict):
         violations.append("config.bonus_flags: must be an object")
@@ -223,6 +243,15 @@ def _check_bonus_flags(config: dict[str, Any], violations: list[str]) -> None:
     for name in ("phrase", "fuzzy"):
         if not isinstance(flags.get(name), bool):
             violations.append(f"config.bonus_flags.{name}: must be a boolean")
+            continue
+        applied = APPLIED_BONUS_FLAGS.get(name)
+        if flags[name] and not applied:
+            violations.append(
+                f"config.bonus_flags.{name}: the run pins the {name} bonus, but the "
+                "retrieval layer does not apply it (retrieval.md §3 defines no "
+                "magnitude for it), so the run would record a bonus that was never "
+                "applied"
+            )
 
 
 def _check_margins(config: dict[str, Any], violations: list[str]) -> None:
@@ -315,6 +344,22 @@ def check_run_config(run: dict[str, Any]) -> tuple[list[str], str]:
         value = config.get(name)
         if not isinstance(value, str) or not value.strip():
             violations.append(f"config.{name}: missing or empty (the run must pin it)")
+
+    # The stoplist version must be the version the CODE has. A config that
+    # names a version the code does not have records a stoplist nobody can
+    # identify, and the run's own record would then misdescribe the
+    # broaden-retry that produced the ranking (retrieval.md §3).
+    stoplist_version = config.get("stoplist_version")
+    if (
+        isinstance(stoplist_version, str)
+        and stoplist_version.strip()
+        and stoplist_version != STOPLIST_VERSION
+    ):
+        violations.append(
+            f"config.stoplist_version: {stoplist_version!r} is not the stoplist "
+            f"this code has ({STOPLIST_VERSION!r}), so the run would record a "
+            "stoplist version that was never applied"
+        )
 
     model = config.get("model")
     if not isinstance(model, str) or not model.strip():

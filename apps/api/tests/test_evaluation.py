@@ -223,6 +223,84 @@ def test_dataset_has_no_overlap_and_enough_unanswerable(splits: Any) -> None:
     assert count >= dataset_module.MIN_UNANSWERABLE
 
 
+def test_dataset_gold_overlap_is_measured(splits: Any) -> None:
+    """The shared GOLD provisions between the splits are measured, not hidden.
+
+    The overlap check on question ids and question text is not enough:
+    two questions can ask about the same provision in different words. The
+    dev split is the tuning split and the test split is the one touched
+    once per frozen config, so a shared gold provision means the tuning
+    has already seen that answer key.
+
+    The frozen split shares 9 provisions today (measured), so this asserts
+    the MEASUREMENT exists and is reported, and that the report's
+    effective-n figure is published next to the nominal n.
+    """
+    dev, test = splits
+    overlap = dataset_module.gold_overlap(dev, test)
+
+    assert overlap["n_test_gold_nodes"] > 0
+    assert overlap["n_shared_gold_nodes"] >= 0
+    assert 0.0 <= overlap["shared_fraction_of_test_golds"] <= 1.0
+    # The measurement must be CONSISTENT with the splits it describes.
+    dev_golds = {g for q in dev.questions for g in q.gold_nodes}
+    test_golds = {g for q in test.questions for g in q.gold_nodes}
+    assert overlap["shared_gold_nodes"] == sorted(dev_golds & test_golds)
+    # Every question reported as fully contained must really be.
+    for qid in overlap["test_questions_fully_contained_in_dev"]:
+        question = next(q for q in test.questions if q.id == qid)
+        assert set(question.gold_nodes) <= dev_golds
+
+    # The effective sample size is the number of DISTINCT gold provisions
+    # among the answerable questions. A question can carry SEVERAL golds,
+    # so this is not bounded by the question count - what it bounds is the
+    # number of independent PROVISIONS the split can say anything about,
+    # and it is at most the total number of gold references.
+    effective = dataset_module.effective_n(test)
+    answerable = sum(1 for q in test.questions if q.answerable)
+    total_references = sum(
+        len(q.gold_nodes) for q in test.questions if q.answerable
+    )
+    assert 0 < effective <= total_references
+    assert effective >= 1
+    # Every distinct gold of an answerable question is counted exactly once.
+    distinct = {
+        g for q in test.questions if q.answerable for g in q.gold_nodes
+    }
+    assert effective == len(distinct)
+    assert answerable >= 1
+
+
+def test_the_report_publishes_the_effective_sample_size(splits: Any) -> None:
+    """The report prints the effective n, not only the nominal n.
+
+    A reader who sees only "n=41" reads 41 independent observations. Six
+    gold provisions are used by more than one question, so the effective
+    count is lower and the steps between numbers are larger than they
+    look.
+    """
+    dev, test = splits
+    overlap = dataset_module.gold_overlap(dev, test)
+    text = eval_report.render_report(
+        evaluation_id="eval_test",
+        config={"config": {}, "config_id": "cfg_x", "k": [1, 3, 5, 10]},
+        dataset_name=test.name,
+        dataset_snapshot=test.snapshot_id,
+        split_seed=test.seed,
+        n_questions=48,
+        aggregates={"arms": {}},
+        dataset_overlap=overlap,
+    )
+    assert "n distinct golds" in text, "the report must publish the effective n"
+    assert str(overlap["n_distinct_test_gold_provisions"]) in text
+    # The shared golds must be disclosed as a limitation, not just counted.
+    if overlap["n_shared_gold_nodes"]:
+        assert "SHARE" in text, "the shared gold provisions must be disclosed"
+        assert "tuning split" in text, (
+            "the report must say what a shared gold provision costs"
+        )
+
+
 def test_dataset_seed_is_recorded(splits: Any) -> None:
     """The split seed is 42 and both splits carry it (evaluation.md §1)."""
     dev, test = splits

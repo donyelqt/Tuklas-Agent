@@ -81,6 +81,37 @@ class CorpusEntry:
     position: int = 0
 
 
+def embeddable_text(entry: CorpusEntry) -> str:
+    """The text the dense arm embeds for one node.
+
+    **The node's own text, ONCE.** ``entry.text`` already carries the
+    heading: the parser slices a node's body from the heading's own
+    line onward, so on the Civil Code 2,578 of 2,579 nodes' text begins
+    with their own title (measured). A surface that concatenated the
+    title a SECOND time embedded the heading twice, and the duplication
+    systematically re-weighted provisions against containers — the
+    title's share of the embedded text was 32.4% for articles with the
+    duplicate against 52.9% without, and 19.6% against 25.9% for
+    chapters. Removing it changed the dense arm's top-5 for every
+    question measured (44 of 48 in one sweep), which is what a surface
+    change does: a ranking that moves under a change that should be a
+    no-op is not a stable measurement.
+
+    The vectorless arm's retrieval.md §3 disjointness rule is a
+    QUERY-side rule about IDENTIFIER tokens (ADR-007), not a rule that
+    keeps a heading's ordinary words out of the lexical surface — the
+    parser stores the heading line at the start of a node's body text,
+    so on the vectorless side a heading's words are lexical surface too.
+    A dense arm has ONE channel and no components to keep disjoint, and
+    it embeds the node's complete text exactly once.
+
+    The function is PUBLIC and module-level, so the harness — the sole
+    legal importer of this package — can name the rule and test it
+    without the arm having to be built.
+    """
+    return entry.text
+
+
 def _min_max(values: list[float]) -> list[float]:
     """Min-max normalize to [0,1]; all-equal input maps to all zeros.
 
@@ -125,15 +156,8 @@ class VectorIndex:
     # -- construction ------------------------------------------------------
 
     def _embeddable_text(self, entry: CorpusEntry) -> str:
-        """The text the arm embeds for one node.
-
-        Title and body together. The vectorless arm keeps them apart
-        (retrieval.md §3's disjoint-inputs rule, so a heading term fires
-        in exactly one component), but a dense arm has ONE channel and no
-        components to keep disjoint, and the title carries the provision's
-        identity, which a dense arm needs to see.
-        """
-        return f"{entry.title}\n{entry.text}"
+        """The text the arm embeds for one node."""
+        return embeddable_text(entry)
 
     def build(self) -> None:
         """Embed the corpus and hold the vectors.
@@ -174,8 +198,6 @@ class VectorIndex:
         pretending otherwise would be a claim about the arm that the arm
         does not support.
         """
-        import numpy as np
-
         self.build()
         if self._vectors is None or not self._node_ids:
             return []
@@ -259,4 +281,5 @@ __all__ = [
     "CorpusEntry",
     "VectorIndex",
     "build_index",
+    "embeddable_text",
 ]

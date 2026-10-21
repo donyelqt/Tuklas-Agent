@@ -23,7 +23,12 @@ from typing import Any, ParamSpec, TypeVar
 
 from apps.api.ingestion import db, errors
 from apps.api.ingestion.service import DB_PATH as _INGEST_DB_PATH
-from apps.api.retrieval.scoring import ScoredNode, evidence_rank_key, score_nodes
+from apps.api.retrieval.scoring import (
+    WEIGHT_DEFAULTS,
+    ScoredNode,
+    evidence_rank_key,
+    score_nodes,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -213,15 +218,25 @@ def search_nodes(
     document_id: str,
     top_k: int = 10,
     db_path: str = DB_PATH,
+    weights: dict[str, float] | None = None,
 ) -> list[ScoredNode]:
     """Scored node hits for one query; the §5 binding top_k clamp applies.
 
     ``document_id`` accepts a document id or a slug. Hard max 20, minimum 1;
     ValueError outside that range.
+
+    ``weights`` is the retrieval.md §3 weight vector this query is scored
+    with. It defaults to :data:`~apps.api.retrieval.scoring.WEIGHT_DEFAULTS`,
+    so every caller that does not pin a weight vector keeps the behaviour it
+    had. The parameter exists because a run config that PINS weights must
+    have those weights reach the scorer: a pinned weight that never reaches
+    the scoring function is a value that is validated, hashed into the run's
+    identity, recorded in every row, and applied to nothing.
     """
     if top_k > 20 or top_k < 1:
         raise ValueError(f"top_k must be in [1, 20], got {top_k}")
-    hits = score_nodes(db_path, document_id, query)
+    effective = dict(WEIGHT_DEFAULTS) if weights is None else dict(weights)
+    hits = score_nodes(db_path, document_id, query, weights=effective)
     return hits[:top_k]
 
 

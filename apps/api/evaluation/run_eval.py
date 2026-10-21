@@ -123,6 +123,44 @@ def _vocabulary_of(db_path: str, where: str, params: tuple[Any, ...]) -> set[str
     return vocabulary
 
 
+def _node_count(db_path: str, document: str) -> int:
+    """How many nodes the document has.
+
+    The number the dense arm embeds: every node of the document, in tree
+    order.
+    """
+    from apps.api.ingestion import db as ingestion_db
+
+    with ingestion_db.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM nodes WHERE document_id ="
+            " (SELECT id FROM documents WHERE id = ? OR slug = ?)",
+            (document, document),
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def _lex_corpus_size(db_path: str, document: str) -> int:
+    """How many nodes are in the per-document lexical corpus.
+
+    The rule is the ONE definition the primary path owns
+    (``apps.api.retrieval.index.in_lex_corpus``): the leaf-node bodies
+    plus the section-intro nodes. The harness imports the rule rather
+    than restating it, so the size the report publishes and the corpus
+    the BM25 index actually holds cannot drift apart.
+    """
+    from apps.api.ingestion import db as ingestion_db
+    from apps.api.retrieval.index import in_lex_corpus
+
+    with ingestion_db.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT type, text FROM nodes WHERE document_id ="
+            " (SELECT id FROM documents WHERE id = ? OR slug = ?)",
+            (document, document),
+        ).fetchall()
+    return sum(1 for row in rows if in_lex_corpus(str(row["type"]), str(row["text"])))
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run one evaluation. Returns the process exit code."""
     parser = argparse.ArgumentParser(description="Run one Tuklas evaluation.")
@@ -242,6 +280,40 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:
         dense_description = None
         vectorless_description = None
+    # The SCOPE of each arm: how many nodes it ranks, how large the
+    # per-document LEXICAL corpus is, and what surface each arm scores.
+    # The arm's own describe() payload is the source, and it wins: the
+    # vectorless arm ranks the document's whole node set, while the dense
+    # arm embeds the lexical node set, and only the arm knows which.
+    # These are therefore fallbacks for an arm that does not describe
+    # itself, and they describe the DOCUMENT's node count and the
+    # DOCUMENT's lexical corpus, not a property of either arm. The
+    # vectorless arm's lexical corpus is the leaf bodies plus the section
+    # intros, so it is a strict subset of the document's nodes, and a node
+    # outside it carries lex = 0 by construction rather than by scoring
+    # low.
+    if vectorless_description is not None:
+        vectorless_description.setdefault(
+            "n_lex_nodes", _lex_corpus_size(args.db, dataset.questions[0].document)
+        )
+        vectorless_description.setdefault("n_nodes", _node_count(args.db, dataset.questions[0].document))
+    if dense_description is not None:
+        dense_description.setdefault("n_nodes", _node_count(args.db, dataset.questions[0].document))
+
+    # The gold overlap between the splits is a property of the DATASET, not
+    # of the run, and the report needs it: the dev split is the tuning
+    # split, so a provision both splits gold is a provision whose answer key
+    # the tuning has already seen.
+    dataset_overlap = None
+    try:
+        dev_dataset = dataset_module.load_dataset(str(DATASET_DIR / "dev.json"))
+    except Exception:
+        dev_dataset = None
+    if dev_dataset is not None:
+        try:
+            dataset_overlap = dataset_module.gold_overlap(dev_dataset, dataset)
+        except Exception:
+            dataset_overlap = None
 
     text = eval_report.render_report(
         evaluation_id=outcome["evaluation_id"],
@@ -254,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
         spot_check=outcome["aggregates"].get("spot_check"),
         dense_arm_description=dense_description,
         vectorless_arm_description=vectorless_description,
+        dataset_overlap=dataset_overlap,
     )
     print(text)
     if args.report:

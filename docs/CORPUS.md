@@ -6,6 +6,20 @@ heading families, and cross-reference density (research report, 2026-10-19); art
 downloaded and content-verified locally (page counts + text extraction re-run with
 pypdf on the committed checksums below).
 
+## Fetching
+
+`python -m scripts.fetch_corpus` (and `--secondary` for the second artifact) is how a
+machine that has no corpus gets one. It downloads each PDF and verifies the sha256
+against the value recorded below, so a fetch that returns the wrong bytes fails
+instead of poisoning the dataset.
+
+The fetch **must** send a User-Agent. The ICNL host answers an unidentified client
+with `403 Forbidden` — urllib sends no User-Agent at all by default, and the
+`Python-urllib/3.x` default is refused the same way — while the govinfo host
+serves the secondary artifact to anything. `scripts/fetch_corpus.py` therefore names
+a client in `USER_AGENT`; a fetcher that omits it gets a 403 on the primary
+artifact and no corpus.
+
 ## Primary — Civil Code of the Philippines (R.A. 386, 1949)
 
 - Ingest artifact: `data/documents/civil-code-ra386-icnl.pdf` (ICNL rendition,
