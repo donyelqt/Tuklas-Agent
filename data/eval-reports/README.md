@@ -155,8 +155,13 @@ here.** The numbers are what was measured; what they mean is a reading.
   --report data/eval-reports/v1-test.md --json data/eval-reports/v1-test.json
 ```
 
-The same config id yields the same retrieval metrics EXACTLY
-(evaluation.md §6); the generation metrics are within a few points. The
-run's own rows are in the `evaluation_runs` and `retrieval_runs` tables
-of the store, joinable on `(evaluation_id, question_id, arm)`. The store
-is a local artifact and is not committed.
+The same config id does **not** yield the same retrieval metrics. The two test
+runs share `cfg_e86e8bfbc803c860` and differ by 0.061 on recall@5, because
+`code_version` is the constant `day6-eval-v1` and the config id does not pin the
+harness. evaluation.md §6 states the stronger claim; it holds for the retrieval
+*ranking* (a pure function of corpus, query, weights, which is deterministic) but
+not for the *instrument* that produced these numbers. Which run is which, and
+what the difference is made of, is in `docs/VERSIONS.md`. The run's own rows are
+in the `evaluation_runs` and `retrieval_runs` tables of the store, joinable on
+`(evaluation_id, question_id, arm)`. The store is a local artifact and is not
+committed.
