@@ -27,7 +27,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from apps.api.agent.stoplist import STOPLIST_VERSION
+from apps.api.evaluation.arms import RETRIEVAL_INSTRUMENT_ANSWER_NODE_UNION
 from apps.api.retrieval.scoring import APPLIED_BONUS_FLAGS
+
+#: The harness identity the config's ``code_version`` pins: the retrieval
+#: instrument this code implements. A config that names a different
+#: instrument records a harness version that was never applied.
+CODE_VERSION = RETRIEVAL_INSTRUMENT_ANSWER_NODE_UNION
 
 #: The backends api.md §4 allows.
 ALLOWED_BACKENDS: frozenset[str] = frozenset({"ollama", "llamacpp", "vllm"})
@@ -359,6 +365,23 @@ def check_run_config(run: dict[str, Any]) -> tuple[list[str], str]:
             f"config.stoplist_version: {stoplist_version!r} is not the stoplist "
             f"this code has ({STOPLIST_VERSION!r}), so the run would record a "
             "stoplist version that was never applied"
+        )
+
+    # The code version must be the instrument the CODE implements. A config
+    # that names a different instrument records a harness version nobody can
+    # identify, and the run's own record would then misdescribe the code
+    # that produced the numbers, so two runs with different instruments
+    # could share a config id.
+    code_version = config.get("code_version")
+    if (
+        isinstance(code_version, str)
+        and code_version.strip()
+        and code_version != CODE_VERSION
+    ):
+        violations.append(
+            f"config.code_version: {code_version!r} is not the harness "
+            f"this code has ({CODE_VERSION!r}), so the run would record a "
+            "code version that was never applied"
         )
 
     model = config.get("model")

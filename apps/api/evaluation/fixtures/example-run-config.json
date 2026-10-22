@@ -21,7 +21,7 @@
     10
   ],
   "config": {
-    "code_version": "day6-eval-v1",
+    "code_version": "answer-node-union-v1",
     "weights": {
       "lex": 1.0,
       "ident": 1.0,
@@ -47,5 +47,5 @@
       "max_category_gap": 0.2
     }
   },
-  "config_id": "cfg_e86e8bfbc803c860"
+  "config_id": "cfg_7894408776a9e557"
 }

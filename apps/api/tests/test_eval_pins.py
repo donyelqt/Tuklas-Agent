@@ -406,19 +406,22 @@ def test_a_config_that_pins_an_unknown_stoplist_version_is_refused() -> None:
 
 
 def test_the_committed_fixtures_pin_the_state_the_code_has() -> None:
-    """Both fixture configs and the CI fixture stay valid, and unchanged.
+    """Both fixture configs and the CI fixture stay valid, with ids that
+    match their own content.
 
-    The published run ids (``cfg_0f73ff26c0d38d54`` for the dev config
-    and ``cfg_e86e8bfbc803c860`` for the test one) are derived from the
-    fixture files' content, so the fixtures' CONTENT must not change:
-    the pins are now ENFORCED rather than ignored, and enforcement that
-    changed the config would change the id and orphan the published
-    report.
+    The fixtures DO change when a pin that describes the code changes:
+    ``code_version`` now pins the retrieval instrument the harness
+    implements, so the fixture content was updated and each config id was
+    re-derived from that content. The OLD ids (``cfg_0f73ff26c0d38d54``
+    for the dev config, ``cfg_e86e8bfbc803c860`` for the test one) are
+    historical facts: they are the ids of the PUBLISHED runs recorded in
+    the published reports and the store rows, which are not regenerated.
+    They are not errors, and they are not the ids these fixtures carry.
     """
     for path, expected_id in (
-        (FIXTURE_CONFIG, "cfg_e86e8bfbc803c860"),
-        (DEV_FIXTURE_CONFIG, "cfg_0f73ff26c0d38d54"),
-        (CI_FIXTURE_CONFIG, "cfg_9ba255191a96aaa9"),
+        (FIXTURE_CONFIG, "cfg_7894408776a9e557"),
+        (DEV_FIXTURE_CONFIG, "cfg_adbbd693cd4db2b7"),
+        (CI_FIXTURE_CONFIG, "cfg_4861e6e81e8518e4"),
     ):
         payload = json.loads(path.read_text(encoding="utf-8"))
         violations, config_id = eval_config.check_run_config(payload)

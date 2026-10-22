@@ -1,5 +1,5 @@
 {
-  "config_id": "cfg_9ba255191a96aaa9",
+  "config_id": "cfg_4861e6e81e8518e4",
   "dataset_snapshot": "v1-test",
   "arms": {
     "tuklas": {
@@ -15,9 +15,14 @@
       "seed": 42
     }
   },
-  "k": [1, 3, 5, 10],
+  "k": [
+    1,
+    3,
+    5,
+    10
+  ],
   "config": {
-    "code_version": "day6-eval-v1",
+    "code_version": "answer-node-union-v1",
     "weights": {
       "lex": 1.0,
       "ident": 1.0,

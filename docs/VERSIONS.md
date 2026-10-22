@@ -21,10 +21,17 @@ The suffixes on the two instrument names belong to the instruments themselves, n
 the run labels used in this file.
 
 The two test runs share a config id (`cfg_e86e8bfbc803c860`) even though they were
-measured under different instruments and different lex layers. That is a real gap:
-`code_version` is the constant `day6-eval-v1` for every run, so the config id does
-not pin the harness. The dev runs do not collide (`cfg_5a3d6973caf7bd43` vs
-`cfg_0f73ff26c0d38d54`) because their configs differ in other fields.
+measured under different instruments and different lex layers. That gap is now
+CLOSED for future runs: `code_version` is validated against the code's own
+instrument constant (`answer-node-union-v1`, the harness the code implements), so
+a config whose `code_version` does not match the harness the code implements is
+refused, and two runs with different instruments can no longer share a config id.
+The config ids in the PUBLISHED reports (`cfg_e86e8bfbc803c860` /
+`cfg_0f73ff26c0d38d54`) are the LEGACY ids of the runs that produced them; they
+remain correct as historical identifiers in the published reports and the store
+rows, which are not regenerated. The dev runs did not collide
+(`cfg_5a3d6973caf7bd43` vs `cfg_0f73ff26c0d38d54`) because their configs differ
+in other fields.
 
 old v1 is preserved because it is a measurement that was actually taken and because
 its run's per-question rows live in a gitignored store that will not survive. It is
