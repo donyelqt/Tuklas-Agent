@@ -19,29 +19,54 @@ legal advice, and it has no users, no release, and no support.
 
 ## What the system is
 
-- **Ingestion.** PyMuPDF parses a PDF into a structural tree (Book, Title,
-  Chapter, Section, Article). Every node keeps its page span and its
-  hierarchy path, so a citation resolves to a provision and a page. A
-  structurally ambiguous document gets a flagged flat fallback with a
-  confidence value, never a confidently wrong deep tree.
+- **Ingestion.** PyMuPDF parses a PDF into a structural tree (book, part,
+  division, title, chapter, subchapter, section, article - the families the
+  parser recognises, of which this corpus produces book, title, chapter,
+  section and article). Every node keeps its page span; its hierarchy path
+  is derived from the tree when a node is read. A structurally ambiguous
+  document gets a flagged flat fallback with a confidence value, never a
+  confidently wrong deep tree.
 - **Retrieval.** A five-component vectorless scorer over that tree: `lex`
   (per-document BM25), `ident` (identifier precedence), `title` (Jaccard
   overlap with the node's heading), `ref` (cross-reference) and `hier`
   (shared hierarchy). The lexical component is per-document on purpose, so
-  its scores cannot drift when another document is ingested.
+  its scores cannot drift when another document is ingested. On this corpus
+  the `ref` channel is 0 for every node, because no reference parsing is
+  implemented; the reports say so.
 - **Agent.** A LangGraph loop (plan, search, inspect, expand, sufficiency
   gate) over exactly seven tools - `search_nodes`, `inspect_node`,
   `list_children`, `get_parent`, `expand_context`, `follow_reference`,
   `get_source` - capped at twelve iterations, able to abandon a dead end and
   say so in the trace.
-- **Generation.** A local model through an interchangeable interface
-  (llama.cpp, Ollama or vLLM, per ADR-004), grounded strictly on the
-  retrieved evidence, with a refusal path when the sufficiency gate fails and
-  an advice-phrase blocklist on the way out.
+- **Generation.** A local model through an interface designed to be
+  interchangeable (llama.cpp, Ollama or vLLM, per ADR-004). Ollama is the
+  only backend implemented so far, and the constructor rejects an
+  unimplemented one by name rather than accepting it and failing at the
+  first request. The answer is grounded strictly on the retrieved evidence,
+  with a refusal path when the sufficiency gate fails and an advice-phrase
+  blocklist on the way out.
 - **Baseline.** A dense-vector arm lives in `experiments/vector/` and is
   imported only by the evaluation package, so the comparison is real and the
   primary path stays vectorless. CI enforces this with
-  `scripts/check_no_vectors.py`.
+  `scripts/check_no_vectors.py`. It is not a second system: the dense arm
+  runs the **same agent graph, the same planner, the same generation model,
+  the same judge and the same metric**, with one substitution - its
+  `search_nodes` returns a dense ranking instead of the vectorless one. A
+  second agent would differ in more than retrieval, which is the confound
+  the experiment forbids.
+
+  What the substitution does **not** do is make this a one-variable swap.
+  The two ranking functions do not draw on the same signals: the vectorless
+  arm scores five components and orders identified provisions first, over
+  the whole 2,579-node tree; the dense arm has **one** component - a
+  min-max-normalised cosine with no BM25, no sparse term and no hybrid
+  fusion, `ident`/`title`/`ref`/`hier` hard-coded to 0 - over the 2,392
+  lexical nodes, with no identifier precedence. So the dense arm cannot name
+  a provision and cannot reach the container nodes the vectorless arm's
+  channels score. The published report says so at length ("THE ARMS ARE NOT
+  LIKE-FOR-LIKE"), and per-category differences are differences of surface
+  and channel as well as of mechanism. ADR-003 rejected a hybrid arm
+  precisely because it would confound the comparison.
 - **Evaluation.** A frozen 72-question dataset (24 dev, 48 test, seven
   categories) with both arms run over the same questions, metrics published
   per category, and no verdict.
@@ -56,9 +81,9 @@ and says what each file is.
 | Run | Arm | recall@5 | recall@1 | mrr@10 | Answerable questions |
 |---|---|---|---|---|---|
 | test-48 | Tuklas (vectorless) | 0.732 | 0.427 | 0.686 | 41 |
-| test-48 | dense baseline | 0.707 | - | - | 41 |
+| test-48 | dense baseline | 0.707 | 0.415 | 0.657 | 41 |
 | dev-24 | Tuklas (vectorless) | 0.674 | 0.500 | 0.711 | 23 |
-| dev-24 | dense baseline | 0.761 | - | - | 23 |
+| dev-24 | dense baseline | 0.761 | 0.457 | 0.661 | 23 |
 
 Two caveats travel with those numbers, and the reports carry both:
 
@@ -66,8 +91,10 @@ Two caveats travel with those numbers, and the reports carry both:
    retrieval metric changed instrument between them (it is now computed over
    the node ids the answer was produced from, where the earlier report used a
    separate one-off search over the whole question, a ranking the model never
-   saw), and the run row records neither the instrument nor the lex path.
-   Neither report is a ratchet over the other.
+   saw). The run row does record the instrument and the lex path now, but the
+   two published runs were recorded before it did, so their rows carry neither
+   and a reader cannot tell from them that the two were measured under
+   different instruments. Neither report is a ratchet over the other.
 2. **The citation-failure numbers are a lower bound**, dominated by the
    scorer's strictness: no string rule can match a proposition *about* a
    provision to the provision's own words. The two arms' lower bounds are not
@@ -93,10 +120,10 @@ Windows is the environment these commands were run in; the `.venv` lives at
 ```bash
 # 1. the corpus: two public statutes, sha256-verified against docs/CORPUS.md.
 #    The PDFs are gitignored (ADR-002) - they are third-party artefacts.
-python -m scripts.fetch_corpus
+.venv/Scripts/python.exe -m scripts.fetch_corpus
 
 # 2. the API. It creates its own store and indexes on first use.
-PYTHONPATH=apps/api .venv/Scripts/python.exe -m uvicorn apps.api.api.app:create_app --factory --port 8000
+.venv/Scripts/python.exe -m uvicorn apps.api.api.app:create_app --factory --port 8000
 
 # 3. ingest a document over HTTP (multipart upload):
 #    curl -X POST http://127.0.0.1:8000/v1/documents -F "file=@<your.pdf>"
@@ -135,8 +162,9 @@ run without the corpus is visibly narrower rather than silently green.
 
 ## The engineering floor
 
-Three rules make this repository unusual. All three are CI-enforced, and all
-three are in `CONSTRAINTS.md` in full.
+Three rules make this repository unusual. The first two are CI-enforced; the
+third is a rule for whoever changes the code, and the diff is where it is
+caught.
 
 1. **Vectorless quarantine.** `apps/api/{ingestion,retrieval,agent,generation,api}/`
    must not import `sentence_transformers`, `faiss`, `chromadb`,
@@ -148,14 +176,17 @@ three are in `CONSTRAINTS.md` in full.
    seven tools and must not import `sqlite3`, `sqlalchemy` or the models
    package, so the agent cannot become a second, unchecked retrieval path.
 3. **No suppression comments and no stubs.** No `# type: ignore`,
-   `# noqa` or `eslint-disable`, and no unimplemented placeholders.
+   `# noqa` or `eslint-disable`, and no unimplemented placeholders. Nothing
+   in CI scans for these, so they are caught in review.
 
 ## Status
 
-Everything described above is implemented and gated: the Python suite, the
-ruff and mypy gates, the web type-check, lint and build, the quarantine
-scan, the eval-config parity check, the reproducibility check, and coverage
-on changed lines. CI runs on every pull request.
+Everything described above is implemented. CI runs on every pull request and
+gates the Python suite, ruff, mypy, the web type-check and lint, the
+quarantine scan, the eval-config parity check, the reproducibility check,
+and coverage on changed lines. The web production build is not among the CI
+steps, so run `npm run build --prefix apps/web` before you trust a change
+there.
 
 What is **not** here: no Docker image or compose file, no container or
 deploy configuration, no licence file, no published package, no release, and
