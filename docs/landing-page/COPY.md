@@ -175,7 +175,7 @@ Export: `comparison`
 | Field | String |
 |---|---|
 | `headline` | The comparison is designed, not won |
-| `lead` | Two retrieval arms, one dataset, one generation model. The arms differ only in retrieval, and nothing has been measured yet. |
+| `lead` | Two retrieval arms, one dataset, one generation model. Both arms run the same agent and the same judge; the arms' retrieval layers draw on different signals, and the comparison's outcome is undecided. |
 | `tuklas.label` | Tuklas |
 | `tuklas.items[0]` | BM25 over leaf bodies with headings stripped |
 | `tuklas.items[1]` | Structural signal from parent, child, and sibling position |
@@ -197,7 +197,7 @@ Export: `comparison`
 | `facts[8].label` / `.value` | Margin status / Placeholders recorded in the eval config, not results |
 | `decisionRule` | Both numbers are published per category and overall. There is no win ceremony. |
 | `expectedPattern` | The expected pattern is competitive on cross-reference and multi-hop questions, weaker on paraphrase-heavy definitions, and a uniform sweep across every category is treated as a leakage smell rather than a win. |
-| `status` | No evaluation run has happened yet, so no metric on this page reports a measured value. |
+| `status` | The controlled comparison has been run and its reports are published in data/eval-reports. The outcome is undecided, so no metric on this page reports a measured value. |
 
 Every fact traces to `docs/evaluation.md` sections 1, 3, 4, and 6, or `docs/PRD.md` section 6. The 0.10 and 0.20 values are stated as provisional margins and immediately labelled as placeholders in the eval config, per the PRD. No percentage sign appears anywhere: the spot-check shares are written as words. `Recall@5` and `MRR@10` appear as metric names with no measured value attached.
 
@@ -239,24 +239,23 @@ Export: `runLocally`
 |---|---|
 | `headline` | Run it from a clone |
 | `lead` | The intended local setup for a builder. Nothing here is a download or a release. |
-| `status` | Build state: the specification, the evaluation contract, and the Next.js shell are in the repository. The API service, the retrieval engine, and the agent loop are implemented and tested; the evaluation harness and the controlled comparison are not, so no metric on this page reports a measured value. |
+| `status` | Build state: the specification, the API service, the retrieval engine, the agent loop, the evaluation harness and the controlled comparison are implemented and tested. The comparison's outcome is undecided, so no metric on this page reports a measured value. |
 | `commands[0].label` / `.command` | Clone / `git clone https://github.com/donyelqt/Tuklas-Agent.git` |
 | `commands[1].label` / `.command` | Install / `poetry install` |
 | `commands[2].label` / `.command` | API / `poetry run uvicorn apps.api.api.app:app --reload` |
 | `commands[3].label` / `.command` | Web / `npm --prefix apps/web run dev` |
-| `caption` | Intended local setup, not an installer. The API entrypoint is the app factory in apps/api/api/app.py; the evaluation harness and the controlled comparison are not built yet. |
+| `caption` | Intended local setup, not an installer. The API entrypoint is the app factory in apps/api/api/app.py; the published comparison reports live in data/eval-reports. |
 
- `repoTree`, one template literal, from `docs/architecture.md` section 1. (`src/lib/` holds `copy.ts` and `site.ts` — not `design.ts`; the marquee is `backend-marks.tsx`, mapping slugs from `copy.ts`.)
+ `repoTree`, one template literal, from `docs/architecture.md` section 1. (`src/lib/` holds `copy.ts` and `site.ts` - not `design.ts`; the marquee is `backend-marks.tsx`, mapping slugs from `copy.ts`.)
 
 ```text
 apps/web/                      Next.js App Router, marketing at /, explorer at /app/*
   api/  ingestion/  retrieval/  agent/  generation/  evaluation/  models/
 data/
-  documents/  indexes/  datasets/
+  documents/  indexes/  datasets/  eval-reports/
 experiments/
   vector/                      dense baseline, imported only by evaluation
-  vectorless/  results/
-docs/                          specification and contracts
+docs/                          specification, contracts, decisions, run reports
 scripts/
 ```
 
@@ -318,13 +317,13 @@ Strings flagged during drafting and rewritten, with the reason.
 | `tools.headline` | Powerful agentic search tools | Seven tools are the only way in | "Powerful" is a banned filler claim and states nothing. |
 | `tools.lead` | A fully agentic retrieval stack | The agent has no direct database or file access to the document. Every node it sees arrives through one of these signatures. | "Fully agentic" is unfalsifiable. The replacement is the checkable architecture rule. |
 | `comparison.headline` | How Tuklas outperforms vector RAG | The comparison is designed, not won | Direct violation of honesty rule 1. |
-| `comparison.lead` | See how our vectorless engine outperforms dense retrieval | Two retrieval arms, one dataset, one generation model. The arms differ only in retrieval, and nothing has been measured yet. | Same violation, and it implied a run had happened. |
+| `comparison.lead` | See how our vectorless engine outperforms dense retrieval | Two retrieval arms, one dataset, one generation model. Both arms run the same agent and the same judge; the arms' retrieval layers draw on different signals, and the comparison's outcome is undecided. | Same violation, and it implied a run had happened. The replacement is now corrected too: the arms do not differ only in retrieval (ADR-006 section 1), and the comparison has been run, so the string says the outcome is undecided rather than that nothing was measured. |
 | `comparison.facts[6].value` | 20% of test answers re-scored, >15% disagreement invalidates the run | 20 percent of test answers re-scored; disagreement above 15 percent invalidates the run | Percentage signs are banned on this page. Spelled out; the numbers themselves are the real protocol values. |
 | `comparison.facts[7].value` | Competitive if within 10% on Recall@5 and faithfulness | 0.10 on Recall@5 and faithfulness, 0.20 on any single category gap | A percentage sign implied a measured ratio. The margin is a config placeholder, so it is written as the raw config value. |
 | `comparison.expectedPattern` | Tuklas wins on cross-reference and multi-hop questions | The expected pattern is competitive on cross-reference and multi-hop questions, weaker on paraphrase-heavy definitions, and a uniform sweep across every category is treated as a leakage smell rather than a win. | An expectation stated as a result, and it dropped the weaker-case half of the honest reading. |
-| `comparison.status` | Results coming soon | No evaluation run has happened yet, so no metric on this page reports a measured value. | A launch teaser implies a schedule the repository does not support. |
+| `comparison.status` | Results coming soon | The controlled comparison has been run and its reports are published in data/eval-reports. The outcome is undecided, so no metric on this page reports a measured value. | A launch teaser implies a schedule the repository does not support. The replacement is now corrected too: the run has happened, so the string says the outcome is undecided rather than that no run has happened. |
 | `guardrails.headline` | Bank-grade security and enterprise-grade safety | Guardrails that are checked, not promised | Unverifiable marketing adjectives. |
-| `runLocally.status` | Get started in under five minutes | Build state: the specification, the evaluation contract, and the Next.js shell are in the repository. The API service, the retrieval engine, and the agent loop are implemented and tested; the evaluation harness and the controlled comparison are not, so no metric on this page reports a measured value. | A timing promise about code that does not exist. Honesty rule 6. |
+| `runLocally.status` | Get started in under five minutes | Build state: the specification, the API service, the retrieval engine, the agent loop, the evaluation harness and the controlled comparison are implemented and tested. The comparison's outcome is undecided, so no metric on this page reports a measured value. | A timing promise about code that does not exist. Honesty rule 6. The replacement is now corrected too: the evaluation harness and the controlled comparison are built, so the build-state line lists what is implemented rather than what is not. |
 | `footer.note` | Trusted by legal researchers worldwide | Tuklas Agent is a local-first research artifact for private law document discovery. Built to be read, ablated, and reproduced. | Fake social proof, banned by honesty rule 5. There are no users. |
 
 Strings deliberately kept out: any latency or token figure, any Recall or MRR value, any "competitive" result statement, any user count, any download link, and the advice phrases "you should", "I advise", "your case", "you must".
