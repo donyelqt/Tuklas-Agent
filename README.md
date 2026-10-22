@@ -216,10 +216,10 @@ changed lines. The web production build is not among the CI steps, so run
 `npm run build --prefix apps/web` before you trust a change there.
 
 What is **not** here: no Docker image or compose file, no container or
-deploy configuration, no licence file, no published package, no release, and
-no install command that would imply one. The local store and the corpus are
-gitignored by design; `docs/CORPUS.md` records the corpus provenance and the
-checksums.
+deploy configuration, no published package, no release, and no install
+command that would imply one. The local store and the corpus are gitignored
+by design; `docs/CORPUS.md` records the corpus provenance and the checksums.
 
 `docs/TODO.md` is the working journal: what was decided, what was measured,
 and what is still open.
+

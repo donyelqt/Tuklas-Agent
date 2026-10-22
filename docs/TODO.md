@@ -1516,17 +1516,38 @@ slices 1–5.
     vectorless arm got worse, and it does **not** say it got better: the
     difference is attributable to the instrument and the store state, and to
     nothing in the arm's ranking CODE. The retrieval
-    layer's **tree is BYTE-IDENTICAL** between the two runs: the run that
-    produced the earlier report was measured at the tree whose root tree
-    object is `4d8ad7e6` (commit `25272c1`), the current run at `04f6dcae`
-    (commit `eb36a52`), and **both carry the same git tree object for
-    `apps/api/retrieval`** (`d19c4365`) — `git diff 25272c1:apps/api/retrieval
-    eb36a52:apps/api/retrieval` is empty. So nothing in the ranking code
-    changed between the two runs, and the tree hash **is** cited, because it
-    is a real git object a reader can check. (An earlier draft of this entry
-    said the layer's files were *not* byte-identical and that no tree hash
-    could be cited; that was **wrong** — the search had looked for a sha256
-    of the node rows rather than for a git tree object.)
+    layer's **tree is NOT byte-identical** between the two runs, and the two trees
+    named here are the ones the runs were actually measured at. The earlier
+    report's run was measured at root tree `04f6dcae` (its `apps/api/retrieval`
+    tree is `d19c4365`); the current run at `4a3b6f4d` (its `apps/api/retrieval`
+    tree is `240f229c`). The two trees differ — `git diff d19c4365 240f229c` is
+    **not** empty — but the difference is not in the ranking: re-scoring the split
+    under each tree's retrieval layer gives identical top-20 rankings on all 48
+    questions, on both lex paths, so nothing in the ranking changed. (An earlier
+    draft of this entry named `4d8ad7e6` / `04f6dcae` and claimed the layer's
+    tree was byte-identical; that was **wrong**. `4d8ad7e6` is the root tree of
+    commit `25272c1`, which predates the evaluation package entirely — `git
+    ls-tree 4d8ad7e6:apps/api/evaluation` is empty — so the earlier report could
+    not have been measured there, and `04f6dcae` is the tree of `9401dc6`, the
+    commit that first wrote the *earlier* report's run id, not the current one:
+    the current run's id first appears in `a8e7eea`, whose root tree is
+    `4a3b6f4d`. `git diff 25272c1:apps/api/retrieval eb36a52:apps/api/retrieval`
+    *is* empty, and the tree hash *is* a real git object a reader can check —
+    both of those are true — but they compare two commits that produced neither
+    report, so they prove nothing about these two runs.)
+
+## Version record
+
+- [x] **`docs/VERSIONS.md` records which measured run is which.** v1 (superseded,
+  `eval_a80167ab` / `eval_083a4c15`, instrument `whole-question-search-v0`, lex
+  per-document BM25 present, root tree `04f6dcae`, retrieval tree `d19c4365`) and
+  1.1 (current, `eval_447127eb` / `eval_ff373231`, instrument
+  `answer-node-union-v1`, lex FTS5 fallback, root tree `4a3b6f4d`, retrieval tree
+  `240f229c`). Both are real; neither is a baseline; the record states what a
+  reader may not conclude. It records the measured per-cause decomposition of the
+  v1 → 1.1 difference, and it scopes the nondeterminism that does exist (the
+  1.1 instrument's node set comes from the agent's tool trace, so a re-run can
+  move the retrieval numbers) separately from the ranking, which is deterministic.
 
 ## What MUST be true before the first benchmark run is reportable
 
