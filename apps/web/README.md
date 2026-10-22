@@ -1,8 +1,9 @@
 # apps/web
 
-Next.js App Router application for the Tuklas Agent marketing site. The route
-`/` is the landing page; the document explorer described in `docs/architecture.md`
-§7 (PRD feature F6) will be added under `/app/*`.
+Next.js App Router application for the Tuklas Agent marketing site and the
+document explorer. Two routes: `/` is the landing page, and `/app/*` is the
+document explorer described in `docs/architecture.md` §7 (PRD feature F6),
+whose components live in `src/components/explorer/`.
 
 ## Design contract
 
@@ -15,14 +16,18 @@ it before changing anything here. The short version:
 - **Shape** is radius 0 and no shadows, matching the omp.sh reference. Surfaces
   separate with 1px rules and ink-ramp steps.
 - **Accent** is `--color-accent` (magenta) page-wide. `--color-accent-2` (cyan)
-  is permitted in exactly one place: the dense-vector baseline arm in
-  `comparison-arms.tsx`. That is a documented exception, not an oversight.
+  is permitted in exactly two places: the dense-vector baseline arm in
+  `comparison-arms.tsx`, and the hero dot field in `dot-wave.tsx`
+  (`hero-backdrop.tsx` reads the same token and counts as `dot-wave.tsx`'s
+  exception). That is a documented exception, not an oversight.
 - **Copy** all lives in `src/lib/copy.ts`. No inline user-facing strings in JSX.
   This keeps the copy audit a single-file grep, including the project-wide ban on
   em-dashes and on unmeasured performance claims.
 - **Honesty** rules in `DESIGN.md` §8 are product requirements, not style
   preferences. No superiority claim, no fabricated metric, no legal-advice
-  phrasing, no fake social proof. The benchmark has not been run.
+  phrasing, no fake social proof. The benchmark has been run and its reports
+  are published in `data/eval-reports/`; the comparison's outcome is
+  undecided, and the reports publish both arms' numbers with no verdict.
 
 ## Commands
 
