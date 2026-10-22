@@ -67,6 +67,23 @@ legal advice, and it has no users, no release, and no support.
   LIKE-FOR-LIKE"), and per-category differences are differences of surface
   and channel as well as of mechanism. ADR-003 rejected a hybrid arm
   precisely because it would confound the comparison.
+
+  The two arms side by side, dimension by dimension:
+
+  | Dimension | Vectorless arm (Tuklas) | Dense baseline arm |
+  |---|---|---|
+  | Ranking signal | Five components: `lex`, `ident`, `title`, `ref`, `hier`. `ref` is 0 for every node on this corpus, because no reference parsing is implemented. | One min-max-normalised cosine. `ident`, `title` and `hier` are structurally absent; `ref` is 0 on this corpus too. |
+  | Identifier precedence | Yes: a query that names a provision puts that provision first (ADR-005). | None. |
+  | Dense-only or hybrid | Not applicable: this arm has no vector in it. | Dense only, no sparse term. |
+  | Candidate set | The whole 2,579-node tree. | The 2,392 lexical nodes. |
+  | Lexical score | Per-document BM25. | None: the cosine occupies the lex slot. |
+  | Agent | The same LangGraph graph and the same seven tools. | The same LangGraph graph and the same seven tools, with `search_nodes` substituted. |
+  | Generation and judge | The same model, backend, temperature 0, seed 42, and the same arm-blinded judge. | The same model, backend, temperature 0, seed 42, and the same arm-blinded judge. |
+  | Metric | The same instrument (`answer-node-union-v1`), over the node ids the answer was produced from. | The same instrument (`answer-node-union-v1`), over the node ids the answer was produced from. |
+
+  The node counts are the per-arm scope lines published in
+  `data/eval-reports/v1-test.md`, and the channel analysis is in
+  `docs/decisions/ADR-006-evaluation-framework-arms-and-dataset.md`.
 - **Evaluation.** A frozen 72-question dataset (24 dev, 48 test, seven
   categories) with both arms run over the same questions, metrics published
   per category, and no verdict.
