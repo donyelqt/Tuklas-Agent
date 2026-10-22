@@ -144,59 +144,61 @@ MEASURED LIMITATIONS
   comparable with the earlier report's figure. The judge's scores, the
   abstention score and the token counts were not redefined.
 
-  The previous report of this split is PRESERVED, in
-  data/eval-reports/v1-test-OLD-INSTRUMENT-AND-STORE.md and
-  data/eval-reports/v1-dev-OLD-INSTRUMENT-AND-STORE.md. It is preserved
-  because it is a measurement that was actually taken, and because its
-  run's per-question rows live in a gitignored store that will not survive.
-  It is NOT A BASELINE, because the two reports do not measure the same
-  thing, for TWO INDEPENDENT reasons, and NEITHER of them is a change to
-  the arm's ranking code. (1) THE INSTRUMENT CHANGED. The retrieval metric
-  is now computed over the node ids the ANSWER was produced from (the union
-  of the agent's per-sub-question search_nodes results); the earlier report
-  computed it over a separate one-off search over the whole question - a
-  ranking the model never saw. Measured, vectorless arm on test-48: with
-  the lex layer held fixed, the instrument change alone moves recall@5 by
-  -0.061 (0.7927 -> 0.7317) and mrr@10 by -0.1028. Dense arm on the same
-  split: the instrument change alone moves recall@5 by -0.0854 (0.7927 ->
-  0.7073) at the OLD surface and -0.0610 (0.7683 -> 0.7073) at the NEW
-  surface, and mrr@10 by -0.1109 and -0.0918. The instrument is the LARGEST
-  SINGLE EFFECT in BOTH arms, and it is not the whole story in either. (2)
-  THE LEX LAYER CHANGED, AND THE REPOSITORY DOES NOT RECORD IT. The earlier
-  report was measured with the per-document BM25 artifact
-  data/indexes/<doc-id>/bm25.json PRESENT, so the vectorless arm's lex
-  component came from that document's own rank-bm25 model. This report was
-  measured with it ABSENT, so the retrieval layer fell back to FTS5, whose
-  N and average document length are TABLE-GLOBAL across every ingested
-  document - apps/api/retrieval/scoring.py says so itself ('can still drift
-  when another document is ingested; reproducibility holds only until the
-  next ingest'). data/indexes/ is gitignored, and the run row records
-  NEITHER the artifact's presence nor its absence, so a reader of the run
-  row alone cannot tell that the two runs were measured under different lex
-  layers. That is a gap in the run's RECORD, not only in this report, and
-  it is now tracked as an open item in docs/TODO.md. Measured, vectorless
-  arm on test-48: the lex-layer change alone moves recall@5 by -0.0122
-  (0.7927 -> 0.7805) and mrr@10 by +0.0187, instrument held fixed; the
-  interaction between the two is +0.0122 on recall@5. The dense arm is NOT
-  affected by the lex layer at all: it builds its own index in-process and
-  has no persisted artifact to lose, so its whole change is the instrument
-  plus its three surface changes (the corpus cut to 2,392 nodes, the
-  de-duplicated title, the identifier-stripped query), which together net
-  -0.0244 of recall@5 and -0.0262 of mrr@10, of which the node-set cut
-  (+0.0244) and the de-duplicated title (-0.0244) cancel to within 0.001.
-  This report does not say the vectorless arm got worse, and it does not
-  say it got better. The difference is attributable to the INSTRUMENT and
-  the STORE STATE, and to nothing in the arm's ranking CODE: measured, the
-  retrieval layer's tree is BYTE-IDENTICAL across the two runs. The run
-  that produced the earlier report was measured at the tree whose root tree
-  object is 4d8ad7e6, and the run that produced this one at 04f6dcae, and
-  both carry the SAME git tree object for apps/api/retrieval (d19c4365) -
-  so the whole of the ranking code is identical, byte for byte, between the
-  two runs, and nothing in it changed. The run's pinned weight vector
-  equals the code's defaults, so the pinned weights changed no score
-  either. The two reports are NOT COMPARABLE, and the old one is NOT A
-  BASELINE: it is preserved as a record of a measurement that was actually
-  taken, not as a point the current system fell from.
+The previous report of this split is PRESERVED, in
+data/eval-reports/v1-test-OLD-INSTRUMENT-AND-STORE.md and
+data/eval-reports/v1-dev-OLD-INSTRUMENT-AND-STORE.md. It is preserved
+because it is a measurement that was actually taken, and because its
+run's per-question rows live in a gitignored store that will not survive.
+It is NOT A BASELINE, because the two reports do not measure the same
+thing, for TWO INDEPENDENT reasons, and NEITHER of them is a change to
+the arm's ranking code. (1) THE INSTRUMENT CHANGED. The retrieval metric
+is now computed over the node ids the ANSWER was produced from (the union
+of the agent's per-sub-question search_nodes results); the earlier report
+computed it over a separate one-off search over the whole question - a
+ranking the model never saw. Measured, vectorless arm on test-48: with
+the lex layer held fixed, the instrument change alone moves recall@5 by
+-0.061 (0.7927 -> 0.7317) and mrr@10 by -0.1028. Dense arm on the same
+split: the instrument change alone moves recall@5 by -0.0854 (0.7927 ->
+0.7073) at the OLD surface and -0.0610 (0.7683 -> 0.7073) at the NEW
+surface, and mrr@10 by -0.1109 and -0.0918. The instrument is the LARGEST
+SINGLE EFFECT in BOTH arms, and it is not the whole story in either. (2)
+THE LEX LAYER CHANGED, AND THE REPOSITORY DOES NOT RECORD IT. The earlier
+report was measured with the per-document BM25 artifact
+data/indexes/<doc-id>/bm25.json PRESENT, so the vectorless arm's lex
+component came from that document's own rank-bm25 model. This report was
+measured with it ABSENT, so the retrieval layer fell back to FTS5, whose
+N and average document length are TABLE-GLOBAL across every ingested
+document - apps/api/retrieval/scoring.py says so itself ('can still drift
+when another document is ingested; reproducibility holds only until the
+next ingest'). data/indexes/ is gitignored, and the run row records
+NEITHER the artifact's presence nor its absence, so a reader of the run
+row alone cannot tell that the two runs were measured under different lex
+layers. That is a gap in the run's RECORD, not only in this report, and
+it is now tracked as an open item in docs/TODO.md. Measured, vectorless
+arm on test-48: the lex-layer change alone moves recall@5 by -0.0122
+(0.7927 -> 0.7805) and mrr@10 by +0.0187, instrument held fixed; the
+interaction between the two is +0.0122 on recall@5. The dense arm is NOT
+affected by the lex layer at all: it builds its own index in-process and
+has no persisted artifact to lose, so its whole change is the instrument
+plus its three surface changes (the corpus cut to 2,392 nodes, the
+de-duplicated title, the identifier-stripped query), which together net
+-0.0244 of recall@5 and -0.0262 of mrr@10, of which the node-set cut
+(+0.0244) and the de-duplicated title (-0.0244) cancel to within 0.001.
+This report does not say the vectorless arm got worse, and it does not
+say it got better. The difference is attributable to the INSTRUMENT and
+the STORE STATE, and to nothing in the arm's ranking CODE: measured, the
+retrieval layer's tree is NOT byte-identical across the two runs, and the
+trees named here are the ones the runs were actually measured at. The
+earlier report's run was measured at root tree 04f6dcae (its
+apps/api/retrieval tree is d19c4365), and this run's at 4a3b6f4d (its
+apps/api/retrieval tree is 240f229c). The two trees differ, but the
+difference is not in the ranking: re-scoring the split under each tree's
+retrieval layer gives identical top-20 rankings on all 48 questions, on
+both lex paths, so nothing in the ranking changed. The run's pinned
+weight vector equals the code's defaults, so the pinned weights changed
+no score either. The two reports are NOT COMPARABLE, and the old one is
+NOT A BASELINE: it is preserved as a record of a measurement that was
+actually taken, not as a point the current system fell from.
 
   The citation-accuracy number is a MEASUREMENT OF A PAIR: the model's
   citations AND the support rule's sensitivity, and a reader must not read
@@ -390,3 +392,4 @@ The outcome of the vectorless-versus-dense comparison is not
 claimed here. The numbers above are what was measured; what
 they mean is a reading, and this report does not make it.
 ==============================================================================
+
