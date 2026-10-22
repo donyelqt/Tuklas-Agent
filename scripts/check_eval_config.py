@@ -69,7 +69,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _code_state() -> tuple[str, dict[str, bool]]:
-    """The CODE's own state: the stoplist version and the applied bonuses.
+    """The CODE's own state: the stoplist version, the applied bonuses and
+    the retrieval instrument.
 
     The script reads the retrieval layer and the agent's stoplist rather
     than declaring its own copy of them, because the whole point of the
@@ -85,15 +86,20 @@ def _code_state() -> tuple[str, dict[str, bool]]:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
     from apps.api.agent.stoplist import STOPLIST_VERSION as version
+    from apps.api.evaluation.arms import RETRIEVAL_INSTRUMENT_ANSWER_NODE_UNION as instrument
     from apps.api.retrieval.scoring import APPLIED_BONUS_FLAGS as applied
 
-    return version, dict(applied)
+    return version, dict(applied), instrument
 
 
 #: The stoplist version the CODE has (retrieval.md §3: the list is
 #: "versioned in code, not ad hoc"). A config that names a different one
 #: records a stoplist that was never applied.
-STOPLIST_VERSION, APPLIED_BONUS_FLAGS = _code_state()
+STOPLIST_VERSION, APPLIED_BONUS_FLAGS, CODE_VERSION = _code_state()
+
+#: The harness identity the config's ``code_version`` pins (the retrieval
+#: instrument). A config that names a different one records a harness
+#: version that was never applied.
 
 #: The backends the run config may name (api.md sec 4: ollama|llamacpp|vllm).
 ALLOWED_BACKENDS = {"ollama", "llamacpp", "vllm"}
@@ -488,13 +494,33 @@ def check_run_config(run: dict[str, Any]) -> tuple[list[str], str]:
     # identify, and the run's own record would then misdescribe the
     # broaden-retry that produced the ranking (retrieval.md sec 3).
     stoplist_version = config.get("stoplist_version")
-    if isinstance(stoplist_version, str) and stoplist_version.strip():
-        if stoplist_version != STOPLIST_VERSION:
-            violations.append(
-                f"config.stoplist_version: {stoplist_version!r} is not the stoplist "
-                f"this code has ({STOPLIST_VERSION!r}), so the run would record a "
-                "stoplist version that was never applied"
-            )
+    if (
+        isinstance(stoplist_version, str)
+        and stoplist_version.strip()
+        and stoplist_version != STOPLIST_VERSION
+    ):
+        violations.append(
+            f"config.stoplist_version: {stoplist_version!r} is not the stoplist "
+            f"this code has ({STOPLIST_VERSION!r}), so the run would record a "
+            "stoplist version that was never applied"
+        )
+
+    # The code version must be the instrument the CODE implements. A config
+    # that names a different instrument records a harness version nobody can
+    # identify, and the run's own record would then misdescribe the code
+    # that produced the numbers (retrieval.md sec 3: the instrument is
+    # part of the harness a run pins).
+    code_version = config.get("code_version")
+    if (
+        isinstance(code_version, str)
+        and code_version.strip()
+        and code_version != CODE_VERSION
+    ):
+        violations.append(
+            f"config.code_version: {code_version!r} is not the harness "
+            f"this code has ({CODE_VERSION!r}), so the run would record a "
+            "code version that was never applied"
+        )
 
     threshold = config.get("fuzzy_threshold")
     if threshold is None:

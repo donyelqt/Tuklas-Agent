@@ -155,10 +155,15 @@ here.** The numbers are what was measured; what they mean is a reading.
   --report data/eval-reports/v1-test.md --json data/eval-reports/v1-test.json
 ```
 
-The same config id does **not** yield the same retrieval metrics. The two test
-runs share `cfg_e86e8bfbc803c860` and differ by 0.061 on recall@5, because
-`code_version` is the constant `day6-eval-v1` and the config id does not pin the
-harness. evaluation.md §6 states the stronger claim; it holds for the retrieval
+The same config id did **not** yield the same retrieval metrics for these two
+runs: they share `cfg_e86e8bfbc803c860` and differ by 0.061 on recall@5, because
+they were measured before `code_version` pinned the harness. That gap is closed
+for FUTURE runs: `code_version` is now validated against the code's own
+instrument constant, so a config whose `code_version` does not match the harness
+the code implements is refused. The two PUBLISHED runs still share the legacy id
+because they were measured before the pin existed; the numbers remain what they
+were measured to be. evaluation.md §6 states the stronger claim; it holds for
+the retrieval
 *ranking* (a pure function of corpus, query, weights, which is deterministic) but
 not for the *instrument* that produced these numbers. Which run is which, and
 what the difference is made of, is in `docs/VERSIONS.md`. The run's own rows are
