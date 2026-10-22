@@ -26,7 +26,7 @@ Next.js (apps/web) ──REST/SSE──▶ FastAPI (apps/api, prefix /v1)
 
 Storage (MVP): **SQLite + filesystem**. Tables: `documents`, `nodes`, `references`, `queries`, `retrieval_runs`, `evaluation_runs`. Files: PDFs + extracted artifacts + BM25 indexes. No Postgres, no vector DB in v1 (ADR-002).
 
-Repo layout: `apps/web/`, `apps/api/{api,ingestion,retrieval,agent,generation,evaluation,models}/`, `data/{documents,indexes,datasets}/`, `experiments/{vector,vectorless,results}/`, `docs/`, `scripts/`.
+Repo layout: `apps/web/`, `apps/api/{api,ingestion,retrieval,agent,generation,evaluation,models,tests}/` (the vectorless retrieval engine is `apps/api/retrieval/`), `data/{datasets,eval-reports}/` (tracked) and `data/{documents,indexes}/` (local and gitignored), `experiments/vector/` (the dense baseline arm), `docs/`, `scripts/`.
 
 ## 2. Module boundaries (mechanically enforced)
 
