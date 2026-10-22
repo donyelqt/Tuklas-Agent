@@ -3,6 +3,12 @@
 This file records which measured run is which. It is the answer to "what am I
 looking at, and is it the same as the thing that produced the published numbers?"
 
+Tag `v0.1.0` (the version both manifests declare) is a source snapshot of this
+repository, published on GitHub Releases. It is not a product release: there is no
+npm or PyPI artefact and no install command, and the marketing site does not host a
+download - the site links to GitHub instead, which is why its run-locally lead
+remains accurate.
+
 ## The two runs that exist
 
 Both are real. Both were measured. Neither is a baseline for the other.
@@ -31,7 +37,9 @@ The config ids in the PUBLISHED reports (`cfg_e86e8bfbc803c860` /
 remain correct as historical identifiers in the published reports and the store
 rows, which are not regenerated. The dev runs did not collide
 (`cfg_5a3d6973caf7bd43` vs `cfg_0f73ff26c0d38d54`) because their configs differ
-in other fields.
+in other fields. A config checked out at tag `v0.1.0` derives
+`cfg_7894408776a9e557` (test) and `cfg_adbbd693cd4db2b7` (dev), because
+`code_version` now pins the harness.
 
 old v1 is preserved because it is a measurement that was actually taken and because
 its run's per-question rows live in a gitignored store that will not survive. It is
