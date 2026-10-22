@@ -87,14 +87,19 @@ and says what each file is.
 
 Two caveats travel with those numbers, and the reports carry both:
 
-1. **The two published reports are not comparable with each other.** The
-   retrieval metric changed instrument between them (it is now computed over
-   the node ids the answer was produced from, where the earlier report used a
-   separate one-off search over the whole question, a ranking the model never
-   saw). The run row does record the instrument and the lex path now, but the
-   two published runs were recorded before it did, so their rows carry neither
-   and a reader cannot tell from them that the two were measured under
-   different instruments. Neither report is a ratchet over the other.
+1. **A run is only comparable with another run when the instrument and the
+   store state are the same.** The two reports above are the CURRENT pair
+   and they share an instrument, but they are different splits (48 test
+   questions and 24 dev questions), so their numbers are not a ratchet over
+   each other in any case. What is NOT comparable is the current report
+   against the preserved `-OLD-INSTRUMENT-AND-STORE` pair: the retrieval
+   metric there was computed over a separate one-off search over the whole
+   question, a ranking the model never saw, where the current one is
+   computed over the node ids the answer was produced from. Those older
+   files are kept as a record of a measurement that was actually taken, not
+   as a baseline the current system fell from. The run row does record the
+   instrument and the lex path now, but the two published runs predate it,
+   so their rows carry neither.
 2. **The citation-failure numbers are a lower bound**, dominated by the
    scorer's strictness: no string rule can match a proposition *about* a
    provision to the provision's own words. The two arms' lower bounds are not
@@ -106,11 +111,16 @@ them.
 ## Requirements
 
 - Python 3.11, with the dependencies pinned in `pyproject.toml` (fastapi,
-  uvicorn, langgraph, pymupdf, rank-bm25, fastembed, pydantic).
+  uvicorn, langgraph, pymupdf, rapidfuzz, python-multipart, httpx,
+  rank-bm25, fastembed, numpy, pydantic).
 - Node 22, for `apps/web`.
 - A local LLM backend for generation. The measured runs used Ollama with
-  `qwen2.5:3b`; the interface is interchangeable per ADR-004.
-- No cloud service, no API key, and no document bytes leaving the machine.
+  `qwen2.5:3b`; the interface is designed to be interchangeable per ADR-004,
+  but Ollama is the only backend implemented.
+- No API key, and no document bytes leaving the machine. The one thing that
+  does come over the network is the baseline's embedding model, which
+  fastembed downloads from Hugging Face on a cold cache; the document
+  itself never does.
 
 ## Quick start
 
@@ -130,7 +140,7 @@ Windows is the environment these commands were run in; the `.venv` lives at
 #    The API answers GET /v1/documents with the documents it holds.
 
 # 4. the web app (the document explorer and the landing page)
-npm install --prefix apps/web
+npm ci --prefix apps/web
 npm run dev --prefix apps/web
 
 # 5. the test suite
@@ -183,10 +193,10 @@ caught.
 
 Everything described above is implemented. CI runs on every pull request and
 gates the Python suite, ruff, mypy, the web type-check and lint, the
-quarantine scan, the eval-config parity check, the reproducibility check,
-and coverage on changed lines. The web production build is not among the CI
-steps, so run `npm run build --prefix apps/web` before you trust a change
-there.
+quarantine scan, the eval-config parity check, the two scripts that prove
+those checks fail on a violation, the reproducibility check, and coverage on
+changed lines. The web production build is not among the CI steps, so run
+`npm run build --prefix apps/web` before you trust a change there.
 
 What is **not** here: no Docker image or compose file, no container or
 deploy configuration, no licence file, no published package, no release, and
