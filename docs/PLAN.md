@@ -1,7 +1,7 @@
-# Tuklas Agent — Implementation Plan (Day 0–7)
+# Tuklas Agent - Implementation Plan (Day 0-7)
 
-**Status:** Derived from the audited spec suite and three parallel audits. **Read this before writing any code.**
-**Scope:** the plan is a contract between the spec docs and the builders. It does not re-author requirements — it sequences them and flags every latent inconsistency.
+**Status:** Derived from the audited spec suite and three parallel audits. The Day 0-9 slices it sequences are built and recorded in `docs/TODO.md` (57 items checked, 0 open); this document stays as the record of WHY each slice was cut where, and of the three decisions the audit forced before any code was written. **Read this before writing new code.**
+**Scope:** the plan is a contract between the spec docs and the builders. It does not re-author requirements - it sequences them and flags every latent inconsistency.
 **Authoritative precedence when docs conflicted during audit:** PRD (requirements) → api.md (contracts) → architecture.md (module boundaries + build order) → retrieval.md → evaluation.md → ADRs → CONSTRAINTS (floor).
 
 ## Changes applied during this audit (Day 0)
@@ -184,7 +184,7 @@ architecture.md §10 lists 6 vertical slices. In dependency order with the block
 
 ## What MUST be true before the first benchmark run is reportable
 
-From the eval-readiness audit — a run that violates any of these **completes but cannot be published honestly**:
+From the eval-readiness audit - a run that violates any of these **completes but cannot be published honestly**. All eight now hold: the corpus is fetched and checksum-verified, the node id format is pinned and asserted by `test_d1_invariants`, the judge is blinded with its disagreement reported, the run rows are stored, the model-parity and quarantine checks are CI gates, and the dependency manifest is pinned. The list is kept as the failure modes they were.
 
 1. **No corpus** (D2) → no questions, no nodes.
 2. **`gold_nodes` don't resolve to real ids** (D1) → `Recall@5 = 0` silently, everything else looks valid.
@@ -199,6 +199,6 @@ From the eval-readiness audit — a run that violates any of these **completes b
 
 | Risk | Mechanism | Mitigation |
 |------|-----------|------------|
-| Silent zero-recall | `gold_nodes` format ≠ tree node id format | D1 pinned before Day 1; seed-data test asserts the four invariants (existence, `node_{question.document}_` prefix match, id uniqueness, rebuild determinism) |
-| Invalid comparison | Arms differ in more than retrieval (agent mediation asymmetry) | D4: decide whether Arm B runs the same 7 retrieval tools or one-shot embed→top-K; document the parity boundary |
-| Undetectable vector leak | Route handler in `api/` imports `faiss`, passes the old `check_no_vectors.py` scope | quarantine scope fix (done) + the script must scan recursively, not just the listed dirs |
+| Silent zero-recall | `gold_nodes` format ≠ tree node id format | **Caught before Day 1.** D1 pinned the id grammar `node_{doc_slug}_{type}_{locator}` (architecture.md §3); `test_d1_invariants` (apps/api/tests/test_ingest.py) asserts the four invariants (existence, `node_{question.document}_` prefix match, id uniqueness, rebuild determinism) |
+| Invalid comparison | Arms differ in more than retrieval (agent mediation asymmetry) | **Caught and decided (D4).** Arm B runs the same seven tools by TOOL SUBSTITUTION - `arms.py` swaps `TOOL_TABLE["search_nodes"]` for the dense tool and restores it in a `finally`, and both arms call the same `agent_graph.run_agent`. The parity boundary is recorded in ADR-006 §1 |
+| Undetectable vector leak | Route handler in `api/` imports `faiss`, passes the old `check_no_vectors.py` scope | **Caught.** `scripts/check_no_vectors.py` puts `apps/api/api/` in `QUARANTINE_DIRS` and scans recursively; it is a CI gate |
