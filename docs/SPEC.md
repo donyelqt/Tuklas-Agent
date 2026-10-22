@@ -328,9 +328,12 @@ by the breaking-change schema-snapshot test (`test_api_v1_snapshot`, CONSTRAINTS
 6. `pytest -q` green; `mypy apps/api` zero errors; `ruff check apps/api` zero errors;
    `tsc --noEmit -p apps/web` + `eslint apps/web` zero errors; `gitleaks detect --redact
    --no-banner` zero findings; diff-cover ≥ 80% on changed lines (all per CONSTRAINTS.md).
-7. No superiority claims anywhere — the outcome of the vectorless-vs-vector comparison is
-   unknown until the first benchmark run; CONSTRAINTS.md "Measured, not yet enforced"
-   table stays `unmeasured` until the first dev-24 run sets the ratchet.
+7. No superiority claims anywhere - the outcome of the vectorless-vs-vector comparison is
+   still unknown: the benchmark has been run, and the published reports
+   (`data/eval-reports/`) print both arms' numbers side by side with no verdict. The
+   ratchet itself IS set; CONSTRAINTS.md "Measured, not yet enforced" is the authority for
+   the values, and its dated status section records why they were re-set (the instrument
+   changed).
 
 ---
 
