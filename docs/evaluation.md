@@ -1,24 +1,27 @@
-# Tuklas Agent — Evaluation Framework (F7, rev 2)
+# Tuklas Agent - Evaluation Framework (F7, rev 2)
 
-**Status:** Draft for review (rev 2 — post adversarial review). Answers PRD US-4.
+**Status:** Draft for review (rev 2 - post adversarial review). Answers PRD US-4.
 **Principle:** same dataset, same questions, same golds, same generation model, same judges → both arms → reported metrics. Anything else is a demo, not an experiment.
 
 ## 1. Design
 
 ```text
 Benchmark dataset v1 (72Q: 24 dev + 48 test; 7 categories; fixed gold_nodes +
-expected_claims + answerable flag) — frozen snapshot id per run
+expected_claims + answerable flag) - frozen snapshot id per run
         │
-        ├── Arm A: Tuklas Agent (vectorless: BM25 + structural + reference)
-        └── Arm B: Vector RAG (dense baseline, experiments/vector/ ONLY)
+        ├── Arm A: Tuklas Agent (vectorless retrieval layer: `lex` + `ident` +
+            `title` + `ref` + `hier`, with ADR-005's identifier precedence)
+        └── Arm B: dense-cosine-only retrieval layer (experiments/vector/ ONLY)
+            behind the SAME agent and the same 7 tools, `search_nodes` swapped
         │   identical generation model + backend + temperature 0 + seed (ADR-004)
         ▼
 Metrics: retrieval (Recall@K, Precision@K, MRR@10) │ generation
 (faithfulness blinded, correctness, citation accuracy) │ system
-(latency p50/p95 split, tokens) — evaluation_runs + per-question retrieval_runs
+(latency p50/p95 split, tokens) - evaluation_runs + per-question retrieval_runs
 ```
 
-- Arms differ **only** in retrieval. Different models across arms = invalid run (CI check on run config).
+- The arms SHARE the agent (same graph, same seven tools, only `search_nodes` swapped), the generation model + backend + temperature + seed, the arm-blinded judge, the retrieval-metric instrument (`answer-node-union-v1`) and the corpus-membership rule (`in_lex_corpus`). They DIFFER in the SIGNAL SET the retrieval layer can use: Arm A scores the five components of retrieval.md §3 (`lex`, `ident`, `title`, `ref`, `hier`) and applies ADR-005's identifier precedence; Arm B scores one min-max-normalized cosine, with `ident`/`title`/`ref`/`hier` at 0.0 and no identifier precedence. The arms therefore differ in more than the retrieval mechanism, so a per-category difference is a difference of surface and channel as well as of mechanism (ADR-006 §1). The scope and channel asymmetry a report publishes beside the numbers is specified in §7.
+- Different models across arms = invalid run (CI check on run config).
 - Dev (24Q): weight tuning + iteration. Test (48Q): reported numbers, touched once per frozen config. Tuning on test invalidates the run.
 - Frozen split methodology: stratified by category (≥3 dev + ≥6 test per category), seeded shuffle (seed 42, recorded), no question in both splits, split file committed (`data/datasets/v1/{dev,test}.json`).
 
@@ -37,7 +40,7 @@ Metrics: retrieval (Recall@K, Precision@K, MRR@10) │ generation
 }
 ```
 
-`answerable: false` marks planted unanswerable questions — correctly abstaining counts as correct (scored separately). Corpus = public/legal-safe docs only. **D2 resolved (2026-10-19):** primary = Civil Code of the Philippines (R.A. 386, slug `civil-code-public`), secondary = U.S. Code Title 11 (slug `usc-title-11`); artifacts + sha256 + evidence in `docs/CORPUS.md`.
+`answerable: false` marks planted unanswerable questions - correctly abstaining counts as correct (scored separately). Corpus = public/legal-safe docs only. **D2 resolved (2026-10-19):** primary = Civil Code of the Philippines (R.A. 386, slug `civil-code-public`), secondary = U.S. Code Title 11 (slug `usc-title-11`); artifacts + sha256 + evidence in `docs/CORPUS.md`.
 
 Golds carry the full D1 node id including the document slug; a question's golds must all start with `node_{question.document}_`, and golds prefer leaf provisions (containers are the only ids whose form can move if container numbering is revised).
 
@@ -46,7 +49,7 @@ Golds carry the full D1 node id including the document slug; a question's golds 
 - **Recall@K** = |retrieved ∩ gold| / |gold|. **Primary metric: Recall@5.**
 - **Precision@K** reported at K ∈ {1,3,5,10}.
 - **MRR@10** = 1 / rank(first gold hit within top 10), else 0. Secondary by construction.
-- **Decision rule:** no win/tie ceremony — publish both numbers per category + overall. "Competitive" reading follows the PRD §6 provisional margins; a uniform Tuklas sweep is investigated as leakage, not celebrated.
+- **Decision rule:** no win/tie ceremony - publish both numbers per category + overall. "Competitive" reading follows the PRD §6 provisional margins; a uniform Tuklas sweep is investigated as leakage, not celebrated.
 - Correctness scorer (shared): case-folded, punctuation-stripped substring **or** RapidFuzz `token_set_ratio` ≥ 85 (`rapidfuzz` pinned in requirements).
 
 ## 4. Generation metrics (all arm-blinded)
@@ -66,7 +69,7 @@ Retrieval latency, generation latency, total latency, tokens in/out, tool iterat
 - The eval runner writes **both**: `evaluation_runs` (run-level: `evaluation_id`, dataset snapshot id, code_version, weights, normalization id, fuzzy threshold, bonus flags, stoplist version, model+backend, temperature 0, seed, judge_prompt_version, margins, K) **and** one `retrieval_runs` row per question per arm carrying `(evaluation_id, question_id, arm)` join keys plus node ids, weights snapshot, latency. Same config → same retrieval metrics exactly; generation within ±5pp.
 - **Every pin in the run record is the one that was APPLIED (binding).** A recorded value the run did not apply is a record of what was asked for, not of what happened, so the config checker (`scripts/check_eval_config.py`) and the runner's own validator (`apps/api/evaluation/config.py`) both REFUSE a config whose pins do not match the code's state:
   - the **weights** must reach the scorer: the run config's weight vector is handed to the retrieval layer, the agent's own retrieval is scored with it, and the row records the vector that produced the ranking;
-  - the **bonus flags** must equal the retrieval layer's applied state (`retrieval.scoring.APPLIED_BONUS_FLAGS`). The layer applies no phrase or fuzzy bonus — retrieval.md §3 names them and gives no magnitude, no component and no place in the five-term formula, so a config that pins one is refused rather than recorded;
+  - the **bonus flags** must equal the retrieval layer's applied state (`retrieval.scoring.APPLIED_BONUS_FLAGS`). The layer applies no phrase or fuzzy bonus - retrieval.md §3 names them and gives no magnitude, no component and no place in the five-term formula, so a config that pins one is refused rather than recorded;
   - the **stoplist version** must be the version the code has (`agent.stoplist.STOPLIST_VERSION`). A config naming a version the code does not have is refused, because a run record that pins a stoplist nobody can identify describes nothing.
 - **Refusal detection (binding):** refusal = response `insufficient: true` with `citations: []`. Abstention score: on `answerable: false` questions, refusal = 1, any cited answer = 0; uncited non-refusal prose = 0 with `citations_valid: false`. Smoke gate (dev-10: completes, 100% rows with node ids except `insufficient: true` rows which carry `[]` + judge scores, zero refusals on `answerable: true`) is consistent: abstentions carry empty id lists by contract.
 
@@ -75,7 +78,7 @@ Retrieval latency, generation latency, total latency, tokens in/out, tool iterat
 - Report n, split seed, model/backend, judge prompt version with every number.
 - Expected pattern: Tuklas competitive on cross-reference/multi-hop, weaker-or-even on paraphrase-heavy definitions (no semantic match). Uniform win = leakage smell.
 - Publish tuned weights + dev-vs-test delta; test collapse = overfit, reported as such.
-- Docs claim "competitive on X, weaker on Y, measured on Z (n=48)" — never "superior".
+- Docs claim "competitive on X, weaker on Y, measured on Z (n=48)" - never "superior".
 
 **What the report must publish BEFORE the numbers it qualifies (binding).** A
 number without its scope is a number a reader cannot interpret, and the
@@ -102,8 +105,8 @@ limitations.
   full-document BM25 RE-SCORE per query. Neither includes the build of
   its own index.
 - **The spot check's METHOD is printed beside its number.** The harness's
-  default is a MECHANICAL re-judge — the same versioned prompt, the same
-  backend, the same evidence — which measures the judge's
+  default is a MECHANICAL re-judge - the same versioned prompt, the same
+  backend, the same evidence - which measures the judge's
   SELF-CONSISTENCY. It is NOT the builder's human re-score that §4 asks
   for, and the report says so in those words. A reader who sees
   "disagreement: 0.017" without the method would reasonably assume a human
@@ -121,8 +124,8 @@ limitations.
 - [ ] Re-run with same config id reproduces retrieval exactly, generation within ±5pp.
   - *The retrieval half is checked (2026-10-21):* `scripts/check_reproducibility.py`
     runs the pass twice over two fresh ingests and two fresh index builds, over
-    BOTH arms — the vectorless arm and the dense arm, each over its own
-    ranking — and compares the per-arm macro-averaged metrics AND the
+    BOTH arms - the vectorless arm and the dense arm, each over its own
+    ranking - and compares the per-arm macro-averaged metrics AND the
     per-question node id lists, element for element. The arms pass runs over
     a synthetic statute, because the dense arm embeds the whole corpus and
     over the real Civil Code that is a 2,579-node embed (about 4.5 minutes
