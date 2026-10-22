@@ -150,7 +150,7 @@ select_evidence(hits: list[NodeHit], sub_questions: list[str]) -> EvidenceSet`,
 
 export const comparison = {
   headline: "The comparison is designed, not won",
-  lead: "Two retrieval arms, one dataset, one generation model. The arms differ only in retrieval, and nothing has been measured yet.",
+  lead: "Two retrieval arms, one dataset, one generation model. Both arms run the same agent and the same judge; the arms' retrieval layers draw on different signals, and the comparison's outcome is undecided.",
   tuklas: {
     label: "Tuklas",
     items: [
@@ -189,7 +189,7 @@ export const comparison = {
   decisionRule: "Both numbers are published per category and overall. There is no win ceremony.",
   expectedPattern:
     "The expected pattern is competitive on cross-reference and multi-hop questions, weaker on paraphrase-heavy definitions, and a uniform sweep across every category is treated as a leakage smell rather than a win.",
-  status: "No evaluation run has happened yet, so no metric on this page reports a measured value.",
+  status: "The controlled comparison has been run and its reports are published in data/eval-reports. The outcome is undecided, so no metric on this page reports a measured value.",
 };
 
 export const guardrails = {
@@ -225,7 +225,7 @@ export const runLocally = {
   headline: "Run it from a clone",
   lead: "The intended local setup for a builder. Nothing here is a download or a release.",
   status:
-    "Build state: the specification, the evaluation contract, and the Next.js shell are in the repository. The API service, the retrieval engine, and the agent loop are implemented and tested; the evaluation harness and the controlled comparison are not, so no metric on this page reports a measured value.",
+    "Build state: the specification, the API service, the retrieval engine, the agent loop, the evaluation harness and the controlled comparison are implemented and tested. The comparison's outcome is undecided, so no metric on this page reports a measured value.",
   commands: [
     { label: "Clone", command: "git clone https://github.com/donyelqt/Tuklas-Agent.git" },
     { label: "Install", command: "poetry install" },
@@ -236,13 +236,12 @@ export const runLocally = {
 apps/api/                      FastAPI service under the /v1 prefix
   api/  ingestion/  retrieval/  agent/  generation/  evaluation/  models/
 data/
-  documents/  indexes/  datasets/
+  documents/  indexes/  datasets/  eval-reports/
 experiments/
   vector/                      dense baseline, imported only by evaluation
-  vectorless/  results/
-docs/                          specification and contracts
+docs/                          specification, contracts, decisions, run reports
 scripts/`,
-  caption: "Intended local setup, not an installer. The API entrypoint is the app factory in apps/api/api/app.py; the evaluation harness and the controlled comparison are not built yet.",
+  caption: "Intended local setup, not an installer. The API entrypoint is the app factory in apps/api/api/app.py; the published comparison reports live in data/eval-reports.",
 };
 
 export const footer = {
