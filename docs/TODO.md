@@ -1538,16 +1538,19 @@ slices 1–5.
 
 ## Version record
 
-- [x] **`docs/VERSIONS.md` records which measured run is which.** v1 (superseded,
-  `eval_a80167ab` / `eval_083a4c15`, instrument `whole-question-search-v0`, lex
-  per-document BM25 present, root tree `04f6dcae`, retrieval tree `d19c4365`) and
-  1.1 (current, `eval_447127eb` / `eval_ff373231`, instrument
-  `answer-node-union-v1`, lex FTS5 fallback, root tree `4a3b6f4d`, retrieval tree
-  `240f229c`). Both are real; neither is a baseline; the record states what a
-  reader may not conclude. It records the measured per-cause decomposition of the
-  v1 → 1.1 difference, and it scopes the nondeterminism that does exist (the
-  1.1 instrument's node set comes from the agent's tool trace, so a re-run can
-  move the retrieval numbers) separately from the ranking, which is deterministic.
+- [x] **`docs/VERSIONS.md` records which measured run is which.** old v1
+  (superseded, `eval_a80167ab` / `eval_083a4c15`, instrument
+  `whole-question-search-v0`, lex per-document BM25 present, root tree
+  `04f6dcae`, retrieval tree `d19c4365`) and v1 (current, `eval_447127eb` /
+  `eval_ff373231`, instrument `answer-node-union-v1`, lex FTS5 fallback, root
+  tree `4a3b6f4d`, retrieval tree `240f229c`). Both are real; neither is a
+  baseline; the record states what a reader may not conclude. It records the
+  measured per-cause decomposition of the old v1 → v1 difference, and it scopes
+  the nondeterminism that does exist (the v1 instrument's node set comes from
+  the agent's tool trace, so a re-run can move the retrieval numbers) separately
+  from the ranking, which is deterministic. The labels are `old v1` and `v1`, to
+  match the report filenames; `1.1` was rejected because it implies a re-run
+  that never happened.
 
 ## What MUST be true before the first benchmark run is reportable
 

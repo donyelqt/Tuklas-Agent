@@ -7,7 +7,7 @@ looking at, and is it the same as the thing that produced the published numbers?
 
 Both are real. Both were measured. Neither is a baseline for the other.
 
-| | v1 (superseded) | 1.1 (current) |
+| | old v1 (superseded) | v1 (current) |
 | Test split | `data/eval-reports/v1-test-OLD-INSTRUMENT-AND-STORE.md` | `data/eval-reports/v1-test.md` |
 | Dev split | `data/eval-reports/v1-dev-OLD-INSTRUMENT-AND-STORE.md` | `data/eval-reports/v1-dev.md` |
 | Run id | `eval_a80167ab` / `eval_083a4c15` | `eval_447127eb` / `eval_ff373231` |
@@ -17,17 +17,20 @@ Both are real. Both were measured. Neither is a baseline for the other.
 | Root tree | `04f6dcae` | `4a3b6f4d` |
 | `apps/api/retrieval` tree | `d19c4365` | `240f229c` |
 
+The suffixes on the two instrument names belong to the instruments themselves, not to
+the run labels used in this file.
+
 The two test runs share a config id (`cfg_e86e8bfbc803c860`) even though they were
 measured under different instruments and different lex layers. That is a real gap:
 `code_version` is the constant `day6-eval-v1` for every run, so the config id does
 not pin the harness. The dev runs do not collide (`cfg_5a3d6973caf7bd43` vs
 `cfg_0f73ff26c0d38d54`) because their configs differ in other fields.
 
-v1 is preserved because it is a measurement that was actually taken and because its
-run's per-question rows live in a gitignored store that will not survive. It is NOT
-A BASELINE: the two runs do not measure the same thing.
+old v1 is preserved because it is a measurement that was actually taken and because
+its run's per-question rows live in a gitignored store that will not survive. It is
+NOT A BASELINE: the two runs do not measure the same thing.
 
-1.1 is the run whose numbers are published in `data/eval-reports/`. It is the current
+v1 is the run whose numbers are published in `data/eval-reports/`. It is the current
 measured state of the system. It is NOT a verdict on vectorless versus dense.
 
 ## Why the numbers differ
@@ -35,15 +38,16 @@ measured state of the system. It is NOT a verdict on vectorless versus dense.
 The difference is not one thing. It is three recorded, measured causes, and none of
 them is sampling noise on the ranking:
 
-1. **The instrument changed.** v1 computed the retrieval metric over a separate
-   one-off search over the whole question. 1.1 computes it over the union of the
-   agent's per-sub-question `search_nodes` results. Measured, vectorless arm on
-   test-48, lex layer held fixed: recall@5 −0.061 (0.7927 → 0.7317), mrr@10 −0.1028.
-   The instrument is the largest single effect in both arms.
-2. **The lex layer changed.** v1 was measured with the per-document `bm25.json`
-   artifact present; 1.1 without it, so the vectorless arm fell back to FTS5, whose
-   N and average document length are table-global. Measured: recall@5 −0.0122,
-   mrr@10 +0.0187; interaction with the instrument +0.0122.
+1. **The instrument changed.** The old v1 run computed the retrieval metric over a
+   separate one-off search over the whole question. The current v1 run computes it
+   over the union of the agent's per-sub-question `search_nodes` results. Measured,
+   vectorless arm on test-48, lex layer held fixed: recall@5 −0.061 (0.7927 →
+   0.7317), mrr@10 −0.1028. The instrument is the largest single effect in both
+   arms.
+2. **The lex layer changed.** The old v1 run was measured with the per-document
+   `bm25.json` artifact present; the current v1 run without it, so the vectorless arm
+   fell back to FTS5, whose N and average document length are table-global. Measured:
+   recall@5 −0.0122, mrr@10 +0.0187; interaction with the instrument +0.0122.
 3. **The dense arm's corpus changed.** It was cut to the vectorless arm's lexical
    node set, its title de-duplicated and its query's identifier tokens stripped.
    Net −0.0244 recall@5, −0.0262 mrr@10.
@@ -55,21 +59,21 @@ weights) and it is deterministic: three repeated runs produced one sha256.
 
 ## The nondeterminism that does exist
 
-The ranking function is deterministic. What is not deterministic is the **1.1
-instrument's node set**. `arms.py:_retrieved_node_ids` reads the node ids out of the
-agent's own tool trace, and the agent decomposes a question into sub-questions with
-an LLM. So a 1.1 re-run can retrieve a different node set than the published run
-did, and its retrieval numbers can move with it. That is real, and it is the reason
-the generation half carries an **unchecked ±5pp** tolerance rather than an exact
-reproduction guarantee. It is not the cause of the v1 → 1.1 difference: that was
-measured per-cause with the lex layer held fixed, as above.
+The ranking function is deterministic. What is not deterministic is the node set of
+the current v1 run's instrument. `arms.py:_retrieved_node_ids` reads the node ids out
+of the agent's own tool trace, and the agent decomposes a question into sub-questions
+with an LLM. So a re-run of the current v1 configuration can retrieve a different node
+set than the published run did, and its retrieval numbers can move with it. That is
+real, and it is the reason the generation half carries an **unchecked ±5pp** tolerance
+rather than an exact reproduction guarantee. It is not the cause of the old v1 to v1
+difference: that was measured per-cause with the lex layer held fixed, as above.
 
 ## What a reader may not conclude
 
 - No verdict. The vectorless arm did not get worse and did not get better.
-- v1 is not a baseline and the two are not comparable.
-- 1.1 is not a published package. There is no `npm`/`npx`/`pip` artifact, no
-  install command, and no licence.
+- old v1 is not a baseline and the two are not comparable.
+- The v1 run is not a published package. There is no `npm`/`npx`/`pip` artifact and
+  no install command.
 
 ## Known defects in this record
 
@@ -103,20 +107,24 @@ files: null   publishConfig: null  license: null
 - **There is no `bin`, so `npx` cannot run anything.** Without a `bin` entry
   `npx` exits `could not determine executable to run`. This is a Next.js site,
   not a CLI.
-- **There is no licence**, so any distribution would be of an all-rights-reserved
-  work.
 
-A tag + GitHub Release is the only channel with no mechanical blocker, and it
-needs a licence first.
+Licensing is not one of the blockers. The repository is MIT-licensed: the LICENSE file
+at the repo root, and the MIT licence recorded in pyproject.toml. The package
+manifest named above declares no licence key, which is a fact about the web package,
+not about the repository's licensing. npm and PyPI packaging is blocked by the
+mechanical packaging reasons above, not by licensing.
+
+A tag + GitHub Release is the only channel with no mechanical blocker, and the
+licence it needs is already in place.
 
 ## Why the reports keep the name `v1-test.md`
 
-Asked whether the current reports should be renamed `v1.1-...` because "v1" is
-already taken. It is not. The `v1` prefix is the **dataset version**
-(`data/datasets/v1/`), and there is no v2 dataset — `data/datasets/v1/README.md:44`
+Asked whether the current reports should be renamed with a decimal version suffix
+because "v1" is already taken. It is not. The `v1` prefix is the **dataset version**
+(`data/datasets/v1/`), and there is no v2 dataset. `data/datasets/v1/README.md:44`
 names `data/eval-reports/v1-test.md` as the reported test-48 report. Both the
 current and the superseded reports carry `v1` because both report on the v1
-dataset. Renaming would fabricate a dataset v1.1 that does not exist, break the
+dataset. Renaming would fabricate a dataset version that does not exist, break the
 link to that README, and throw away the existing disambiguation: the superseded
 files carry the `-OLD-INSTRUMENT-AND-STORE.md` suffix, which says *why* they are
 old, and `data/eval-reports/README.md` separates CURRENT from PRESERVED. The two
