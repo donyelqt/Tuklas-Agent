@@ -36,9 +36,10 @@ Storage (MVP): **SQLite + filesystem** (ADR-002). Tables: `documents`, `nodes`,
 `references`, `queries`, `retrieval_runs`, `evaluation_runs`. Files: PDFs + extracted
 artifacts + BM25 indexes. No Postgres, no vector DB in v1.
 
-Repo layout: `apps/web/`, `apps/api/{api,ingestion,retrieval,agent,generation,evaluation,models}/`,
-`data/{documents,indexes,datasets}/`, `experiments/{vector,vectorless,results}/`, `docs/`,
-`scripts/`.
+Repo layout: `apps/web/`, `apps/api/{api,ingestion,retrieval,agent,generation,evaluation,models,tests}/`
+(the vectorless retrieval engine is `apps/api/retrieval/`), `data/{datasets,eval-reports}/`
+(tracked) and `data/{documents,indexes}/` (local and gitignored), `experiments/vector/` (the
+dense baseline arm), `docs/`, `scripts/`.
 
 **Agent graph (architecture.md §4, authoritative):**
 `START → query_plan (emits 1–4 sub_questions) → search → inspect →
