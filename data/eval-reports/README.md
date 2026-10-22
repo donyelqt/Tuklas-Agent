@@ -32,6 +32,24 @@ not be diffed against the current ones.
 A report publishes both arms' numbers and NO verdict. It states what a
 reader needs BEFORE it prints a number:
 
+The two arms, side by side, before the detail below:
+
+| Dimension | Vectorless arm (Tuklas) | Dense baseline arm |
+| --- | --- | --- |
+| Ranking signal | five components: `lex`, `ident`, `title`, `ref`, `hier` (`docs/retrieval.md` §3) | one min-max-normalized cosine (`experiments/vector/index.py`) |
+| Identifier precedence | yes: a query that names a provision puts that provision first (`docs/decisions/ADR-005-identifier-precedence-and-own-identity.md`) | none (`docs/decisions/ADR-006-evaluation-framework-arms-and-dataset.md` §1) |
+| Candidate set | the whole 2,579-node tree, over a 2,392-node lexical corpus | the 2,392 lexical nodes |
+| Lexical score | per-document BM25 over leaf-node bodies and section-intro nodes | none: the cosine occupies the `lex` slot (`experiments/vector/index.py`) |
+| Agent | the same LangGraph graph and the same seven tools | the same graph and the same seven tools; only `search_nodes` is substituted (`apps/api/evaluation/arms.py`) |
+| Generation and judge | the same model, backend, temperature 0, seed 42, and the same arm-blinded judge (`apps/api/evaluation/judge.py`) | the same model, backend, temperature 0, seed 42, and the same arm-blinded judge |
+| Metric | the same instrument (`answer-node-union-v1`), over the node ids the answer was produced from (`apps/api/evaluation/arms.py`) | the same instrument (`answer-node-union-v1`), over the node ids the answer was produced from |
+
+Note on the channel count: `ref` is 0 for every node in BOTH arms on this
+corpus - the vectorless arm's `ref` is 0 because ingestion does not populate
+the `references_` table, and the dense arm's `ref` is 0.0 by construction -
+so the channels the dense arm structurally cannot have are THREE (`ident`,
+`title`, `hier`), as the detail below states.
+
 - **each arm's SCOPE** - how many nodes it ranks, how large the
   vectorless arm's lexical corpus is, and what SURFACE it scores. The
   vectorless arm ranks the document's whole node set; the dense arm
