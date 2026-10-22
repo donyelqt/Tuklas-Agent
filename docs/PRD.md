@@ -1,6 +1,10 @@
 # Tuklas Agent — PRD (MVP v1.0)
 
-**Status:** Draft for review — do not implement beyond Day 1 slice until approved.
+**Status:** Implemented. The Day 1-9 slices tracked in `docs/TODO.md` are complete (57
+checked items, 0 unchecked), and the controlled vectorless-vs-vector comparison has been
+run and published in `data/eval-reports/`. The outcome of that comparison is still
+unknown: the reports print both arms' numbers and no verdict. This document remains the
+requirements document; the measured ratchet lives in `CONSTRAINTS.md`.
 **Source:** Consolidated final spec (2026-10-07). Research question is the product.
 **Type:** Local-first AI research application. Not a legal-advice system.
 
@@ -91,7 +95,7 @@ Primary readout: **Recall@5** (retrieval) + **faithfulness** (generation), Tukla
 ### Guardrails / system (report, don't optimize into dishonesty)
 
 - Retrieval latency, generation latency, total latency (p50/p95), tokens in/out, tool iterations per ask.
-- 🔶 **Assumption:** no latency budget is promised until the first benchmark run sets the ratchet in CONSTRAINTS.md.
+- 🔶 **Assumption:** no latency budget is promised; the measured ratchet values and the dated status of that ratchet live in CONSTRAINTS.md.
 
 ## 7. User Stories & Requirements
 
@@ -162,4 +166,6 @@ Billing, SaaS accounts, enterprise RBAC, collaborative editing, case management,
 3. 🔵 Default local model + min hardware for MVP demo?
 4. 🔵 SSE v1 schema frozen in `api.md` — web client builds against it now, or one iteration allowed?
 
-**Next step:** review this PRD + architecture.md + ADRs. Only then plan Day 1–7 slices.
+**Next step:** this PRD is the requirements document for the implemented artefact. The
+slice plan and its status live in `docs/TODO.md`, the measured results in
+`data/eval-reports/`, and the ratchet in `CONSTRAINTS.md`.
