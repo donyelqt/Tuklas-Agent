@@ -1551,6 +1551,10 @@ slices 1–5.
   from the ranking, which is deterministic. The labels are `old v1` and `v1`, to
   match the report filenames; `1.1` was rejected because it implies a re-run
   that never happened.
+  Tag `v0.1.0` - the version both manifests declare - is a source snapshot of this
+  repository, published on GitHub Releases; it is not a product release, and the
+  marketing site's run-locally lead stays accurate because the site links to
+  GitHub instead of hosting a download.
 
 ## What MUST be true before the first benchmark run is reportable
 
