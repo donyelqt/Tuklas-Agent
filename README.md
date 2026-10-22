@@ -49,12 +49,24 @@ legal advice, and it has no users, no release, and no support.
   imported only by the evaluation package, so the comparison is real and the
   primary path stays vectorless. CI enforces this with
   `scripts/check_no_vectors.py`. It is not a second system: the dense arm
-  runs the **same agent graph, the same planner, the same generation model
-  and the same corpus**, with one substitution - its `search_nodes` returns
-  a dense ranking instead of the vectorless one. Its search is cosine
-  similarity alone, with no sparse term, so it is dense rather than hybrid.
-  A second agent would differ in more than retrieval, which is the confound
+  runs the **same agent graph, the same planner, the same generation model,
+  the same judge and the same metric**, with one substitution - its
+  `search_nodes` returns a dense ranking instead of the vectorless one. A
+  second agent would differ in more than retrieval, which is the confound
   the experiment forbids.
+
+  What the substitution does **not** do is make this a one-variable swap.
+  The two ranking functions do not draw on the same signals: the vectorless
+  arm scores five components and orders identified provisions first, over
+  the whole 2,579-node tree; the dense arm has **one** component - a
+  min-max-normalised cosine with no BM25, no sparse term and no hybrid
+  fusion, `ident`/`title`/`ref`/`hier` hard-coded to 0 - over the 2,392
+  lexical nodes, with no identifier precedence. So the dense arm cannot name
+  a provision and cannot reach the container nodes the vectorless arm's
+  channels score. The published report says so at length ("THE ARMS ARE NOT
+  LIKE-FOR-LIKE"), and per-category differences are differences of surface
+  and channel as well as of mechanism. ADR-003 rejected a hybrid arm
+  precisely because it would confound the comparison.
 - **Evaluation.** A frozen 72-question dataset (24 dev, 48 test, seven
   categories) with both arms run over the same questions, metrics published
   per category, and no verdict.
