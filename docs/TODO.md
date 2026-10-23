@@ -496,18 +496,23 @@ points at.
 
 ---
 
-## Day 5 — Slice 5: Web three-pane explorer + SSE client
+## Day 5 — Slice 5: Web explorer + SSE client
 
 **Targets:** `apps/web/src/app/app/` (new route), new components. **Depends on:** Day 4.
 
 - [x] Three panes: tree / source / answer at `/app/*`.
+- [x] A chat view over the same ask runtime, switched from the explorer by a tablist in
+  the header: the explorer renders the latest turn, the chat renders the transcript, and
+  both read one list of turns rather than two copies of the same run.
 - [x] SSE event payload schemas spec'd in `api.md` §3 **before** this slice (PLAN.md gap
   #18 — closed by the Day-3 slice: the schemas and the pinned abstention string are in
   api.md, with the Day-3 contract test pinning the order).
 - [x] Client built against the frozen sequence: `plan → tool_call → tool_result →
   (repeat) → evidence → token* → done | error`.
 - [x] Citation click → `GET /v1/nodes/{id}/source` → source pane renders
-  `text + page + hierarchy_path`.
+  `text + page + hierarchy_path`; the chat renders the same node inline.
+- [x] A `done` payload that is not an AskResponse is reported as a contract violation in
+  place of the answer, instead of crashing the render or showing half an answer.
 - [x] Persistent disclaimer banner (answer pane) — worded exactly as `copy.ts` line 221;
   persists across answer interactions, does not scroll away.
 - [x] Explorer runtime boundary (`architecture.md` §7): calls the local API at
@@ -522,9 +527,10 @@ points at.
   tree + source panes server-rendered. No blanket `"use client"` on the page.
   - *Acceptance (AGENTS.md pre-flight):* `npx tsc --noEmit -p tsconfig.json` clean;
     `npm run lint` zero warnings; `npm run build` clean. Browser test: SSE events render
-    in order; citation click opens source; disclaimer stays visible during stream.
-    Marketing-route pre-flight per `docs/landing-page/DESIGN.md` §13 if the landing page
-    is touched.
+    in order; citation click opens source; disclaimer stays visible during stream; the
+    tablist moves between the two views with the arrow keys; a malformed `done` event
+    shows a failure in place of the answer. Marketing-route pre-flight per
+    `docs/landing-page/DESIGN.md` §13 if the landing page is touched.
 
   - *Done (2026-10-21), verified in a real browser against the running API:*
     the route loads at `/app`; the three panes render; the disclaimer carries
@@ -552,6 +558,47 @@ points at.
     `apps/api/tests/test_api_routes.py`, including one that FAILS against a
     batch/replay SSE implementation.
 
+  - *Done (2026-10-24): the explorer has a second view over the same ask
+    runtime.* A full-screen chat sits behind a tablist in the header, next to
+    the three-pane explorer. The ask runtime produces a LIST of turns; the
+    explorer's answer pane renders the latest one, and the chat renders the
+    transcript. They are two views of one runtime, not two copies of it, so a
+    run that starts in the explorer is still in the transcript when the chat
+    is opened. A citation in the chat opens the cited node inline, through the
+    same `GET /v1/nodes/{id}/source` call the source pane uses, so the two
+    views cannot disagree about what a citation refers to. The explorer's
+    question field keeps the question after a run, because there it is the one
+    place the question is written down; the chat owns a separate field that
+    clears on send, because there the transcript is the record. Both panels
+    stay mounted and the inactive one carries `hidden`, so a tab's
+    `aria-controls` always names an element that exists and the inactive view
+    is out of the tab order and the accessibility tree. The tablist moves
+    between the views with the arrow keys.
+
+  - *A crash was found and fixed: a malformed `done` event took the page
+    down.* The client read `payload.ask_response` and cast it to an
+    AskResponse without checking it, so a `done` frame that was not the
+    frozen shape reached `response.citations` inside a render and threw.
+    React turned that into a blank page: the failure of one answer erased
+    the whole interface, including the transcript of the answers that had
+    already worked. The payload is now checked where a failure can still be
+    reported as what it is, and the turn shows "UNEXPECTED_RESPONSE: The API
+    sent a done event the explorer could not read." in place of the answer.
+    The reader is also cancelled when the stream fails, so a failed stream
+    does not leave the connection open.
+
+  - *Verified in a real browser against the running API, after the fix:* the
+    explorer ask renders the answer and keeps the question in its field;
+    switching to the chat carries the run into the transcript with its own
+    empty field; a second question appends a second turn; clicking citation
+    [2] in the chat fetches the node and shows it inline; the malformed
+    `done` event shows the failure in place of the answer instead of a blank
+    page; Retry re-runs the failed turn in place rather than appending a
+    duplicate; a run replaced by a newer question says so on the transcript
+    instead of sitting in the "asking" state forever. Checked at 390px, 768px,
+    1440px and 1920px with no horizontal overflow. Zero page errors on the
+    success path.
+
   - *A pre-existing bug was found and fixed: the build emitted NO Tailwind
     utilities.* Commit `5e16463` (the static-export commit) dropped the
     `turbopack.rules` block that routes `*.css` through
@@ -563,6 +610,37 @@ points at.
     bytes with zero utility classes; with the loader restored it is 37,095
     bytes with them. The loader is restored, with the reason recorded in
     `next.config.ts` so the next person does not remove it again.
+
+  - *Done (2026-10-24): three more wrong states in the explorer, all found
+    by exercising the failure paths in a real browser.* (1) A failed answer
+    in the EXPLORER still rendered the "the answer is still coming" pending
+    state, because the pending state was keyed on `response === null` and a
+    failed turn also has no response. The pane said an answer was on its way
+    when the run had already failed. `AnswerBody` now takes the turn's error
+    and renders it as a failure, with the citations, the metrics and the token
+    note suppressed, because a failure is not an answer and must not carry
+    an answer's furniture. (2) The same failure was rendered TWICE in the
+    explorer: once in the answer pane and once in a footer banner below the
+    panes. The banner is gone; the failure is shown where it happened. The
+    source-fetch failure shared that same state, so a failed source fetch
+    and a failed answer rendered the same banner in the same place. The
+    source failure is now its own state and renders in the source pane (and
+    in the chat's inline source), and selecting another node or another
+    document clears it. (3) A run that had been asked but had not streamed
+    its first step rendered "No question has been asked yet", which
+    misreported an in-flight run as an idle pane. There is now a pending
+    state for a run in flight, distinct from the idle state.
+
+  - *Verified in a real browser after those fixes:* the explorer renders a
+    failed run as "THE RUN FAILED" with the API's own message and no
+    pending text, exactly once, with no footer banner; the chat renders the
+    same failure on the failed turn with its Retry button; a failed source
+    fetch renders "THE SOURCE COULD NOT BE READ" in the source pane and in
+    the chat's inline source, and the next successful node renders its text
+    with no leftover alert; a run asked but not yet stepped renders "The run
+    is under way" instead of the idle text; the success path is unchanged -
+    the tree, the source, the steps, the answer, the citations and the
+    metrics all render, with zero alerts and an empty console.
 
   - *Slice branches:* `feat/day5-api-routes-and-explorer` (PR #28, merged as
     `f312413`) and `fix/day5-identifier-precedence` (PR #29, merged as
