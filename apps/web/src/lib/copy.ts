@@ -192,6 +192,124 @@ export const comparison = {
   status: "The controlled comparison has been run and its reports are published in data/eval-reports. The outcome is undecided, so no metric on this page reports a measured value.",
 };
 
+/**
+ * The architecture section is a second reading of the same system the
+ * pipeline section describes in time order: the pipeline says what happens
+ * next, this says which package owns which step.
+ *
+ * Every node, edge, and label below is traceable to the implementation.
+ * The layer names are the real package names under apps/api/, the workflow
+ * steps are the real graph node names in apps/api/agent/graph.py, and the
+ * five retrieval channels are the five keys in
+ * apps/api/retrieval/scoring.py WEIGHT_DEFAULTS. Nothing here is a
+ * simplification that changes what the code does.
+ *
+ * The dense baseline is drawn as a sibling arm outside the shipped path,
+ * because that is what it is: an evaluation arm imported only by
+ * apps/api/evaluation/. It is not part of the retrieval the agent runs.
+ */
+export const architecture = {
+  headline: "Which package owns which step",
+  lead:
+    "The agent orchestrates and nothing else. It reads the document tree only through seven tool signatures, and every layer below is a real module boundary in apps/api/.",
+  /**
+   * The layers, top to bottom, roughly in the order a request travels. The
+   * store is written at ingest and read by retrieval before generation, so
+   * it is drawn last. The `owning` field is the package path, so the
+   * diagram doubles as a map from the page to the repository.
+   */
+  layers: [
+    {
+      id: "api",
+      name: "FastAPI surface",
+      owning: "apps/api/api/",
+      body: "Routes under the /v1 prefix. Upload, ask, tree, and evaluation endpoints.",
+    },
+    {
+      id: "agent",
+      name: "Tuklas agent",
+      owning: "apps/api/agent/",
+      body: "A LangGraph state machine. It plans, calls tools, reads a gate verdict, and never scores anything itself.",
+    },
+    {
+      id: "tools",
+      name: "Tool layer",
+      owning: "apps/api/agent/tools.py",
+      body: "Seven thin wrappers. Validate the arguments, call retrieval, record a trace entry, spend one iteration.",
+    },
+    {
+      id: "retrieval",
+      name: "Retrieval engine",
+      owning: "apps/api/retrieval/",
+      body: "Owns the index, the scoring, the evidence selection, and the context budget.",
+    },
+    {
+      id: "generation",
+      name: "Generation",
+      owning: "apps/api/generation/",
+      body: "Renders the opaque prompt, calls the local backend, assembles citations, enforces the advice blocklist.",
+    },
+    {
+      id: "store",
+      name: "Store",
+      owning: "apps/api/ingestion/db.py",
+      body: "One SQLite file holds the documents, the node tree, the query log, and the evaluation rows.",
+    },
+  ],
+  /**
+   * The nine graph nodes, in the order the compiled graph visits them.
+   * `branch` marks the one place the graph loops: the sufficiency gate
+   * can send the run back through one broaden-retry.
+   */
+  workflow: {
+    caption: "The compiled graph, node by node",
+    lead:
+      "Nine graph nodes and one back-edge. The sufficiency gate can send a run back through a single retry before the answer is built. A separate, non-graph retry re-plans an empty plan once.",
+    steps: [
+      { name: "query_plan", body: "Split the question into one to four sub-questions. An empty plan is invalid and the run fails closed." },
+      { name: "search", body: "One search_nodes call per sub-question, top_k 10, capped at 20, until the iteration budget runs out." },
+      { name: "inspect", body: "Inspect the top three candidates per sub-question. A node that cannot contribute evidence is marked irrelevant." },
+      { name: "expand_or_backtrack", body: "The inspect wrapper marks a branch that carried nothing as irrelevant; this node expands one surviving branch per sub-question with radius 1." },
+      { name: "select_evidence", body: "Retrieval picks the kept set and decides which node supports which sub-question." },
+      { name: "sufficiency_gate", body: "The gate passes when every planned sub-question has a supporter in the kept set." },
+      { name: "broaden_search", body: "The one retry. For each failing sub-question it builds one alternative query: the identifier-only form when the sub-question names a provision, otherwise the stopword-stripped form. It spends from the same budget.", branch: true },
+      { name: "build_context", body: "Evidence becomes an opaque prompt context under a 12,000 character budget." },
+      { name: "generate", body: "The local model answers from that context. The prompt requires every factual sentence to carry a citation." },
+    ],
+  },
+  /**
+   * The five retrieval channels. These are the five weights the scorer
+   * actually multiplies, named by their key in WEIGHT_DEFAULTS.
+   */
+  channels: {
+    caption: "Five channels, one rank",
+    lead:
+      "Retrieval scores every node in the document on five channels, all weights 1.0 by default, then ranks once. There is no embedding on this path.",
+    items: [
+      { key: "lex", label: "Lexical", body: "BM25 over one document's leaf bodies and section-intro nodes, with the heading line kept in the corpus." },
+      { key: "ident", label: "Identifier", body: "A canonical label lookup. A node owning an exact article label scores 1.0; a node that merely inherits a container label scores 0.5. Only a unique owner of an exact label is put first in the rank." },
+      { key: "title", label: "Title", body: "Jaccard overlap between the query tokens and the node's heading tokens." },
+      { key: "ref", label: "Reference", body: "A node reachable within two reference hops from a lexical seed would score 1.0. The channel is 0 across the current corpus: ingestion does not parse reference edges yet." },
+      { key: "hier", label: "Hierarchy", body: "A node whose parent is the parent of a lexical seed scores 1.0." },
+    ],
+    footnote:
+      "The rank is one order: the node the query identifies first, then score descending, then depth, position, and id.",
+  },
+  /**
+   * The dense baseline, drawn apart from the shipped path on purpose.
+   */
+  baseline: {
+    label: "Evaluation arm",
+    name: "Dense vector baseline",
+    owning: "experiments/vector/",
+    body:
+      "One dense embedding per node of the lexical corpus, ranked by a min-max-normalized cosine. It sits beside the shipped path, not inside it: only apps/api/evaluation/ may import it, and the CI import scan fails the build if anything else does.",
+    status: "The comparison is run and its reports are published. The outcome is undecided.",
+  },
+  footnote:
+    "The node tree is written at ingest and read through the tools. The agent writes no document rows of its own: its only database write is the ask-trace row that records the run.",
+};
+
 export const guardrails = {
   headline: "Guardrails that are checked, not promised",
   lead: "Each item below is a contract with a mechanical check behind it.",
