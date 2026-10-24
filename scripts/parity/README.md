@@ -36,12 +36,14 @@ writes `app.html`, so the route is `/app.html`, not `/app`:
 python scripts/parity/stub_api.py --port 8000
 
 # 2. the baseline build, on its own port
-cd D:/donielethelastdev/Projects/tuklas-baseline/apps/web && npm run build
+#    BASELINE_DIR is a worktree checked out at the commit the baseline was
+#    captured from - c9852a2 for the committed baseline.
+cd "$BASELINE_DIR/apps/web" && npm run build
 cd out && python -m http.server 3102 --bind 127.0.0.1
 
 # 3. the candidate build, on its own port
-cd D:/donielethelastdev/Projects/tuklas-agent/apps/web && npm run build
-cd out && python -m http.server 3103 --bind 127.0.0.1
+cd apps/web && npm run build
+npm run start -- --port 3103
 
 # 4. capture the candidate
 python scripts/parity/shoot.py --url http://127.0.0.1:3103/app.html \
@@ -51,6 +53,15 @@ python scripts/parity/shoot.py --url http://127.0.0.1:3103/app.html \
 python scripts/parity/compare.py --baseline artifacts/parity/baseline \
     --candidate artifacts/parity/current --out artifacts/parity/diff
 ```
+
+`npm run start` serves the export; `python -m http.server` works too, but
+it does not map the extensionless `/app` route onto `app.html`, and the
+capture asks for `/app.html` either way.
+
+The baseline was captured from the `tuklas-baseline` worktree at `c9852a2`.
+Re-capturing it there and comparing it against the committed PNGs gives 0
+differing pixels, which is what makes the committed PNGs a reference
+rather than a snapshot of one machine.
 
 ## What the verdict means
 
