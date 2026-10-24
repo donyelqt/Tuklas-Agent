@@ -166,7 +166,7 @@ export function ArchitectureNodeGraph(): React.JSX.Element {
                 <div className="font-mono text-[10px] leading-tight text-ink-9">
                   {step.name}
                 </div>
-                <div className="font-mono text-[9px] leading-tight text-accent">
+                <div className="font-mono text-[9px] leading-tight text-ink-7">
                   {layerId}
                 </div>
               </div>
