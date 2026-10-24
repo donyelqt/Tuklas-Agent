@@ -106,6 +106,7 @@ export function ArchitectureDiagram(): React.JSX.Element {
                 value={variant.id}
                 aria-label={variant.label}
                 defaultChecked={variant.id === "terminal-graph"}
+                className="sr-only"
               />
             ))}
             <div
