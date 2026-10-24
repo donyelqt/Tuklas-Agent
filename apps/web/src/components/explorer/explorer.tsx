@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Moon, Sun } from "@phosphor-icons/react/ssr";
+import { BrandMark } from "@/components/brand/brand-mark";
 import { explorer } from "@/lib/explorer-copy";
 import {
   API_BASE_URL,
@@ -390,6 +391,13 @@ export function Explorer() {
             {explorer.header.title}
           </h1>
           <p className="text-xs text-ink-7">{explorer.header.subtitle}</p>
+          <span
+            data-brand-lockup
+            className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.18em]"
+          >
+            <BrandMark size={16} className="shrink-0" />
+            <span className="text-ink-9">{explorer.header.wordmark}</span>
+          </span>
           {/*
             The theme toggle sits in the header's blank run, between the
             subtitle and the tablist. The tablist carries `ml-auto`, so it
