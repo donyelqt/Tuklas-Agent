@@ -154,7 +154,7 @@ export const comparison = {
   tuklas: {
     label: "Tuklas",
     items: [
-      "BM25 over leaf bodies with headings stripped",
+      "BM25 over leaf bodies, with the heading line kept in the corpus",
       "Structural signal from parent, child, and sibling position",
       "Reference signal from cross-reference edges",
       "No dense embedding on the primary path",
