@@ -39,6 +39,12 @@ npm run lint    # eslint
 npx tsc --noEmit
 ```
 
+`npm run start` runs `scripts/serve-export.mjs`, not `next start`. The build
+uses `output: "export"`, so `next start` refuses to run and says so; the export
+is a directory of files, and `serve-export.mjs` serves it without a framework.
+It also maps the extensionless `/app` route onto the exported `app.html`, which
+is what a browser asks for.
+
 ## Server Components
 
 Almost every file here is a Server Component. Only `reveal.tsx` and

@@ -101,7 +101,11 @@ Two-pass scoring (pass 1: lex/struct/title; pass 2: ref/hier off lex-top-5), wei
 
 ## 7. Web (apps/web)
 
- Next.js + React + TypeScript + Tailwind + shadcn/ui. Three panes: tree / source / answer. `POST /v1/ask/stream` SSE (schemas in `api.md`). Persistent disclaimer banner (wording in PRD US-2).
+ Next.js + React + TypeScript + Tailwind + shadcn/ui. Two views over one ask runtime, switched by a tablist in the header: the three-pane explorer (tree / source / answer) and a full-screen chat. `POST /v1/ask/stream` SSE (schemas in `api.md`). Persistent disclaimer banner (wording in PRD US-2).
+
+ **The two views share one runtime, not one copy of it.** The ask runtime lives in `explorer.tsx` and produces a list of turns; the explorer renders the latest turn in its answer pane, and the chat renders the whole transcript. A citation in the chat opens the cited node inline, through the same `GET /v1/nodes/{id}/source` call the source pane uses, so the two views cannot disagree about what a citation refers to. The explorer's question field keeps the question after a run; the chat's own field clears on send, because there the transcript is the record. A `done` payload that is not an AskResponse is reported as a contract violation rather than rendered as a partial answer.
+
+ **Each failure renders where it happened, exactly once.** The ask failure belongs to the turn, so the chat shows it on the failed turn (with Retry) and the explorer's answer pane shows it in place of the answer. The source-fetch failure belongs to the source pane, so it renders there and in the chat's inline source. Neither is also rendered in a shared banner: one failure shown twice reads as two failures. A failed answer carries no citations, no metrics and no token note, because a failure is not an answer. A run that has been asked but has not streamed its first step renders a pending state, which is distinct from the idle state of a pane that has never been used.
 
  **Local-first / deploy boundary:** the landing page at `/` is a static export (`output: "export"` in `next.config.ts`) with no API calls; it deploys as a zero-runtime build on Vercel. The document explorer at `/app/*` is a separate runtime that calls the local API at `NEXT_PUBLIC_API_BASE_URL` (defaults to `http://127.0.0.1:8000`); if the API is unreachable, the explorer fails loud rather than fabricating results. `apps/web/src/lib/site.ts` reads the base URL from that environment variable. Vercel auto-detects the framework at `apps/web/`; no `vercel.json` is required for the marketing route.
 

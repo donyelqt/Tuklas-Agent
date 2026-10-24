@@ -393,8 +393,10 @@ acceptance criteria) — this file adds no requirements, it indexes the frozen o
 ## 12. Web conventions (landing page + app UI)
 
 The landing page at `/` is already implemented (`apps/web/src/app/page.tsx`, marketing
-components under `apps/web/src/components/marketing/`). The Day 5 three-pane research UI
-lives at `/app/*`. Both must follow AGENTS.md conventions:
+components under `apps/web/src/components/marketing/`). The Day 5 research UI lives at
+`/app/*`, and it has two views over one ask runtime: the three-pane explorer (tree /
+source / answer) and a full-screen chat, switched by a tablist in the header. Both must
+follow AGENTS.md conventions:
 
 - **Copy source.** All user-visible marketing copy lives in `apps/web/src/lib/copy.ts` and
   nowhere else. The source of truth for that copy is `docs/landing-page/COPY.md`. The
@@ -425,8 +427,11 @@ lives at `/app/*`. Both must follow AGENTS.md conventions:
   when the component genuinely needs an observer, a timer, or clipboard access — never to
   work around a styling problem.
 - **"use client" boundary (Day 5).** The research UI at `/app/*` is a new route. The SSE
-  stream consumer and disclaimer state are client components; the tree and source panes
-  are server-rendered. Keep the boundary at the pane level, not the whole page.
+  stream consumer, the turn transcript and the disclaimer state are client components;
+  the tree and source panes are server-rendered. Keep the boundary at the pane level, not
+  the whole page. The chat view is a client component because it holds the transcript and
+  the question field; it is a separate file rather than a mode branch inside the explorer
+  so the two views cannot drift into two copies of the same run.
 - **Deploy boundary (architecture.md §7).** The landing page at `/` is a static export
   (`output: "export"` in `next.config.ts`) with no API calls; it deploys as a zero-runtime
   build on Vercel. The explorer at `/app/*` is a separate runtime calling the local API at
