@@ -26,6 +26,12 @@ export const explorer = {
     viewLabel: "View",
     /** The explorer tab's label. The h1 above it is the page title. */
     explorerTabLabel: "Explorer",
+    /** The theme toggle button's accessible name. */
+    themeToggleLabel: "Switch theme",
+    /** The visible label for the light theme state. */
+    themeLightLabel: "Light",
+    /** The visible label for the dark theme state. */
+    themeDarkLabel: "Dark",
   },
 
   /**

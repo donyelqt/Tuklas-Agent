@@ -29,6 +29,15 @@ it before changing anything here. The short version:
   are published in `data/eval-reports/`; the comparison's outcome is
   undecided, and the reports publish both arms' numbers with no verdict.
 
+
+## Explorer light theme
+
+- The marketing route stays dark-only. Its theme lock is in `DESIGN.md` section 3, and it is not affected by anything here.
+- The explorer route at `/app` carries a light theme next to the dark one. Dark is the default, there is no OS auto-detection, and the addition does not replace the dark theme.
+- The mechanism is a `data-explorer-theme="light"` attribute on `<html>`, set only by the explorer runtime. `globals.css` overrides the `--color-*` custom properties under `html[data-explorer-theme="light"]`, and the marketing route never carries the attribute.
+- The persistence key is `localStorage["tuklas-explorer-theme"]`. A pre-paint inline script in `src/app/app/page.tsx` reads it before first paint so a persisted light theme does not flash dark, and the attribute is removed when the explorer unmounts.
+- The ink ramp inverts in light mode, so a higher ink index is darker. No component class names changed, because the utilities resolve to the custom properties.
+- The toggle lives in the explorer header in `src/components/explorer/explorer.tsx`, carries `aria-pressed`, and its strings live in `src/lib/explorer-copy.ts`, the explorer's own copy module. The explorer is a separate runtime from the marketing route's `src/lib/copy.ts`, so the marketing copy audit stays a single-file grep.
 ## Commands
 
 ```bash
