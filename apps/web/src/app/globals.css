@@ -48,8 +48,17 @@
    */
   --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont,
     "SF Pro Text", "SF Pro", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), SFMono-Regular, "SF Mono", ui-monospace,
-    monospace;
+  --font-mono: var(--font-jetbrains-mono), var(--font-jetbrains-mono-full),
+    SFMono-Regular, "SF Mono", ui-monospace, monospace;
+  /*
+   * Terminal-art stack. The Google-served latin subset of JetBrains Mono
+   * carries no box-drawing glyphs, and next/font's synthetic fallback face
+   * (local Arial, no unicode-range) shadows any later family in the stack
+   * for those codepoints, so box characters rendered proportional and the
+   * ASCII grid broke. The full OFL TTF leads this stack instead, so every
+   * glyph in the drawing comes from one monospaced font.
+   */
+  --font-term: var(--font-jetbrains-mono-full), ui-monospace, monospace;
 
   /* z-index scale (DESIGN.md section 5) */
   --z-nav: 40;

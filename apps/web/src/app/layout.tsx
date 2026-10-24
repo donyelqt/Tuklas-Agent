@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import type { ReactNode } from "react";
 import { site } from "@/lib/site";
 import "./globals.css";
@@ -15,6 +16,20 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
   subsets: ["latin"],
   weight: ["400", "500"],
+  display: "swap",
+});
+
+/*
+ * The Google-served latin subset of JetBrains Mono carries no box-drawing
+ * glyphs (U+2500-257F), so the terminal graph's ASCII art fell back to
+ * Arial's proportional glyphs and its character grid broke. This full TTF
+ * (OFL-licensed, same foundry) supplies the missing glyphs under a second
+ * family that globals.css puts behind the Google face in the mono stack.
+ */
+const jetbrainsMonoFull = localFont({
+  src: "../fonts/jetbrains-mono-full.ttf",
+  variable: "--font-jetbrains-mono-full",
+  weight: "400 500",
   display: "swap",
 });
 
@@ -76,7 +91,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${jetbrainsMono.variable} h-full min-h-full antialiased`}
+      className={`${geistSans.variable} ${jetbrainsMono.variable} ${jetbrainsMonoFull.variable} h-full min-h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-ink-0 text-ink-9">
         <a
