@@ -115,3 +115,28 @@
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * The explorer's light theme. The marketing route is dark-locked
+ * (DESIGN.md section 3); this block is scoped to the explorer route by the
+ * `data-explorer-theme` attribute that only the explorer runtime sets, so
+ * the landing page cannot be re-themed by it.
+ */
+html[data-explorer-theme="light"] {
+  color-scheme: light;
+
+  --color-ink-0: #f7f7f9;
+  --color-ink-1: #fdfdfd;
+  --color-ink-2: #f0f0f3;
+  --color-ink-3: #e4e4e9;
+  --color-ink-4: #9797a3;
+  --color-ink-5: #767680;
+  --color-ink-7: #56565f;
+  --color-ink-9: #15151a;
+
+  --color-accent: #a8127d;
+
+  --color-rule: oklch(25% 0 0 / .14);
+  --color-rule-strong: oklch(25% 0 0 / .24);
+  --color-selection: oklch(70% .24 340 / .22);
+}
