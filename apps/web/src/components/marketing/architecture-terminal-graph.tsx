@@ -1,28 +1,42 @@
-/**
- * The compiled graph, drawn as a terminal-style ASCII diagram.
- *
- * Layout family: a vertical main chain of the nine graph nodes with one node
- * pulled out as a side box to the left of inspect. The sufficiency gate sends
- * a horizontal line leftward to that side box, and the side box returns a
- * horizontal arrow rightward into inspect. Both are retry edges, both magenta.
- *
- * Every node name, layer id and label is read from architecture.workflow and
- * architecture.layerOf in copy.ts, never hand-typed here. The nine boxes, the
- * nine connectors and the two retry edges all come from those tables, so the
- * drawing cannot drift from apps/api/agent/graph.py.
- *
- * No client code: everything is static markup built at render time on the
- * server, so the component costs no JavaScript on the marketing route.
- */
-
 import { architecture } from "@/lib/copy";
 
-/* --- layout constants --------------------------------------------------- */
+/**
+ * The compiled graph, drawn as terminal box-drawing ASCII.
+ *
+ * The layout is DERIVED, not composed. Every node box, every connector and
+ * both retry edges are placed by walking `architecture.workflow.edges` and
+ * `architecture.layerOf`, so the drawing cannot drift from the compiled
+ * graph in apps/api/agent/graph.py. The previous version hardcoded column
+ * offsets row by row; that accumulated off-by-one errors and drew the
+ * magenta retry rail beside two flow nodes.
+ *
+ * Layout family (DESIGN.md section 7, the architecture section contract):
+ *   - the nine flow nodes form one vertical chain down the centre,
+ *   - broaden_search, the one node the retry loop passes through, sits in a
+ *     side box to the left of inspect, where the loop returns,
+ *   - the retry path is magenta and traces sufficiency_gate ->
+ *     broaden_search -> inspect, entering the side box,
+ *   - flow connectors and the pass route read as grey decoration,
+ *   - readable characters use ink-9 or ink-7; the box-drawing rules are
+ *     ink-5 decoration (DESIGN.md section 7, the diagram legend bullet).
+ *
+ * No client code: static markup built at render time on the server.
+ */
 
-const IW = 19; // interior width of each box (fits "expand_or_backtrack")
-const MAIN_X = 26; // column of the main-chain box left border
-const SIDE_X = 2; // column of the broaden_search side box left border
-const W = MAIN_X + IW + 2; // total drawing width in characters
+/* --- drawing constants -------------------------------------------------- */
+
+const IW = 19; // box interior width; fits the longest node name
+const BOX_W = IW + 2; // box width including both borders
+const RAIL_X = 0; // the retry rail runs down column 0
+const SIDE_X = 2; // the side box (broaden_search) left border
+const MAIN_X = 27; // the main chain left border
+const W = MAIN_X + BOX_W; // rows are padded to this width
+
+/**
+ * The main-chain column. The side box occupies columns 0..22, the connector
+ * between the two boxes occupies 23..25, and the main box starts at 27 so a
+ * one-column gutter keeps the connector clear of both borders.
+ */
 
 /* --- colour roles ------------------------------------------------------- */
 
@@ -40,195 +54,193 @@ const ROLE_CLASS: Record<Role, string> = {
   retry: "text-accent",
 };
 
-const sp = (n: number): string => " ".repeat(n);
-const rule = (t: string): Seg => ({ text: t, role: "rule" });
-const nameSeg = (t: string): Seg => ({ text: t, role: "name" });
-const layerSeg = (t: string): Seg => ({ text: t, role: "layer" });
-const retrySeg = (t: string): Seg => ({ text: t, role: "retry" });
+/* --- cell grid ---------------------------------------------------------- */
 
-/* --- box-drawing helpers ------------------------------------------------ */
+/*
+ * Rows are built as a fixed-width character grid, not as concatenated
+ * strings. Boxes, connectors, rails and labels all write into the same grid
+ * by coordinate, so two segments can never overlap and a connector always
+ * lands exactly where its edge says it must. This is the invariant the
+ * string-concatenation version could not keep.
+ */
 
-const boxTop = (conn: boolean): string =>
-  "┌" + "─".repeat(9) + (conn ? "┴" : "─") + "─".repeat(9) + "┐";
+type Cell = { ch: string; role: Role };
 
-const boxBot = (conn: boolean): string =>
-  "└" + "─".repeat(9) + (conn ? "┬" : "─") + "─".repeat(9) + "┘";
+const blankRow = (): Cell[] =>
+  Array.from({ length: W }, () => ({ ch: " ", role: "rule" as Role }));
 
-const boxNameSegs = (name: string): Seg[] => [
-  rule("│"),
-  nameSeg(name.padEnd(IW)),
-  rule("│"),
-];
+class Grid {
+  rows: Cell[][] = [];
 
-const boxLayerSegs = (layer: string): Seg[] => [
-  rule("│"),
-  layerSeg(layer.padEnd(IW)),
-  rule("│"),
-];
+  add(): Cell[] {
+    const row = blankRow();
+    this.rows.push(row);
+    return row;
+  }
+
+  put(row: Cell[], x: number, ch: string, role: Role): void {
+    if (x < 0 || x >= W) return;
+    row[x] = { ch, role };
+  }
+
+  text(row: Cell[], x: number, text: string, role: Role): void {
+    for (let i = 0; i < text.length; i++) this.put(row, x + i, text[i], role);
+  }
+
+  render(): Seg[][] {
+    return this.rows.map((row) => {
+      // Collapse each row into runs of identical role, so the component
+      // emits one span per run instead of one span per character.
+      const segs: Seg[] = [];
+      let cur: Seg | null = null;
+      for (const cell of row) {
+        if (cur && cur.role === cell.role) cur.text += cell.ch;
+        else {
+          cur = { text: cell.ch, role: cell.role };
+          segs.push(cur);
+        }
+      }
+      return segs;
+    });
+  }
+}
+
+/* --- the derived drawing ------------------------------------------------ */
+
+function buildDrawing(): { segs: Seg[][] } {
+  const { workflow, layerOf } = architecture;
+  const { edges, branchLabel } = workflow;
+
+  const flow = edges.filter((e) => e.kind === "flow");
+  const retries = edges.filter((e) => e.kind === "retry");
+
+  /* Derive the flow chain: start at the node no flow edge points at, then
+   * follow flow edges. Nothing here assumes a node order. */
+  const chain: string[] = [];
+  {
+    const seen = new Set<string>();
+    const start = flow.find((e) => !flow.some((o) => o.to === e.from))!.from;
+    let cursor: string | undefined = start;
+    while (cursor && !seen.has(cursor)) {
+      seen.add(cursor);
+      chain.push(cursor);
+      cursor = flow.find((e) => e.from === cursor)?.to;
+    }
+  }
+
+  /* The retry loop is gate -> broaden_search -> inspect. The two endpoints
+   * live in the chain (the gate and inspect); the bridge node does not. */
+  const retryFrom = retries[0]!.from; // sufficiency_gate
+  const bridge = retries[0]!.to; // broaden_search
+  const retryInto = retries[1]!.to; // inspect
+  const gateIdx = chain.indexOf(retryFrom);
+  const intoIdx = chain.indexOf(retryInto);
+
+  const grid = new Grid();
+  const NODE_ROWS = 5; // 3 box rows + 1 connector row + 1 spacing row
+  const notchCol = MAIN_X + (IW >> 1) + 1;
+  const boxAt = (i: number): number => i * NODE_ROWS;
+
+  /* Draw one flow node. `gate` marks the node that owns the retry edge: its
+   * top border takes the magenta arrival notch. `outgoing` controls whether
+   * the bottom border carries the connector notch. */
+  const flowBox = (name: string, gate: boolean, outgoing: boolean): void => {
+    const top = grid.add();
+    grid.text(top, MAIN_X, "┌" + "─".repeat(IW) + "┐", "rule");
+    if (gate) grid.put(top, MAIN_X - 1, "┤", "retry");
+
+    const nameRow = grid.add();
+    grid.put(nameRow, MAIN_X, "│", "rule");
+    grid.text(nameRow, MAIN_X + 1, name.padEnd(IW), "name");
+    grid.put(nameRow, MAIN_X + BOX_W - 1, "│", "rule");
+
+    const layerRow = grid.add();
+    grid.put(layerRow, MAIN_X, "│", "rule");
+    grid.text(layerRow, MAIN_X + 1, (layerOf[name] ?? "").padEnd(IW), "layer");
+    grid.put(layerRow, MAIN_X + BOX_W - 1, "│", "rule");
+
+    boxBottom(outgoing);
+  };
+
+  const flowArrow = (): void => {
+    const row = grid.add();
+    grid.put(row, notchCol, "▼", "rule");
+  };
+
+  /* Every flow box bottom carries a centre notch, so the arrow that leaves
+   * it has something to attach to. A box with no outgoing edge draws the
+   * plain rule instead. */
+  const boxBottom = (notch: boolean): void => {
+    const row = grid.add();
+    let x = MAIN_X;
+    grid.put(row, x++, "└", "rule");
+    const half = (IW - 1) >> 1;
+    for (let i = 0; i < half; i++) grid.put(row, x++, "─", "rule");
+    grid.put(row, x++, notch ? "┬" : "─", "rule");
+    for (let i = 0; i < IW - 1 - half; i++) grid.put(row, x++, "─", "rule");
+    grid.put(row, x++, "┘", "rule");
+  };
+
+  /* The loop row: the bridge node sits in the side box, the return target
+   * beside it, and the magenta return enters the bridge box from the left. */
+  const loopRow = (): void => {
+    const top = grid.add();
+    grid.text(top, SIDE_X, "┌" + "─".repeat(IW) + "┐", "rule");
+    grid.put(top, SIDE_X - 1, "┤", "retry");
+
+    const nameRow = grid.add();
+    grid.put(nameRow, SIDE_X - 1, "─", "retry");
+    grid.put(nameRow, SIDE_X, "│", "rule");
+    grid.text(nameRow, SIDE_X + 1, bridge.padEnd(IW), "name");
+    grid.put(nameRow, SIDE_X + BOX_W - 1, "│", "rule");
+
+    const layerRow = grid.add();
+    grid.put(layerRow, SIDE_X, "│", "rule");
+    grid.text(layerRow, SIDE_X + 1, (layerOf[bridge] ?? "").padEnd(IW), "layer");
+    grid.put(layerRow, SIDE_X + BOX_W - 1, "│", "rule");
+
+    const bottom = grid.add();
+    grid.text(bottom, SIDE_X, "└" + "─".repeat(IW) + "┘", "rule");
+  };
+
+  /* Walk the chain up to the node the retry returns into. */
+  for (let i = 0; i < intoIdx; i++) {
+    flowBox(chain[i]!, false, true);
+    flowArrow();
+  }
+  loopRow();
+  /* Walk from the return target to the gate inclusive. */
+  for (let i = intoIdx; i < chain.length; i++) {
+    const last = i === chain.length - 1;
+    flowBox(chain[i]!, chain[i] === retryFrom, !last);
+    if (!last) flowArrow();
+  }
+
+  /* The magenta return, drawn last so it reads over the flow arrows it
+   * crosses. It runs from the gate's arrival notch down the left gutter and
+   * turns right into the bridge box: gate -> bridge -> inspect. */
+  const gateRow = boxAt(gateIdx);
+  const bridgeRow = boxAt(intoIdx) - 1;
+  grid.rows[gateRow]![RAIL_X] = { ch: "└", role: "retry" };
+  for (let x = RAIL_X + 1; x < MAIN_X - 1; x++) {
+    grid.rows[gateRow]![x] = { ch: "─", role: "retry" };
+  }
+  for (let r = bridgeRow; r < gateRow; r++) {
+    grid.rows[r]![RAIL_X] = { ch: "│", role: "retry" };
+  }
+  grid.rows[bridgeRow]![RAIL_X] = { ch: "┌", role: "retry" };
+
+  /* The RETRY label rides the rail, one row below the gate corner. */
+  const labelRow = gateRow - 1;
+  grid.text(grid.rows[labelRow]!, RAIL_X + 2, branchLabel, "retry");
+
+  return { segs: grid.render() };
+}
 
 /* --- component ---------------------------------------------------------- */
 
 export function ArchitectureTerminalGraph(): React.JSX.Element {
-  const { workflow, layerOf } = architecture;
-  const { branchLabel } = workflow;
-
-  /*
-   * Derive the main chain from the flow edges so the drawing follows the
-   * same order as apps/api/agent/graph.py. The retry edges are identified
-   * by kind === "retry".
-   */
-
-  const flowEdges = workflow.edges.filter((e) => e.kind === "flow");
-  const retryEdges = workflow.edges.filter((e) => e.kind === "retry");
-
-  const mainChain: string[] = [];
-  let current: string | undefined = "query_plan";
-  while (current) {
-    mainChain.push(current);
-    const next = flowEdges.find((e) => e.from === current);
-    current = next ? next.to : undefined;
-  }
-
-  /*
-   * The side node lives on a retry edge but is not part of the flow chain.
-   * In the compiled graph that node is broaden_search.
-   */
-
-  const retryNodes = new Set(retryEdges.flatMap((e) => [e.from, e.to]));
-  const sideNode =
-    [...retryNodes].find((n) => !mainChain.includes(n)) ?? "broaden_search";
-
-  /*
-   * The retry edge that originates from the main chain gives us the gate.
-   * The other retry edge sends its output back into inspect.
-   */
-
-  const gateName = retryEdges.find((e) => mainChain.includes(e.from))!.from;
-  const gateIdx = mainChain.indexOf(gateName);
-
-  /* --- row builder ------------------------------------------------------ */
-
-  const rows: Seg[][] = [];
-  const push = (...segs: Seg[]) => rows.push([...segs]);
-
-  const mainBox = (
-    name: string,
-    layer: string,
-    connTop: boolean,
-    connBot: boolean
-  ) => {
-    push(rule(sp(MAIN_X)), rule(boxTop(connTop)));
-    push(rule(sp(MAIN_X)), ...boxNameSegs(name));
-    push(rule(sp(MAIN_X)), ...boxLayerSegs(layer));
-    push(rule(sp(MAIN_X)), rule(boxBot(connBot)));
-  };
-
-  const downArrow = () => {
-    push(rule(sp(MAIN_X + 10)), rule("▼"), rule(sp(W - MAIN_X - 11)));
-  };
-
-  const retryDownArrow = () => {
-    push(retrySeg("│"), rule(sp(25)), rule(sp(10)), rule("▼"), rule(sp(10)));
-  };
-
-  const retryBox = (
-    name: string,
-    layer: string,
-    connTop: boolean,
-    connBot: boolean
-  ) => {
-    push(retrySeg("│"), rule(sp(25)), rule(boxTop(connTop)));
-    push(retrySeg("│"), rule(sp(25)), ...boxNameSegs(name));
-    push(retrySeg("│"), rule(sp(25)), ...boxLayerSegs(layer));
-    push(retrySeg("│"), rule(sp(25)), rule(boxBot(connBot)));
-  };
-
-  /* --- build the drawing row by row ------------------------------------- */
-
-  // query_plan — first node, no incoming connector
-  mainBox(mainChain[0]!, layerOf[mainChain[0] ?? ""], false, true);
-  downArrow();
-
-  // search
-  mainBox(mainChain[1]!, layerOf[mainChain[1] ?? ""], true, true);
-  downArrow();
-
-  // broaden_search (side) + inspect (main), side by side
-  push(
-    rule(sp(SIDE_X)),
-    rule(boxTop(false)),
-    rule("   "),
-    rule(boxTop(true))
-  );
-  push(
-    rule(sp(SIDE_X)),
-    ...boxNameSegs(sideNode),
-    retrySeg("─▶"),
-    ...boxNameSegs(mainChain[2] ?? "")
-  );
-  push(
-    rule(sp(SIDE_X)),
-    ...boxLayerSegs(layerOf[sideNode]),
-    rule("   "),
-    ...boxLayerSegs(layerOf[mainChain[2] ?? ""])
-  );
-  push(
-    rule(sp(SIDE_X)),
-    rule(boxBot(true)),
-    rule("   "),
-    rule(boxBot(true))
-  );
-
-  // ▲ (retry up) beside ▼ (main down)
-  push(retrySeg("▲"), rule(sp(35)), rule("▼"), rule(sp(W - 37)));
-
-  // retry │ RETRY + expand_or_backtrack top
-  push(
-    retrySeg("│"),
-    retrySeg(" " + branchLabel + " "),
-    rule(sp(19)),
-    rule(boxTop(true))
-  );
-
-  // expand_or_backtrack (retry path on left)
-  retryBox(
-    mainChain[3] ?? "",
-    layerOf[mainChain[3] ?? ""],
-    true,
-    true
-  );
-  retryDownArrow();
-
-  // select_evidence (retry path on left)
-  retryBox(
-    mainChain[4] ?? "",
-    layerOf[mainChain[4] ?? ""],
-    true,
-    true
-  );
-  retryDownArrow();
-
-  // sufficiency_gate (retry path on left + leftward connector into box)
-  push(retrySeg("│"), rule(sp(25)), rule(boxTop(true)));
-  push(
-    retrySeg("└" + "─".repeat(MAIN_X - 1) + "┤"),
-    nameSeg(mainChain[gateIdx]!.padEnd(IW)),
-    rule("│")
-  );
-  push(retrySeg("│"), rule(sp(25)), ...boxLayerSegs(layerOf[mainChain[gateIdx] ?? ""]));
-  push(retrySeg("│"), rule(sp(25)), rule(boxBot(true)));
-
-  // main chain continues alone — gate pass route
-  downArrow();
-
-  // build_context
-  mainBox(mainChain[6]!, layerOf[mainChain[6] ?? ""], true, true);
-  downArrow();
-
-  // generate — last node, no outgoing connector
-  mainBox(mainChain[7]!, layerOf[mainChain[7] ?? ""], true, false);
-
-  /* --- render ----------------------------------------------------------- */
+  const { segs } = buildDrawing();
 
   return (
     <div className="overflow-x-auto">
@@ -238,7 +250,7 @@ export function ArchitectureTerminalGraph(): React.JSX.Element {
         aria-hidden="true"
         className="m-0 font-term text-[clamp(7px,1.9vw,13px)] leading-4"
       >
-        {rows.map((row, i) => (
+        {segs.map((row, i) => (
           <span key={i}>
             {row.map((seg, j) => (
               <span key={j} className={ROLE_CLASS[seg.role]}>
