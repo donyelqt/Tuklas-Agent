@@ -99,7 +99,7 @@ function StationCard({
       >
         {name}
       </code>
-      <code className="font-mono text-[10px] tracking-[0.12em] text-accent">
+      <code className="font-mono text-[10px] tracking-[0.12em] text-ink-7">
         {layerId}
       </code>
     </div>
@@ -201,9 +201,9 @@ export function ArchitecturePipelineRail(): React.JSX.Element {
             return (
               <div
                 key={node}
-                className="flex min-w-[6rem] flex-1 flex-row items-center gap-x-2"
+                className="flex min-w-[10.5rem] flex-row items-center gap-x-2"
               >
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0">
                   <StationCard
                     index={i}
                     name={node}
