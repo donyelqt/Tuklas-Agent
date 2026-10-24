@@ -177,7 +177,7 @@ Export: `comparison`
 | `headline` | The comparison is designed, not won |
 | `lead` | Two retrieval arms, one dataset, one generation model. Both arms run the same agent and the same judge; the arms' retrieval layers draw on different signals, and the comparison's outcome is undecided. |
 | `tuklas.label` | Tuklas |
-| `tuklas.items[0]` | BM25 over leaf bodies with headings stripped |
+| `tuklas.items[0]` | BM25 over leaf bodies, with the heading line kept in the corpus |
 | `tuklas.items[1]` | Structural signal from parent, child, and sibling position |
 | `tuklas.items[2]` | Reference signal from cross-reference edges |
 | `tuklas.items[3]` | No dense embedding on the primary path |
