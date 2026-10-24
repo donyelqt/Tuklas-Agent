@@ -647,6 +647,70 @@ points at.
     `e838cca`). Both branches are kept on the remote — the branch name is the
     visible record that this work was a slice.
 
+  - *Done (2026-10-24): the explorer's second view was measured against the
+    build it replaced, and the header was the difference.* The view switcher
+    had grown the header from 49px to 63px, because its `min-h-9` (36px) was
+    taller than the header's 24px content band, and it had joined the
+    `items-baseline` group, which moved the h1, the subtitle and the API
+    readout off the metrics the baseline gave them. Every pane below the
+    header shifted down 14px. The switcher is now `h-6` and `self-center`, so
+    it fits inside the band the header already had; the header row is back to
+    `items-baseline`; and the switcher sits at the right end, in the blank run
+    the baseline left between the subtitle and the API readout, with the
+    `ml-auto` moving from the readout to the switcher so the readout keeps the
+    right edge it had.
+
+  - *The harness that measured it is committed, not a one-off.* `scripts/parity/`
+    holds a deterministic stub API, a capture that drives a real Chrome over
+    the DevTools Protocol, and a pixel comparator. The baseline is the
+    explorer as it rendered at `c9852a2`, the commit before the second view
+    landed, and it is reproducible byte for byte: re-shooting that build and
+    comparing it against the committed PNGs gives 0 differing pixels, which
+    also shows the harness has no run-to-run noise.
+
+  - *The verdict is stricter than a zero-pixel diff, because a build that
+    ADDS a control cannot have one.* The switcher's pixels are new pixels.
+    `shoot.py --added-selector` measures the control's rectangle from the live
+    DOM, in the frame the screenshot is taken, and `compare.py` requires every
+    differing pixel to fall inside it, with the count outside at zero. The
+    rectangle is measured, not hand-written, so it cannot be tuned to hide a
+    defect; both failure modes are verified, and a defect 20 pixels wide
+    outside the rectangle fails, as does the control moved 10px from the
+    measured rectangle.
+
+  - *Measured:* all three explorer states (idle, node selected, answer
+    returned) show 2,976 differing pixels, every one of them inside the
+    switcher's measured rectangle `[1045, 12, 1169, 36]`, and **0 outside
+    it**. The switcher's rectangle is 124x24px and the header is 49px, exactly
+    as the baseline's was.
+
+  - *Two more defects were found and fixed while verifying.* (1) `npm run
+    start` pointed at `next start`, which REFUSES to run against this build
+    and exits with an error: the app uses `output: "export"`, so there is no
+    Next.js server to start. The gate AGENTS.md lists as "serve the
+    production build for browser verification" has been broken since the
+    export was introduced. `scripts/serve-export.mjs` is now a dependency-free
+    static server for the export, and it maps the extensionless `/app` route
+    onto the exported `app.html`, which is what a browser asks for. (2)
+    Next.js was pinned at 16.4.0, which is affected by three advisories
+    published on 2026-10-14 (GHSA-673q-mjm6-r5xr among them), and `next
+    build` refuses to complete on an affected version, so the build gate
+    could not run at all. It is bumped to 16.4.3, the current Active LTS
+    patch.
+
+  - *Verified in a real browser after all of it, against the committed tree:*
+    `tsc --noEmit` clean, `eslint` clean, `next build` clean, `npm run start`
+    serves the landing page and the explorer, the explorer header is 49px with
+    the h1, the switcher and the API readout on the metrics the baseline gave
+    them; the tablist is a real tablist (`role=tab` with `aria-controls`, a
+    `role=tabpanel` per view, a roving tabindex, and arrow keys that move
+    between the views and carry the focus); the chat answers against the stub
+    API with its citations and its agent steps, with no overflow in either
+    view and zero console errors. The marketing route is visually identical to
+    the baseline's, and its 11 webfont binaries are byte-identical to the
+    baseline's - the only difference in the export is the content hash in the
+    chunk filenames.
+
 ---
 
 ## Day 6 — Slice 6: Evaluation framework (both arms + metrics)
