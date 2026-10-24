@@ -23,5 +23,14 @@ export const metadata: Metadata = {
  * be a static export.
  */
 export default function ExplorerPage() {
-  return <Explorer />;
+  return (
+    <>
+      {/*
+        Runs before paint so a persisted light theme does not flash dark on
+        the first frame.
+      */}
+      <script>{'(function(){try{if(localStorage.getItem("tuklas-explorer-theme")==="light"){document.documentElement.setAttribute("data-explorer-theme","light");}}catch(e){}})();'}</script>
+      <Explorer />
+    </>
+  );
 }

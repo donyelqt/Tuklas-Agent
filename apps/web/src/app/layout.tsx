@@ -75,6 +75,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${jetbrainsMono.variable} h-full min-h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-ink-0 text-ink-9">
