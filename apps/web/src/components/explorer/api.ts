@@ -188,6 +188,40 @@ function asStringList(value: unknown): string[] {
 }
 
 /**
+ * Check a `done` payload against the frozen AskResponse shape (api.md
+ * section 3).
+ *
+ * The `done` event carries the authoritative answer, and the interface
+ * reads its fields directly. A payload that is not an AskResponse would
+ * therefore be read as one, and the read would throw inside a render,
+ * which takes the whole page down rather than showing a failed run.
+ *
+ * So the shape is checked here, where a failure can still be reported as
+ * the contract violation it is. The check is on the fields the interface
+ * reads, not on a full structural clone: it asks "is this the shape this
+ * code will read", not "is this the shape the server intended".
+ */
+function isAskResponse(value: unknown): value is AskResponse {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.answer_markdown !== "string") {
+    return false;
+  }
+  if (!Array.isArray(record.citations)) {
+    return false;
+  }
+  if (!Array.isArray(record.evidence_ids)) {
+    return false;
+  }
+  if (typeof record.insufficient !== "boolean") {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Turn one SSE payload into a step of the frozen sequence.
  *
  * The payload is the schema object itself (api.md section 3): the event name
@@ -277,21 +311,28 @@ export async function streamAsk(
   const decoder = new TextDecoder();
   let buffer = "";
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      // Normalise CRLF line endings so the frame boundary is one rule.
+      buffer = buffer.replace(/\r\n/g, "\n");
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary !== -1) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        handleFrame(frame, handlers);
+        boundary = buffer.indexOf("\n\n");
+      }
     }
-    buffer += decoder.decode(value, { stream: true });
-    // Normalise CRLF line endings so the frame boundary is one rule.
-    buffer = buffer.replace(/\r\n/g, "\n");
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary !== -1) {
-      const frame = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      handleFrame(frame, handlers);
-      boundary = buffer.indexOf("\n\n");
-    }
+  } catch (error) {
+    // A stream that failed is closed, not left half-open: the reader is
+    // cancelled so the connection does not outlive the failure.
+    await reader.cancel().catch(() => undefined);
+    throw error;
   }
 }
 
@@ -320,7 +361,20 @@ function handleFrame(raw: string, handlers: AskStreamHandlers): void {
     return;
   }
   if (frame.event === "done") {
-    handlers.onDone(asRecord(payload).ask_response as AskResponse);
+    const askResponse = asRecord(payload).ask_response;
+    if (!isAskResponse(askResponse)) {
+      // The `done` event carries the authoritative answer (api.md section
+      // 3). A payload that is not an AskResponse is a contract violation,
+      // and saying so is better than rendering half an answer.
+      throw new ExplorerError({
+        kind: "http",
+        code: UNEXPECTED_CODE,
+        message: "The API sent a done event the explorer could not read.",
+        details: {},
+        status: null,
+      });
+    }
+    handlers.onDone(askResponse);
     return;
   }
   if (frame.event === "error") {

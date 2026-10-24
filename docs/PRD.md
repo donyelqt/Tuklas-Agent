@@ -77,7 +77,7 @@ Local LLM → Grounded answer + page/section citations
 | F3 | Tuklas Agent (LangGraph loop: plan → search → inspect → expand → sufficiency check) | 7 tools only (see retrieval.md). Backtrack + terminate required; max 12 iterations. |
 | F4 | Evidence/provenance (every node keeps page + hierarchy path) | Citation click → source node/page. |
 | F5 | Grounded generation (question + evidence + hierarchy + citation metadata → local LLM) | Refusal trigger in §7 US-2; advice-phrase blocklist; no unsupported claims. |
-| F6 | Document explorer (3-pane: tree / source / answer) | Next.js + SSE progress. Citation click opens source. Disclaimer banner persistent. |
+| F6 | Document explorer (3-pane: tree / source / answer, plus a chat view over the same runtime) | Next.js + SSE progress. Citation click opens source. Disclaimer banner persistent. |
 | F7 | Evaluation framework (same dataset → Tuklas arm + vector arm → metrics) | Retrieval + generation + system metrics. Decision rule in §6. |
 
 Out-of-band: `experiments/vector/` holds the **only** dense-embedding code (baseline). Primary path must not import it (enforced by CONSTRAINTS.md).

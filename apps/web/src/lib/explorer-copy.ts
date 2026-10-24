@@ -22,7 +22,10 @@ export const explorer = {
     title: "Document explorer",
     subtitle: "Runs against a local API. The document never leaves this machine.",
     apiLabel: "API base URL",
-    backToSite: "Back to the project page",
+    /** The tablist's accessible name: the header switches the view. */
+    viewLabel: "View",
+    /** The explorer tab's label. The h1 above it is the page title. */
+    explorerTabLabel: "Explorer",
   },
 
   /**
@@ -56,6 +59,8 @@ export const explorer = {
     endpoint: "GET /v1/nodes/{id}/source",
     empty: "Select a node in the tree, or a citation in the answer, to read the source text.",
     loading: "Loading the source text.",
+    /** The heading on a source that could not be fetched. */
+    failureTitle: "The source could not be read",
     pageLabel: "Page",
     pagesLabel: "Pages",
     pathLabel: "Path",
@@ -69,9 +74,14 @@ export const explorer = {
     questionLabel: "Question",
     questionPlaceholder: "Ask about a provision in the active document.",
     askLabel: "Ask",
+    /** The heading on an answer that failed to arrive. */
+    failureTitle: "The run failed",
     askingLabel: "Asking",
     askDisabled: "Select a document and type a question first.",
     idle: "No question has been asked yet. The agent steps, the evidence, and the answer appear here.",
+    /** Shown while a run is in flight and no step has arrived yet. */
+    pending:
+      "The run is under way. The agent steps, the evidence, and the answer appear here as they arrive.",
     stepsTitle: "Agent steps",
     stepsEmpty: "No step has been streamed yet.",
     planLabel: "Plan",
@@ -98,6 +108,34 @@ export const explorer = {
       "The token counts are a character-count estimate, not a measured provider count.",
     tokensProviderNote: "The token counts are the numbers the local model backend reported.",
     evidenceCountLabel: "evidence nodes",
+  },
+
+  /**
+   * The chat view: the same question-and-answer runtime as the explorer's
+   * answer pane, in a centered, full-screen form. It is a different
+   * interface to the same tool, not a different tool: it reuses
+   * `answer.questionPlaceholder`, `answer.askLabel` and `explorer.disclaimer`
+   * rather than restating them, so one action has one label in both views.
+   *
+   * It is document-scoped because the API is: `streamAsk` requires a
+   * `document_id`, so the chat view asks about the active document and the
+   * header's document selector stays visible in this mode. There is no
+   * document-less mode this API can serve.
+   */
+  chat: {
+    tabLabel: "Chat",
+    welcome: "Ask about the active document.",
+    welcomeHint:
+      "Type a question and ask. The agent steps, the evidence, and the cited answer appear here.",
+    modeNote:
+      "Questions are answered from the active document. Switch documents above.",
+    /** The transcript's accessible name. */
+    transcriptLabel: "Conversation",
+    /**
+     * The note on a turn that was replaced by a newer question before it
+     * finished. It is not a failure: the run was cancelled on purpose.
+     */
+    superseded: "This question was replaced by a newer one before it finished.",
   },
 
   failure: {

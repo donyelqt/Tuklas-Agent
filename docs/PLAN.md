@@ -131,19 +131,21 @@ architecture.md §10 lists 6 vertical slices. In dependency order with the block
 
 **Depends on:** Days 2+3.
 
-### Day 5 — Slice 5: Web three-pane explorer + SSE client
+### Day 5 — Slice 5: Web explorer + SSE client
 
 **Targets:** `apps/web/src/app/app/` (new route), new components
 
 **Concrete deliverables:**
 - Three panes: tree / source / answer at `/app/*`.
+- A second view over the SAME ask runtime: a full-screen chat that keeps the turn transcript, switched from the explorer by a tablist in the header. One runtime, two views; the explorer renders the latest turn, the chat renders all of them.
 - `POST /v1/ask/stream` SSE client consuming the frozen event sequence: `plan → tool_call → tool_result → (repeat) → evidence → token* → done | error`. Payload schemas are pinned in `api.md` §3 (gap #18 from the audit — **closed by the Day-3 slice**; the abstention string is pinned there too).
-- Citation click → `GET /v1/nodes/{id}/source` → source pane renders `text + page + hierarchy_path`.
+- Citation click → `GET /v1/nodes/{id}/source` → source pane renders `text + page + hierarchy_path`. In the chat, the same call renders the cited node inline, so the two views cannot disagree about what a citation refers to.
+- A `done` payload that is not an AskResponse is reported as a contract violation, not rendered as a partial answer and not left to crash the render.
 - **Persistent disclaimer banner** in the answer pane — worded exactly as in `copy.ts` line 221. Must persist across answer interactions, not scroll with sections.
 
 **Verification (AGENTS.md pre-flight §13):**
 - tsc `--noEmit` clean, eslint clean, `npm run build` clean.
-- Browser test: SSE events render in order; citation click opens source; disclaimer stays visible during stream.
+- Browser test: SSE events render in order; citation click opens source; disclaimer stays visible during stream; the tablist moves between the two views with the arrow keys; a malformed `done` event shows a failure in place of the answer.
 
 **Depends on:** Day 4.
 
