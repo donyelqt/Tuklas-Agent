@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { BrandMark } from "@/components/brand/brand-mark";
 import { WarningCircle, PaperPlaneTilt } from "@phosphor-icons/react/ssr";
 import { explorer } from "@/lib/explorer-copy";
 import { AnswerBody, StepList } from "./answer-body";
@@ -107,7 +108,14 @@ export function ChatView({
       <div className="min-h-0 flex-1 overflow-auto">
         {turns.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center px-6 py-8 text-center">
-            <p className="max-w-md text-base leading-relaxed text-ink-9">
+            <span
+              data-brand-lockup
+              className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em]"
+            >
+              <BrandMark size={32} className="shrink-0" />
+              <span className="text-ink-9">{explorer.header.wordmark}</span>
+            </span>
+            <p className="mt-6 max-w-md text-base leading-relaxed text-ink-9">
               {explorer.chat.welcome}
             </p>
             <p className="mt-2 max-w-md text-sm leading-relaxed text-ink-7">
