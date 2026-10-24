@@ -166,6 +166,71 @@ No tool was invented and no default was changed. The seven count covers `search_
 
 ---
 
+## Architecture
+
+**Layout intent:** a layered grid. Package rows in roughly request order, with the store drawn last because it is written at ingest and read by retrieval before generation, each with a gutter rule that shows the direction of travel, then the compiled graph as a node grid, then the five retrieval channels as a definition list, then the dense baseline drawn apart from the shipped path.
+
+Export: `architecture`
+
+| Field | String |
+|---|---|
+| `headline` | Which package owns which step |
+| `lead` | The agent orchestrates and nothing else. It reads the document tree only through seven tool signatures, and every layer below is a real module boundary in apps/api/. |
+| `workflow.caption` | The compiled graph, node by node |
+| `workflow.lead` | Nine graph nodes and one back-edge. The sufficiency gate can send a run back through a single retry before the answer is built. A separate, non-graph retry re-plans an empty plan once. |
+| `channels.caption` | Five channels, one rank |
+| `channels.lead` | Retrieval scores every node in the document on five channels, all weights 1.0 by default, then ranks once. There is no embedding on this path. |
+| `channels.footnote` | The rank is one order: the node the query identifies first, then score descending, then depth, position, and id. |
+| `baseline.label` | Evaluation arm |
+| `baseline.name` | Dense vector baseline |
+| `baseline.owning` | experiments/vector/ |
+| `baseline.body` | One dense embedding per node of the lexical corpus, ranked by a min-max-normalized cosine. It sits beside the shipped path, not inside it: only apps/api/evaluation/ may import it, and the CI import scan fails the build if anything else does. |
+| `baseline.status` | The comparison is run and its reports are published. The outcome is undecided. |
+| `footnote` | The node tree is written at ingest and read through the tools. The agent writes no document rows of its own: its only database write is the ask-trace row that records the run. |
+
+`layers`, six entries, each with `id`, `name`, `owning`, and `body`:
+
+| `name` | `owning` | `body` |
+|---|---|---|
+| FastAPI surface | apps/api/api/ | Routes under the /v1 prefix. Upload, ask, tree, and evaluation endpoints. |
+| Tuklas agent | apps/api/agent/ | A LangGraph state machine. It plans, calls tools, reads a gate verdict, and never scores anything itself. |
+| Tool layer | apps/api/agent/tools.py | Seven thin wrappers. Validate the arguments, call retrieval, record a trace entry, spend one iteration. |
+| Retrieval engine | apps/api/retrieval/ | Owns the index, the scoring, the evidence selection, and the context budget. |
+| Generation | apps/api/generation/ | Renders the opaque prompt, calls the local backend, assembles citations, enforces the advice blocklist. |
+| Store | apps/api/ingestion/db.py | One SQLite file holds the documents, the node tree, the query log, and the evaluation rows. |
+
+`workflow.steps`, nine entries. The `name` is the real graph node name in `apps/api/agent/graph.py`:
+
+| `name` | `body` |
+|---|---|
+| query_plan | Split the question into one to four sub-questions. An empty plan is invalid and the run fails closed. |
+| search | One search_nodes call per sub-question, top_k 10, capped at 20, until the iteration budget runs out. |
+| inspect | Inspect the top three candidates per sub-question. A node that cannot contribute evidence is marked irrelevant. |
+| expand_or_backtrack | The inspect wrapper marks a branch that carried nothing as irrelevant; this node expands one surviving branch per sub-question with radius 1. |
+| select_evidence | Retrieval picks the kept set and decides which node supports which sub-question. |
+| sufficiency_gate | The gate passes when every planned sub-question has a supporter in the kept set. |
+| broaden_search | The one retry. For each failing sub-question it builds one alternative query: the identifier-only form when the sub-question names a provision, otherwise the stopword-stripped form. It spends from the same budget. |
+| build_context | Evidence becomes an opaque prompt context under a 12,000 character budget. |
+| generate | The local model answers from that context. The prompt requires every factual sentence to carry a citation. |
+
+`broaden_search` is the only entry that carries the `branch: true` marker, because it is the only node the gate can loop back to.
+
+`channels.items`, five entries. The `key` is the real weight key in `apps/api/retrieval/scoring.py` `WEIGHT_DEFAULTS`:
+
+| `key` | `label` | `body` |
+|---|---|---|
+| lex | Lexical | BM25 over one document's leaf bodies and section-intro nodes, with the heading line kept in the corpus. |
+| ident | Identifier | A canonical label lookup. A node owning an exact article label scores 1.0; a node that merely inherits a container label scores 0.5. Only a unique owner of an exact label is put first in the rank. |
+| title | Title | Jaccard overlap between the query tokens and the node's heading tokens. |
+| ref | Reference | A node reachable within two reference hops from a lexical seed would score 1.0. The channel is 0 across the current corpus: ingestion does not parse reference edges yet. |
+| hier | Hierarchy | A node whose parent is the parent of a lexical seed scores 1.0. |
+
+Every layer name is a real package path. Every workflow step is a real node in the compiled graph. Every channel key is a real weight key. The nine graph nodes are the nine `graph.add_node` calls in `apps/api/agent/graph.py`, and `broaden_search` is the only conditional edge back.
+
+The dense baseline is drawn as a sibling of the shipped path, never inside it, because that is what it is: an evaluation arm imported only by `apps/api/evaluation/`. No metric appears on this section and no comparison is stated.
+
+---
+
 ## Comparison
 
 **Layout intent:** two-arm diagram, magenta for the Tuklas arm, cyan for the quarantined dense baseline, with the real dataset facts as a labelled definition list below and a status line on its own.
