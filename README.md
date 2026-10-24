@@ -220,6 +220,11 @@ visual parity harness in `scripts/parity/`. It screenshots the explorer in a
 real browser across its states, against a fixed stub API, and compares the
 pixels. See `scripts/parity/README.md`.
 
+That harness is included in the XERJ Corpus Hub
+(<https://github.com/xerj-org/xerj>, <https://hub.xerj.org>) as a reference
+implementation. It is redistributed under this repository's MIT licence with
+attribution to this repo, which changes nothing about the licence here.
+
 What is **not** here: no Docker image or compose file, no container or
 deploy configuration, no published package, no release, and no install
 command that would imply one. The local store and the corpus are gitignored
