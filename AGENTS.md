@@ -91,6 +91,15 @@ npm run build                       # production build
 npm run start                       # serve the production build for browser verification
 ```
 
+`npm run start` is `node scripts/serve-export.mjs`, not `next start`. The build
+uses `output: "export"`, and `next start` refuses to serve that configuration.
+The static export is served from `out/`, and the extensionless `/app` route
+resolves to the exported `app.html`.
+
+The explorer's visual parity is checked by `scripts/parity/` against a
+committed baseline. See `scripts/parity/README.md` for how to run it and what
+its verdict means.
+
 ## Conventions that are not obvious from the code
 
 - Tailwind v4 takes its theme from CSS. There is no `tailwind.config.js` and there

@@ -183,7 +183,7 @@ run without the corpus is visibly narrower rather than silently green.
 | `apps/web/` | The Next.js document explorer and the landing page |
 | `experiments/vector/` | The dense-vector baseline, quarantined to the evaluation arm |
 | `data/` | The frozen dataset (`datasets/v1/`), the published reports (`eval-reports/`), and the local store plus corpus, which are gitignored |
-| `scripts/` | The CI gates and the corpus fetcher |
+| `scripts/` | The CI gates, the corpus fetcher, and the visual parity harness under `scripts/parity/` |
 | `CONSTRAINTS.md` | The binding quality floor |
 | `AGENTS.md` | The working rules, including the honesty rules this README follows |
 
@@ -214,6 +214,11 @@ quarantine scan, the eval-config parity check, the two scripts that prove
 those checks fail on a violation, the reproducibility check, and coverage on
 changed lines. The web production build is not among the CI steps, so run
 `npm run build --prefix apps/web` before you trust a change there.
+
+The explorer's rendering is checked against a committed baseline by the
+visual parity harness in `scripts/parity/`. It screenshots the explorer in a
+real browser across its states, against a fixed stub API, and compares the
+pixels. See `scripts/parity/README.md`.
 
 What is **not** here: no Docker image or compose file, no container or
 deploy configuration, no published package, no release, and no install
