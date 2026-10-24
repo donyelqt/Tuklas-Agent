@@ -1,3 +1,4 @@
+import { ArchitectureDiagram } from "@/components/marketing/architecture-diagram";
 import { BackendMarquee } from "@/components/marketing/backend-marquee";
 import { ComparisonArms } from "@/components/marketing/comparison-arms";
 import { Guardrails } from "@/components/marketing/guardrails";
@@ -33,6 +34,9 @@ export default function Home() {
         </Reveal>
         <Reveal>
           <Pipeline />
+        </Reveal>
+        <Reveal>
+          <ArchitectureDiagram />
         </Reveal>
         <Reveal>
           <ToolSignatures />
