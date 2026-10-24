@@ -1,5 +1,5 @@
 import { HeroBackdrop } from "@/components/marketing/hero-backdrop";
-import { BrandMark } from "@/components/marketing/brand-mark";
+import { BrandMark } from "@/components/brand/brand-mark";
 import { CopyCommand } from "@/components/marketing/copy-command";
 import { TreePreview } from "@/components/marketing/tree-preview";
 import { hero, nav } from "@/lib/copy";
