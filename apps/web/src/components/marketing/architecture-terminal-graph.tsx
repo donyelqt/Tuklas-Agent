@@ -137,14 +137,26 @@ function buildDrawing(): { segs: Seg[][] } {
   const intoIdx = chain.indexOf(retryInto);
 
   const grid = new Grid();
-  const NODE_ROWS = 5; // 3 box rows + 1 connector row + 1 spacing row
   const notchCol = MAIN_X + (IW >> 1) + 1;
-  const boxAt = (i: number): number => i * NODE_ROWS;
+
+  /* Track the row index of each chain node as it is drawn. The loop row
+   * emits four rows with no trailing arrow, so the stride is not uniform and
+   * any computed index after it would be wrong: the rail must aim at the
+   * box's real top row. */
+  const boxTopRow: number[] = [];
+  let bridgeTopRow = 0;
 
   /* Draw one flow node. `gate` marks the node that owns the retry edge: its
    * top border takes the magenta arrival notch. `outgoing` controls whether
-   * the bottom border carries the connector notch. */
-  const flowBox = (name: string, gate: boolean, outgoing: boolean): void => {
+   * the bottom border carries the connector notch. `at` records the chain
+   * position so the magenta rail can aim at this box's real top row. */
+  const flowBox = (
+    name: string,
+    gate: boolean,
+    outgoing: boolean,
+    at: number
+  ): void => {
+    boxTopRow[at] = grid.rows.length;
     const top = grid.add();
     grid.text(top, MAIN_X, "┌" + "─".repeat(IW) + "┐", "rule");
     if (gate) grid.put(top, MAIN_X - 1, "┤", "retry");
@@ -184,6 +196,7 @@ function buildDrawing(): { segs: Seg[][] } {
   /* The loop row: the bridge node sits in the side box, the return target
    * beside it, and the magenta return enters the bridge box from the left. */
   const loopRow = (): void => {
+    bridgeTopRow = grid.rows.length;
     const top = grid.add();
     grid.text(top, SIDE_X, "┌" + "─".repeat(IW) + "┐", "rule");
     grid.put(top, SIDE_X - 1, "┤", "retry");
@@ -205,34 +218,45 @@ function buildDrawing(): { segs: Seg[][] } {
 
   /* Walk the chain up to the node the retry returns into. */
   for (let i = 0; i < intoIdx; i++) {
-    flowBox(chain[i]!, false, true);
+    flowBox(chain[i]!, false, true, i);
     flowArrow();
   }
   loopRow();
   /* Walk from the return target to the gate inclusive. */
   for (let i = intoIdx; i < chain.length; i++) {
     const last = i === chain.length - 1;
-    flowBox(chain[i]!, chain[i] === retryFrom, !last);
+    flowBox(chain[i]!, chain[i] === retryFrom, !last, i);
     if (!last) flowArrow();
   }
 
   /* The magenta return, drawn last so it reads over the flow arrows it
-   * crosses. It runs from the gate's arrival notch down the left gutter and
-   * turns right into the bridge box: gate -> bridge -> inspect. */
-  const gateRow = boxAt(gateIdx);
-  const bridgeRow = boxAt(intoIdx) - 1;
+   * crosses. It runs from the gate's arrival notch left, up the gutter, and
+   * into the bridge box: gate -> broaden_search -> inspect. */
+  const gateRow = boxTopRow[gateIdx]!;
+  const bridgeRow = bridgeTopRow;
+
+  /* The gate's arrival corner, on the row of its top border. The run reaches
+   * the ┤ that flowBox placed one column left of the box border, so the line
+   * ends flush against the gate box. */
   grid.rows[gateRow]![RAIL_X] = { ch: "└", role: "retry" };
   for (let x = RAIL_X + 1; x < MAIN_X - 1; x++) {
     grid.rows[gateRow]![x] = { ch: "─", role: "retry" };
   }
-  for (let r = bridgeRow; r < gateRow; r++) {
+  /* The rail ends at the bridge box's top-left entry notch, the ┤ the loop
+   * row draws one column left of that box's border, so the return visibly
+   * enters the box rather than stopping beside it. */
+  const bridgeEntryRow = bridgeRow;
+  for (let r = bridgeEntryRow; r < gateRow; r++) {
     grid.rows[r]![RAIL_X] = { ch: "│", role: "retry" };
   }
-  grid.rows[bridgeRow]![RAIL_X] = { ch: "┌", role: "retry" };
+  /* On the entry row itself, the gutter holds the corner that turns right
+   * into the box. The ┤ the loop row placed at column 1 stays, so the two
+   * read as one junction. */
+  grid.rows[bridgeEntryRow]![RAIL_X] = { ch: "└", role: "retry" };
 
-  /* The RETRY label rides the rail, one row below the gate corner. */
-  const labelRow = gateRow - 1;
-  grid.text(grid.rows[labelRow]!, RAIL_X + 2, branchLabel, "retry");
+  /* The RETRY label rides the rail, one row below the gate corner, where the
+   * upright is clear of every box. */
+  grid.text(grid.rows[gateRow - 1]!, RAIL_X + 2, branchLabel, "retry");
 
   return { segs: grid.render() };
 }
