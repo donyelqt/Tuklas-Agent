@@ -3,28 +3,31 @@ import { architecture } from "@/lib/copy";
 /**
  * The compiled graph, drawn as an SVG node graph.
  *
- * Three rows over a 1000×600 viewBox:
- *   Row 1 (y=5%):  query_plan, search, inspect, expand_or_backtrack, select_evidence
- *   Row 2 (y=43%): broaden_search (left), sufficiency_gate (right)
- *   Row 3 (y=81%): generate (left), build_context (right)
+ * Three rows over a 1000x600 viewBox, positioned by step index to match the
+ * prototype. The nine edges come from `architecture.workflow.edges`: the two
+ * retry edges (kind === "retry") are magenta, every flow edge is decoration.
  *
- * The nine edges come from `architecture.workflow.edges`. The two retry
- * edges (kind === "retry") are magenta; every flow edge is decoration.
- * Each node box shows its name and owning layer id from `architecture.layerOf`.
+ * Each node box carries its index, name, owning layer id from
+ * `architecture.layerOf`, and body text from `workflow.steps`. The one node
+ * the retry loop passes through (`branch: true`) takes a magenta border and a
+ * RETRY label, so the retry path reads without inferring it from spacing, per
+ * DESIGN.md section 7.
  *
  * No client code: pure server component, no hooks, no observers.
  */
 
 const NODE_W = 16.8; // percent of viewBox width
-const NODE_H = 9; // percent of viewBox height
+const NODE_H = 21; // percent of viewBox height; carries index, name and body
+const RETRY_EXTRA_H = 6; // the retry node's body is longer, so its box is taller
 
-// Position each node by its step index, matching the prototype's three-row layout.
+/* Three rows over the 1000x600 canvas, spaced so a 21%-tall box ends at 99%
+ * and the rows read as a graph rather than a list with holes in it. */
 function pos(i: number): { x: number; y: number } {
-  if (i <= 4) return { x: 2 + i * 19.6, y: 5 };
-  if (i === 5) return { x: 80.4, y: 43 };
-  if (i === 6) return { x: 2, y: 43 };
-  if (i === 7) return { x: 80.4, y: 81 };
-  return { x: 60.8, y: 81 };
+  if (i <= 4) return { x: 2 + i * 19.6, y: 1 };
+  if (i === 5) return { x: 80.4, y: 40 };
+  if (i === 6) return { x: 2, y: 40 };
+  if (i === 7) return { x: 80.4, y: 78 };
+  return { x: 60.8, y: 78 };
 }
 
 interface Bounds {
@@ -36,18 +39,26 @@ interface Bounds {
   cy: number;
 }
 
+/* The retry node carries a longer body, so its box is taller. Edge routing
+ * must know that, or a return edge aims at the wrong vertical point. */
+const nodeHeight = (i: number): number => {
+  const step = architecture.workflow.steps[i];
+  return step?.branch === true ? NODE_H + RETRY_EXTRA_H : NODE_H;
+};
+
 // Convert percentage positions to viewBox pixel coordinates (0-1000, 0-600).
 function nodeBounds(i: number): Bounds {
   const p = pos(i);
+  const h = nodeHeight(i);
   const x1 = p.x * 10;
   const y1 = p.y * 6;
   return {
     x1,
     y1,
     x2: x1 + NODE_W * 10,
-    y2: y1 + NODE_H * 6,
+    y2: y1 + h * 6,
     cx: x1 + NODE_W * 5,
-    cy: y1 + NODE_H * 3,
+    cy: y1 + h * 3,
   };
 }
 
@@ -90,7 +101,7 @@ export function ArchitectureNodeGraph(): React.JSX.Element {
         <div className="relative" style={{ aspectRatio: "1000/600" }}>
           <svg
             viewBox="0 0 1000 600"
-            preserveAspectRatio="none"
+            preserveAspectRatio="xMidYMid meet"
             aria-hidden="true"
             className="absolute inset-0 h-full w-full"
           >
@@ -152,22 +163,50 @@ export function ArchitectureNodeGraph(): React.JSX.Element {
           {steps.map((step, i) => {
             const p = pos(i);
             const layerId = layerOf[step.name];
+            const isRetry = step.branch === true;
             return (
               <div
                 key={step.name}
-                className="absolute border border-ink-4 bg-ink-2 px-2 py-1.5"
+                className={`absolute overflow-hidden bg-ink-2 px-2 py-1.5 ${
+                  isRetry ? "border border-accent" : "border border-ink-4"
+                }`}
                 style={{
                   left: `${p.x}%`,
                   top: `${p.y}%`,
                   width: `${NODE_W}%`,
-                  height: `${NODE_H}%`,
+                  height: isRetry ? `${NODE_H + 6}%` : `${NODE_H}%`,
                 }}
               >
-                <div className="font-mono text-[10px] leading-tight text-ink-9">
+                <div className="flex items-baseline justify-between gap-1">
+                  <div
+                    className={`font-mono text-[9px] leading-none ${
+                      isRetry ? "text-accent" : "text-ink-7"
+                    }`}
+                  >
+                    {String(i + 1).padStart(2, "0")}
+                  </div>
+                  {isRetry ? (
+                    <div className="font-mono text-[8px] uppercase tracking-[0.12em] leading-none text-accent">
+                      RETRY
+                    </div>
+                  ) : null}
+                </div>
+                <div
+                  className={`mt-1 font-mono text-[10px] leading-tight ${
+                    isRetry ? "text-accent" : "text-ink-9"
+                  }`}
+                >
                   {step.name}
                 </div>
                 <div className="font-mono text-[9px] leading-tight text-ink-7">
                   {layerId}
+                </div>
+                <div
+                  className={`mt-1 text-[9px] leading-[1.3] text-ink-7 ${
+                    isRetry ? "line-clamp-5" : "line-clamp-4"
+                  }`}
+                >
+                  {step.body}
                 </div>
               </div>
             );
