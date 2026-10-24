@@ -67,3 +67,5 @@ yarn-error.log*
 # evidence of that run, not input to it.
 artifacts/parity/current/
 artifacts/parity/diff/
+.tmp_arch_proto/
+.tmp_hold/

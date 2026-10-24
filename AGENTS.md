@@ -126,10 +126,7 @@ its verdict means.
 - Radius 0 and no shadows is the shape system, not an oversight.
 - `text-ink-5` is for non-text decoration only. It fails the text contrast threshold and
   is banned on any string a user must read.
-- Accent cyan (`accent-2`) is permitted in exactly two components: `comparison-arms.tsx`,
-  as the labelled dense-baseline marker, and `dot-wave.tsx`'s ambient canvas
-  (`hero-backdrop.tsx` counts as the same exception, per DESIGN.md section 3). Never on a
-  CTA, a link, a focus ring, or any text a user must read.
+- Accent cyan (`accent-2`) is permitted in exactly three components: `comparison-arms.tsx`, as the labelled dense-baseline marker, `dot-wave.tsx`'s ambient canvas (`hero-backdrop.tsx` counts as the same exception, per DESIGN.md section 3), and `architecture-diagram.tsx`'s dense-baseline marker in the architecture section. Never on a CTA, a link, a focus ring, or any text a user must read.
 - Motion animates only `opacity` and `transform`. `window.addEventListener('scroll')` is
   banned; use IntersectionObserver.
 
