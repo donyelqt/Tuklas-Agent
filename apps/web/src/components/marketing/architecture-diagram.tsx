@@ -10,6 +10,16 @@ const TOGGLE_CSS = `
   #arch-view-pipeline-rail:checked ~ [data-arch-panels] [data-arch-panel="pipeline-rail"] {
     display: block;
   }
+  /* Active-view indicator: the checked radio's label gets the accent rule
+     and the muted foreground; unchecked labels stay quiet. The labels sit
+     in a later sibling of the radios, so the general combinator reaches
+     them where the adjacent peer selector cannot. */
+  #arch-view-terminal-graph:checked ~ [role="radiogroup"] label[for="arch-view-terminal-graph"],
+  #arch-view-node-graph:checked ~ [role="radiogroup"] label[for="arch-view-node-graph"],
+  #arch-view-pipeline-rail:checked ~ [role="radiogroup"] label[for="arch-view-pipeline-rail"] {
+    color: var(--color-ink-7);
+    border-bottom-color: var(--color-accent);
+  }
 `;
 
 function Layer({
@@ -126,8 +136,8 @@ export function ArchitectureDiagram(): React.JSX.Element {
                   htmlFor={`arch-view-${variant.id}`}
                   data-testid={`arch-view-label-${variant.id}`}
                   className={
-                    "cursor-pointer border-b-2 border-transparent px-1 py-2 font-mono text-[11px] uppercase tracking-[0.16em] transition-colors duration-150 " +
-                    "peer-hover:text-ink-9 peer-checked:text-ink-7"
+                    "cursor-pointer border-b-2 border-transparent px-1 py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-9 transition-colors duration-150 " +
+                    "hover:text-ink-7"
                   }
                 >
                   {variant.label}

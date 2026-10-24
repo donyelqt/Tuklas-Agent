@@ -236,7 +236,7 @@ export function ArchitectureTerminalGraph(): React.JSX.Element {
         data-testid="architecture-terminal-graph"
         data-variant="terminal-graph"
         aria-hidden="true"
-        className="m-0 font-mono text-[clamp(7px,1.9vw,13px)] leading-4"
+        className="m-0 font-term text-[clamp(7px,1.9vw,13px)] leading-4"
       >
         {rows.map((row, i) => (
           <span key={i}>
