@@ -193,6 +193,73 @@ export const comparison = {
 };
 
 /**
+ * One edge of the compiled graph, transcribed from the graph builder in
+ * apps/api/agent/graph.py. The `kind` is a discriminated union because the
+ * graph has exactly two kinds of edge and the retry kind is the back path.
+ */
+type ArchitectureEdge = { from: string; to: string; kind: "flow" | "retry" };
+
+/**
+ * The layer that owns each graph node, keyed by the node name. The values
+ * are layer ids from `layers` below.
+ */
+type ArchitectureLayerMap = Record<string, string>;
+
+/**
+ * The three drawings of the same graph the switcher offers. The `id` is
+ * the key the component reads, and the `label` is the name on the switcher.
+ */
+type ArchitectureVariant = {
+  id: "node-graph" | "pipeline-rail" | "terminal-graph";
+  label: string;
+};
+
+/**
+ * The nine edges of the compiled graph, in graph order. The gate has two
+ * outgoing edges: the pass route to the context builder, and the one retry
+ * that loops back into inspection.
+ */
+const architectureEdges: ArchitectureEdge[] = [
+  { from: "query_plan", to: "search", kind: "flow" },
+  { from: "search", to: "inspect", kind: "flow" },
+  { from: "inspect", to: "expand_or_backtrack", kind: "flow" },
+  { from: "expand_or_backtrack", to: "select_evidence", kind: "flow" },
+  { from: "select_evidence", to: "sufficiency_gate", kind: "flow" },
+  { from: "sufficiency_gate", to: "build_context", kind: "flow" },
+  { from: "sufficiency_gate", to: "broaden_search", kind: "retry" },
+  { from: "broaden_search", to: "inspect", kind: "retry" },
+  { from: "build_context", to: "generate", kind: "flow" },
+];
+
+/**
+ * The owning layer of each graph node, derived from what the node calls.
+ * The API surface and the store are not graph nodes, so they appear only
+ * in the layer stack.
+ */
+const architectureLayerOf: ArchitectureLayerMap = {
+  query_plan: "agent",
+  search: "tools",
+  inspect: "tools",
+  expand_or_backtrack: "tools",
+  select_evidence: "retrieval",
+  sufficiency_gate: "agent",
+  broaden_search: "tools",
+  build_context: "retrieval",
+  generate: "generation",
+};
+
+/**
+ * The three drawings the switcher offers. Every one of them reads the same
+ * edge table and the same layer map, so the switcher changes the drawing
+ * and never the data.
+ */
+const architectureVariants: ArchitectureVariant[] = [
+  { id: "node-graph", label: "Node graph" },
+  { id: "pipeline-rail", label: "Pipeline rail" },
+  { id: "terminal-graph", label: "Terminal graph" },
+];
+
+/**
  * The architecture section is a second reading of the same system the
  * pipeline section describes in time order: the pipeline says what happens
  * next, this says which package owns which step.
@@ -212,6 +279,16 @@ export const architecture = {
   headline: "Which package owns which step",
   lead:
     "The agent orchestrates and nothing else. It reads the document tree only through seven tool signatures, and every layer below is a real module boundary in apps/api/.",
+  /**
+   * The switcher that picks which drawing of the same graph is on screen.
+   * All three read the same `workflow.edges` table and the same `layerOf`
+   * map, so the toggle changes the drawing and never the data.
+   */
+  diagram: {
+    caption: "Diagram view",
+    variants: architectureVariants,
+  },
+  layersCaption: "Package layers",
   /**
    * The layers, top to bottom, roughly in the order a request travels. The
    * store is written at ingest and read by retrieval before generation, so
@@ -257,6 +334,12 @@ export const architecture = {
     },
   ],
   /**
+   * The owning layer of each graph node, derived from what the node calls.
+   * The API surface and the store are not graph nodes, so they appear only
+   * in the layer stack.
+   */
+  layerOf: architectureLayerOf,
+  /**
    * The nine graph nodes, in the order the compiled graph visits them.
    * `branch` marks the one place the graph loops: the sufficiency gate
    * can send the run back through one broaden-retry.
@@ -265,6 +348,13 @@ export const architecture = {
     caption: "The compiled graph, node by node",
     lead:
       "Nine graph nodes and one back-edge. The sufficiency gate can send a run back through a single retry before the answer is built. A separate, non-graph retry re-plans an empty plan once.",
+    branchLabel: "RETRY",
+    legend: "legend",
+    /**
+     * The edges are a separate table because the graph is not a list: a node
+     * can have more than one outgoing edge, and one of them can go backwards.
+     */
+    edges: architectureEdges,
     steps: [
       { name: "query_plan", body: "Split the question into one to four sub-questions. An empty plan is invalid and the run fails closed." },
       { name: "search", body: "One search_nodes call per sub-question, top_k 10, capped at 20, until the iteration budget runs out." },

@@ -176,8 +176,12 @@ Export: `architecture`
 |---|---|
 | `headline` | Which package owns which step |
 | `lead` | The agent orchestrates and nothing else. It reads the document tree only through seven tool signatures, and every layer below is a real module boundary in apps/api/. |
+| `layersCaption` | Package layers |
+| `diagram.caption` | Diagram view |
 | `workflow.caption` | The compiled graph, node by node |
 | `workflow.lead` | Nine graph nodes and one back-edge. The sufficiency gate can send a run back through a single retry before the answer is built. A separate, non-graph retry re-plans an empty plan once. |
+| `workflow.branchLabel` | RETRY |
+| `workflow.legend` | legend |
 | `channels.caption` | Five channels, one rank |
 | `channels.lead` | Retrieval scores every node in the document on five channels, all weights 1.0 by default, then ranks once. There is no embedding on this path. |
 | `channels.footnote` | The rank is one order: the node the query identifies first, then score descending, then depth, position, and id. |
@@ -187,6 +191,16 @@ Export: `architecture`
 | `baseline.body` | One dense embedding per node of the lexical corpus, ranked by a min-max-normalized cosine. It sits beside the shipped path, not inside it: only apps/api/evaluation/ may import it, and the CI import scan fails the build if anything else does. |
 | `baseline.status` | The comparison is run and its reports are published. The outcome is undecided. |
 | `footnote` | The node tree is written at ingest and read through the tools. The agent writes no document rows of its own: its only database write is the ask-trace row that records the run. |
+
+`diagram.variants`, three entries. The `id` is the variant key the component reads, and the `label` is the name shown on the switcher:
+
+| `id` | `label` |
+|---|---|
+| node-graph | Node graph |
+| pipeline-rail | Pipeline rail |
+| terminal-graph | Terminal graph |
+
+All three variants draw the same graph from the same `workflow.edges` table and the same `layerOf` map, so the switcher changes the drawing and not the data.
 
 `layers`, six entries, each with `id`, `name`, `owning`, and `body`:
 
@@ -214,6 +228,36 @@ Export: `architecture`
 | generate | The local model answers from that context. The prompt requires every factual sentence to carry a citation. |
 
 `broaden_search` is the only entry that carries the `branch: true` marker, because it is the only node the gate can loop back to.
+
+`workflow.edges`, nine entries. The `from` and `to` are real graph node names, and the `kind` is `flow` for a forward edge and `retry` for the two edges of the one back-path:
+
+| `from` | `to` | `kind` |
+|---|---|---|
+| query_plan | search | flow |
+| search | inspect | flow |
+| inspect | expand_or_backtrack | flow |
+| expand_or_backtrack | select_evidence | flow |
+| select_evidence | sufficiency_gate | flow |
+| sufficiency_gate | build_context | flow |
+| sufficiency_gate | broaden_search | retry |
+| broaden_search | inspect | retry |
+| build_context | generate | flow |
+
+`layerOf`, nine entries. Each value is the `id` of a layer in `layers` above, derived from what that node calls:
+
+| node | layer `id` |
+|---|---|
+| query_plan | agent |
+| search | tools |
+| inspect | tools |
+| expand_or_backtrack | tools |
+| select_evidence | retrieval |
+| sufficiency_gate | agent |
+| broaden_search | tools |
+| build_context | retrieval |
+| generate | generation |
+
+The API surface and the store are not graph nodes, so they appear only in the layer stack.
 
 `channels.items`, five entries. The `key` is the real weight key in `apps/api/retrieval/scoring.py` `WEIGHT_DEFAULTS`:
 
