@@ -43,8 +43,9 @@ export function BrandMark({
   className?: string;
   size?: number;
 }): React.JSX.Element {
-  // Unique per instance: the mark appears in both the nav and the hero, and a
-  // shared id would make one gradient definition win over the other.
+  // Unique per instance: the mark is rendered more than once per page (the
+  // nav, the hero, and the document explorer's header), and a shared id would
+  // make one gradient definition win over the other.
   const gradientId = useId();
 
   return (
