@@ -322,21 +322,40 @@ export function Explorer() {
   return (
     <div className="flex h-dvh min-h-0 flex-1 flex-col overflow-hidden">
       <header className="border-b border-rule bg-ink-1 px-4 py-3 sm:px-6">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
           <h1 className="font-sans text-base font-semibold tracking-tight text-ink-9">
             {explorer.header.title}
           </h1>
+          <p className="text-xs text-ink-7">{explorer.header.subtitle}</p>
           {/*
             The view switcher is a tablist, and it is a tablist for a real
             reason: the two views share one runtime, and a tablist is what
             says "one thing, two views" to a screen reader. The arrow keys
             move between the tabs, which is the tab pattern's contract, and
             each tab names the panel it controls.
+
+            It sits at the RIGHT end of the header, in the blank run the
+            baseline left between the subtitle and the API readout, and it
+            is `h-6` so it fits inside the header's existing 24px content
+            band instead of growing it. Both facts are load-bearing:
+
+            * The header's height is the explorer's most visible dimension.
+              A switcher that grew the row pushed every pane down, so the
+              explorer stopped matching the build it replaced. The switcher
+              takes the space the header already had.
+            * `self-center` keeps the switcher out of the baseline group.
+              The h1, the subtitle and the API readout share one text
+              baseline; a fourth baseline-aligned item would shift them
+              all. Centering it leaves their metrics untouched.
+
+            `ml-auto` is what moves the API readout's right edge: the
+            switcher takes the free space in front of it, and the readout
+            keeps the right edge the baseline gave it.
           */}
           <div
             role="tablist"
             aria-label={explorer.header.viewLabel}
-            className="flex items-center border border-rule bg-ink-2"
+            className="ml-auto flex h-6 self-center items-center border border-rule bg-ink-2"
             onKeyDown={(event) => {
               if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") {
                 return;
@@ -355,7 +374,7 @@ export function Explorer() {
               aria-controls="view-panel-explorer"
               tabIndex={mode === "explorer" ? 0 : -1}
               onClick={() => setMode("explorer")}
-              className={`min-h-9 px-3 font-sans text-sm font-medium tracking-tight transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
+              className={`inline-flex h-full items-center justify-center px-2.5 font-sans text-sm font-medium tracking-tight transition-[background-color,color,transform] duration-120 ease-[cubic-bezier(.23,1,.32,1)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
                 mode === "explorer"
                   ? "bg-ink-4 text-ink-9"
                   : "text-ink-7 hover:text-ink-9"
@@ -371,7 +390,7 @@ export function Explorer() {
               aria-controls="view-panel-chat"
               tabIndex={mode === "chat" ? 0 : -1}
               onClick={() => setMode("chat")}
-              className={`min-h-9 px-3 font-sans text-sm font-medium tracking-tight transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
+              className={`inline-flex h-full items-center justify-center px-2.5 font-sans text-sm font-medium tracking-tight transition-[background-color,color,transform] duration-120 ease-[cubic-bezier(.23,1,.32,1)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
                 mode === "chat"
                   ? "bg-ink-4 text-ink-9"
                   : "text-ink-7 hover:text-ink-9"
@@ -380,8 +399,7 @@ export function Explorer() {
               {explorer.chat.tabLabel}
             </button>
           </div>
-          <p className="text-xs text-ink-7">{explorer.header.subtitle}</p>
-          <span className="ml-auto font-mono text-[11px] text-ink-7">
+          <span className="font-mono text-[11px] text-ink-7">
             {explorer.header.apiLabel}: {API_BASE_URL}
           </span>
         </div>
