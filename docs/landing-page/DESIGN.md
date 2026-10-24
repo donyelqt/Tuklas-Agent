@@ -93,16 +93,17 @@ Values verified by reading `.tmp_refs/omp.css` and by computing WCAG contrast ag
 }
 ```
 
-### Accent lock, with two documented exceptions
+### Accent lock, with three documented exceptions
 
 Magenta `--color-accent` is the single accent for the whole page: primary CTA, focus rings, links, active states.
 
-Cyan `--color-accent-2` is permitted in exactly two components, and nowhere else:
+Cyan `--color-accent-2` is permitted in exactly three components, and nowhere else:
 
 - `comparison-arms.tsx`, on the quarantined dense-vector baseline arm, as a semantic marker inside a labelled two-arm diagram. That distinction is the product's core claim (`ADR-003`), and encoding it in color makes the evaluation section readable without a paragraph of explanation.
 - `dot-wave.tsx`, on the trailing band of the hero dot field, behind the magenta crest.
+- `architecture-diagram.tsx`, on the dense-baseline box in the architecture section's diagram, as the same semantic marker the comparison section uses for the same quarantined arm.
 
-The lock survives a second exception because neither use carries meaning by colour alone. The comparison arm sits in a diagram whose heading names it "Dense vector baseline", so the meaning is carried by the diagram and its text; the wave's cyan is ambient background on a canvas that is `aria-hidden` and conveys nothing. Strip the arm's label and the cyan loses its referent; strip the wave and nothing is lost. Cyan still must not appear on a CTA, a link, a focus ring, or any text a user must read. `hero-backdrop.tsx` inherits the same treatment in its crest layer: same token, same fallback literal, same unreadable ambient background, so it counts as `dot-wave.tsx`'s exception and not as a third one. **The brand mark is not a third accent either:** `brand-mark.tsx` fills its bars with one gradient running across this page's own `accent` to `accent-2` pair, so both endpoints are already locked tokens, and the violet between them exists nowhere else on the page and is not a token.
+The lock survives three exceptions because no use carries meaning by colour alone. The comparison arm sits in a diagram whose heading names it "Dense vector baseline", so the meaning is carried by the diagram and its text; the wave's cyan is ambient background on a canvas that is `aria-hidden` and conveys nothing; the architecture diagram's dense-baseline box is the same marker on the same quarantined arm, and the meaning is carried by the diagram's own label. Strip the arm's label and the cyan loses its referent; strip the wave and nothing is lost; strip the architecture diagram's label and its cyan loses its referent too. Cyan still must not appear on a CTA, a link, a focus ring, or any text a user must read. In the architecture diagram the cyan marks a border or a rule and never a readable character. `hero-backdrop.tsx` inherits the same treatment in its crest layer: same token, same fallback literal, same unreadable ambient background, so it counts as `dot-wave.tsx`'s exception and not as a fourth one. **The brand mark is not a fourth accent either:** `brand-mark.tsx` fills its bars with one gradient running across this page's own `accent` to `accent-2` pair, so both endpoints are already locked tokens, and the violet between them exists nowhere else on the page and is not a token.
 
 The backends strip (section 2) carries seven brand marks, all rendered monochrome in the ink ramp via `currentColor`. Ollama's official mark is black and would be invisible on `ink-0`. Brand colour is not used: a brand-coloured mark sitting beside monochrome ones reads as an accident, and vLLM's brand blue would introduce a second accent, which this section locks out.
 
@@ -205,7 +206,7 @@ Rules:
 
 ## 7. Section inventory
 
-Eight content sections, eight distinct layout families, zero eyebrows.
+Nine content sections, nine distinct layout families, zero eyebrows.
 
 | # | Section | Layout family | Eyebrow |
 |---|---|---|---|
@@ -214,17 +215,26 @@ Eight content sections, eight distinct layout families, zero eyebrows.
 | 2 | Backends strip | Single infinite marquee of logos | none |
 | 3 | The hierarchy problem | Two-column comparison, a flat chunk list against the structure the tree keeps, plus the closing note | none |
 | 4 | Pipeline | Numbered divide-list, 7 steps, bold lead-in plus one sentence | none |
-| 5 | Retrieval tools | Single code block of the 7 tool signatures | none |
-| 6 | The comparison | Two-arm diagram, magenta versus cyan, plus the real dataset facts | none |
-| 7 | Guardrails | Two-column divide-list, with the disclaimer on its own full-width band | none |
-| 8 | Run it locally | Install command block plus repo tree | none |
+| 5 | Architecture | Three switchable diagram views of the compiled graph (node graph, pipeline rail, terminal graph), all drawn from workflow.edges and layerOf, with the layer stack, the five channels and the dense baseline drawn once below the switcher | none |
+| 6 | Retrieval tools | Single code block of the 7 tool signatures | none |
+| 7 | The comparison | Two-arm diagram, magenta versus cyan, plus the real dataset facts | none |
+| 8 | Guardrails | Two-column divide-list, with the disclaimer on its own full-width band | none |
+| 9 | Run it locally | Install command block plus repo tree | none |
 
 Constraints on the set:
 
-- **Exactly one marquee on the page** (section 2), and no second kinetic strip. **No section uses three equal cards:** section 3 is a two-column comparison, section 4 is a numbered divide-list, section 7 is a divide-list. **No section repeats another section's layout family.** All eight differ.
+- **Exactly one marquee on the page** (section 2), and no second kinetic strip. **No section uses three equal cards:** section 3 is a two-column comparison, section 4 is a numbered divide-list, section 8 is a divide-list. **No section repeats another section's layout family.** All nine differ.
 - **The logo strip is logos only.** No category label printed under any individual logo. The strip carries one section-level label naming both kinds of thing, as recorded in the backends strip content model below.
 - **Navigation surfaces.** The header carried Problem, Pipeline, Tools, Comparison and Guardrails as links, which duplicated the rail exactly. That list is deleted from the header, in the desktop row and in the mobile panel both. The header keeps the brand lockup and the two CTAs, and the mobile `<details>` disclosure survives because it carries those CTAs to narrow screens. The rail is therefore the page's single section-navigation surface. Consequence, recorded so it is not rediscovered as a bug: below `1024` the rail is `hidden` and no section navigation is rendered at all, so no claim of section navigation at every width may appear in this file.
 
+### Architecture section contract
+
+- **Layout family: a switcher over three diagram views of the compiled graph.** The section is not a list of steps and not a card grid. The switcher caption is `architecture.diagram.caption` ("Diagram view") and the variant labels come from `architecture.diagram.variants`. The default view is the terminal graph.
+- **The three views draw the same graph from the same two data tables.** `architecture.workflow.edges` is the edge table, one row per edge with a `from`, a `to` and a `kind` of `flow` or `retry`; `architecture.layerOf` maps each node name to the id of the layer that owns it. The node graph renders the nine nodes and nine edges as an SVG graph, the pipeline rail renders them as a horizontal station track, and the terminal graph renders them as monospace box-drawing ASCII. The switcher changes the drawing and never the data.
+- **The retry edge is visually distinct from every flow edge in all three views.** The two retry edges, `sufficiency_gate` to `broaden_search` and `broaden_search` to `inspect`, are drawn as a distinct magenta return edge that enters the retry box, and they carry the `RETRY` label. A reader sees the cycle without inferring it from spacing.
+- **The art fits the viewport with no horizontal page scroll at 390px.** The drawing is sized to fit rather than scrolled: the prototype's `scroll >` affordance and its `ResizeObserver` are not carried over. Below 700px the wide drawing is replaced by a narrow vertical one.
+- **The diagram's own legend carries the meaning of the marks.** Every readable character in the art uses `ink-7` or `ink-9`; the box-drawing rules use `ink-5`, which is decoration only.
+- **The dense-baseline marker is the only accent-2 use outside comparison-arms.tsx and dot-wave.tsx.** It appears in the architecture section as the same semantic marker the comparison section uses for the same quarantined arm, drawn once below the switcher rather than per view.
 ### Hero geometry, non-negotiable
 
 - The section is `relative`, `overflow-hidden`, `flex flex-col`, `min-h-[100dvh]`, and carries no padding of its own: `pt-24 pb-16 lg:pb-24` sits on the grid container. That container is `mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 items-center gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_21rem] lg:gap-10 lg:px-8 lg:pb-24`: one column below `lg`, two at `lg` and up, the panel held at `21rem` and the leftover width handed to the content through `minmax(0,1fr)`.
@@ -309,7 +319,7 @@ Everything below lives under `apps/web`. Paths are exact.
 apps/web/
   src/app/
     layout.tsx                 fonts, metadata, theme lock, skip link
-    page.tsx                   marketing route, composes the 8 sections, owns the fixed rail and the `lg:pl-16` content wrapper
+    page.tsx                   marketing route, composes the 9 sections, owns the fixed rail and the `lg:pl-16` content wrapper
     globals.css                @theme tokens, base layer, reduced-motion block
     icon.svg                    favicon, scalable, opaque ink-0 field rounded to rx 8, the four rects scaled to 0.78 and three gradient stops in hex, not imported (see section 5)
     favicon.ico                 favicon at 16, 32 and 48, same source geometry
@@ -331,6 +341,10 @@ apps/web/
     backend-marks.tsx         official brand marks, monochrome via currentColor
     hierarchy-problem.tsx
     pipeline.tsx
+    architecture-diagram.tsx  architecture section shell: switcher over three diagram views, owns the layer stack, the five channels and the dense baseline
+    architecture-terminal-graph.tsx  terminal graph view: monospace box-drawing ASCII of the compiled graph
+    architecture-node-graph.tsx  node graph view: SVG graph of the compiled graph
+    architecture-pipeline-rail.tsx  pipeline rail view: horizontal station track of the compiled graph
     tool-signatures.tsx
     comparison-arms.tsx
     guardrails.tsx
@@ -361,7 +375,7 @@ The landing page is done when every line below is verifiable, not asserted.
 [ ] Every interactive element has a visible focus ring
 [ ] Reduced-motion block present and proven by toggling the media query, and hero-backdrop.tsx gates both layers through useReducedMotion
 [ ] Every image and SVG has alt text or an explicit aria-hidden
-[ ] Both hero canvases are pointer-events-none, aria-hidden, absolutely positioned; dot-wave.tsx has no animation loop; hero-backdrop.tsx redraws only the crest layer and only every CREST_FRAME_MS = 1000/24 ms of wall clock; accent-2 appears as a class or token reference only in comparison-arms.tsx and dot-wave.tsx (hero-backdrop.tsx reads the CSS variable and counts as dot-wave's exception per section 3)
+[ ] Both hero canvases are pointer-events-none, aria-hidden, absolutely positioned; dot-wave.tsx has no animation loop; hero-backdrop.tsx redraws only the crest layer and only every CREST_FRAME_MS = 1000/24 ms of wall clock; accent-2 appears as a class or token reference only in comparison-arms.tsx, dot-wave.tsx and architecture-diagram.tsx (hero-backdrop.tsx reads the CSS variable and counts as dot-wave's exception per section 3)
 [ ] hero-backdrop.tsx animates only opacity and transform, and the crest redraw cost stays inside one CREST_FRAME_MS = 1000/24 ms window measured in a real browser with zero long tasks
 [ ] brand-mark.tsx renders one aria-hidden, focusable="false" svg holding exactly four rects on viewBox "0 0 64 64" and no raw hex outside its three gradient stops; BrandMark is imported by exactly four files: site-nav.tsx and hero.tsx on the marketing route at size 20, explorer.tsx in the explorer header at size 16, and chat-view.tsx in the chat empty state at size 32; the wordmark text sits beside the mark at all call sites, since the mark is aria-hidden and carries no name itself
 [ ] The four favicon assets exist in apps/web/src/app (icon.svg, favicon.ico, icon.png, apple-icon.png); favicon.ico carries real 16, 32 and 48 entries, icon.png is 512, apple-icon.png is 180, and all four are fully opaque on an #050507 field; icon.svg holds the four rects scaled to 0.78 about (32,32) and centred, with no rect touching the tile edge, plus the same three gradient stops as brand-mark.tsx in hex rather than oklch, the mapping recorded in the file's own comment; the three web assets carry the field radius of 8 on the 64-unit grid while apple-icon.png is square, because iOS masks it with its own squircle
@@ -375,7 +389,8 @@ The landing page is done when every line below is verifiable, not asserted.
 [ ] hero-rail.tsx is placed by page.tsx in a `fixed` wrapper at `z-30`, one slot below the sticky header's `z-40`, and the page content wrapper's `lg:pl-16` clears the rail's `w-16` for every section at 1024, 1440 and 1920 with no per-section offset doing the work
 [ ] The marquee is the only marquee
 [ ] No three-equal-card row anywhere
-[ ] All 8 sections use 8 different layout families
+[ ] All 9 sections use 9 different layout families
+[ ] The architecture section renders the nine graph nodes through a switcher over three diagram views (node graph, pipeline rail, terminal graph), all drawn from architecture.workflow.edges and architecture.layerOf, the retry path is drawn as a distinct magenta return edge labelled RETRY in every view, and the dense-baseline marker is the only accent-2 use outside comparison-arms.tsx and dot-wave.tsx; the diagram produces no horizontal page scroll at 390px
 [ ] The explorer light theme is reachable only through the `data-explorer-theme="light"` attribute on `<html>`; the marketing route never carries that attribute, and the attribute is removed when the explorer unmounts
 [ ] `globals.css` overrides the ink ramp, `accent`, `rule`, `rule-strong` and `selection` custom properties under `html[data-explorer-theme="light"]`, and the dark values in the `@theme` block are unchanged
 [ ] The theme toggle lives in the explorer header, carries `aria-pressed`, and its state survives a reload through `localStorage["tuklas-explorer-theme"]`
