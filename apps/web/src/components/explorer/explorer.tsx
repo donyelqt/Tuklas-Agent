@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Moon, Sun } from "@phosphor-icons/react/ssr";
 import { explorer } from "@/lib/explorer-copy";
 import {
   API_BASE_URL,
@@ -82,6 +83,68 @@ export function Explorer() {
   // tab's `aria-controls` always names an element that exists. The
   // discovery UI is the same in both modes.
   const [mode, setMode] = useState<"explorer" | "chat">("explorer");
+  // The explorer's theme. The first client render reads the theme from the
+  // DOM, because the pre-paint script on this route may already have set
+  // `data-explorer-theme` before this module loaded. The server render has
+  // no DOM, so it defaults to dark; the html element carries
+  // suppressHydrationWarning so the one-frame icon difference is silent.
+  const initialTheme: "dark" | "light" = (() => {
+    if (typeof window === "undefined") {
+      return "dark";
+    }
+    const attribute = document.documentElement.getAttribute(
+      "data-explorer-theme",
+    );
+    if (attribute === "light" || attribute === "dark") {
+      return attribute;
+    }
+    try {
+      const stored = window.localStorage.getItem("tuklas-explorer-theme");
+      return stored === "light" || stored === "dark" ? stored : "dark";
+    } catch {
+      return "dark";
+    }
+  })();
+  const [theme, setTheme] = useState<"dark" | "light">(initialTheme);
+
+  // The effect writes the theme to the DOM and to storage. It never calls
+  // setState: the state is already correct from the render-time read above,
+  // so the effect only synchronizes the external systems that React does
+  // not own. It runs on mount and again after every toggle, and its cleanup
+  // removes the attribute when the explorer unmounts, so a client
+  // navigation back to the marketing route cannot inherit it.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "light") {
+      root.setAttribute("data-explorer-theme", "light");
+    } else {
+      root.removeAttribute("data-explorer-theme");
+    }
+    try {
+      window.localStorage.setItem("tuklas-explorer-theme", theme);
+    } catch {
+      // Storage can be unavailable; the theme still works for this visit.
+    }
+    return () => {
+      root.removeAttribute("data-explorer-theme");
+    };
+  }, [theme]);
+
+  const onToggleTheme = useCallback(() => {
+    const next: "dark" | "light" = theme === "light" ? "dark" : "light";
+    const root = document.documentElement;
+    if (next === "light") {
+      root.setAttribute("data-explorer-theme", "light");
+    } else {
+      root.removeAttribute("data-explorer-theme");
+    }
+    try {
+      window.localStorage.setItem("tuklas-explorer-theme", next);
+    } catch {
+      // Storage can be unavailable; the theme still works for this visit.
+    }
+    setTheme(next);
+  }, [theme]);
   // The transcript's turn counter. It lives in a ref because it is an
   // identity, not a value the interface renders.
   const nextTurnId = useRef(1);
@@ -320,13 +383,34 @@ export function Explorer() {
   const latestTurn = turns.length === 0 ? null : turns[turns.length - 1];
 
   return (
-    <div className="flex h-dvh min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex h-dvh min-h-0 flex-1 flex-col overflow-hidden bg-ink-0 text-ink-9">
       <header className="border-b border-rule bg-ink-1 px-4 py-3 sm:px-6">
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
           <h1 className="font-sans text-base font-semibold tracking-tight text-ink-9">
             {explorer.header.title}
           </h1>
           <p className="text-xs text-ink-7">{explorer.header.subtitle}</p>
+          {/*
+            The theme toggle sits in the header's blank run, between the
+            subtitle and the tablist. The tablist carries `ml-auto`, so it
+            stays pinned to the right end and neither it nor the API
+            readout moves.
+          */}
+          <button
+            type="button"
+            data-theme-toggle
+            aria-pressed={theme === "light"}
+            aria-label={explorer.header.themeToggleLabel}
+            onClick={onToggleTheme}
+            className="inline-flex h-6 self-center items-center gap-1.5 border border-rule px-2 font-mono text-[11px] text-ink-7 transition-colors duration-120 hover:text-ink-9 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+          >
+            {theme === "light" ? (
+              <Sun aria-hidden="true" size={14} weight="regular" />
+            ) : (
+              <Moon aria-hidden="true" size={14} weight="regular" />
+            )}
+            <span>{theme === "light" ? explorer.header.themeLightLabel : explorer.header.themeDarkLabel}</span>
+          </button>
           {/*
             The view switcher is a tablist, and it is a tablist for a real
             reason: the two views share one runtime, and a tablist is what

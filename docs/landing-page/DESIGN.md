@@ -121,9 +121,23 @@ The backends strip (section 2) carries seven brand marks, all rendered monochrom
 
 ### Theme lock
 
-The page is dark, single theme, for its full length. No section inverts to a light background. Section-level background variation is allowed only as adjacent steps of the same ink ramp (`ink-0` next to `ink-1`). `prefers-color-scheme: light` does not flip this page. A dark-only landing page is an intentional brand decision matching the harness reference, not an oversight, and it is recorded here so a future maintainer does not "fix" it.
+The marketing route on `/` is dark, single theme, for its full length. No section inverts to a light background. Section-level background variation is allowed only as adjacent steps of the same ink ramp (`ink-0` next to `ink-1`). `prefers-color-scheme: light` does not flip this page. A dark-only landing page is an intentional brand decision matching the harness reference, not an oversight, and it is recorded here so a future maintainer does not "fix" it.
 
----
+The EXPLORER route on `/app` is the one exception: it carries a light theme alongside the dark one, because a document-explorer surface is read for long stretches next to a legal PDF and a dark-only surface is a legibility cost there. The explorer's dark theme remains the default, there is no `prefers-color-scheme` auto-detection, and the addition does not replace the dark theme.
+
+The mechanism: a `data-explorer-theme="light"` attribute on `<html>`, set only by the explorer runtime. `globals.css` overrides the `--color-*` custom properties under `html[data-explorer-theme="light"]`. The marketing route never carries the attribute, so the landing page's dark lock holds.
+
+The attribute is removed when the explorer unmounts, so a client navigation back to `/` cannot inherit it.
+
+The pre-paint inline script on the explorer route reads `localStorage["tuklas-explorer-theme"]` before first paint, so a persisted light theme does not flash dark.
+
+### Explorer light theme
+
+- The token list that is overridden: `--color-ink-0` through `--color-ink-9` as defined in the `@theme` block, plus `--color-accent`, `--color-rule`, `--color-rule-strong` and `--color-selection`.
+- The ink ramp INVERTS in light mode, so a higher ink index is darker. Every existing component class name (`bg-ink-1`, `text-ink-7`, `border-rule`, and so on) keeps working unchanged because the utilities resolve to the custom properties.
+- `accent` is darkened in light mode because the magenta does not reach text contrast on a light surface.
+- The persistence key is `tuklas-explorer-theme`; the default is dark.
+- The explorer is the only surface that re-themes. The marketing route's single-theme lock is unaffected.
 
 ## 4. Typography
 
@@ -272,7 +286,7 @@ From `design-taste-frontend` §9, §9.F, §9.G, plus §4.7. Mechanical pre-fligh
 - Visible focus on every interactive control: `outline: 2px solid var(--color-accent); outline-offset: 2px`. Never removed.
 - The marquee pauses on hover, on focus-within, and through a real pause button, because its track holds no focusable element.
 - Every SVG icon is either `aria-hidden="true"` when decorative beside visible text, or carries an accessible name when it is the only content of a control. Both hero canvases are `aria-hidden`, and the rail's visible number is `aria-hidden` with the label as the anchor's accessible name.
-- Semantic landmarks: one `h1`, plus `header`, `nav`, `main`, `footer`. Heading order never skips a level. Light mode is not offered (see §3); `color-scheme: dark` is declared so form controls and scrollbars render correctly.
+- Semantic landmarks: one `h1`, plus `header`, `nav`, `main`, `footer`. Heading order never skips a level. The marketing route offers no light mode (see §3) and declares `color-scheme: dark` so form controls and scrollbars render correctly. The explorer route declares `color-scheme: light` under the light theme. The light theme's muted and body text colors were chosen to keep at least 4.5:1 on the explorer surfaces.
 - Target size: interactive controls at least 44px on the smallest breakpoint; the rail's anchors are `h-16 w-16`. No content is hidden behind the rail at any scroll position, because the page content wrapper's `lg:pl-16` clears its `w-16` for every section, and the rail's `z-30` keeps it below the sticky header, which in turn must not obscure keyboard focus: `scroll-margin-top` on every section anchor equals nav height plus 16px.
 
 ---
@@ -301,6 +315,9 @@ apps/web/
     favicon.ico                 favicon at 16, 32 and 48, same source geometry
     icon.png                    favicon at 512, opaque ink-0 field
     apple-icon.png              apple touch icon at 180, opaque ink-0 field, deliberately square (see section 5)
+    app/page.tsx                explorer route shell: pre-paint inline script for the light theme, renders <Explorer />
+  src/components/explorer/
+    explorer.tsx                the explorer client: three-pane and full-screen chat, header theme toggle with aria-pressed
   src/components/marketing/
     site-nav.tsx               brand lockup and the two CTAs only, no section links
     site-footer.tsx
@@ -322,6 +339,7 @@ apps/web/
     reveal.tsx                 IntersectionObserver wrapper
   src/lib/
     copy.ts                    every visible string lives here, no inline strings in JSX
+    explorer-copy.ts            every visible string in the explorer route lives here, no inline strings in JSX
     site.ts                    links, repo metadata
 ```
 
@@ -358,4 +376,8 @@ The landing page is done when every line below is verifiable, not asserted.
 [ ] The marquee is the only marquee
 [ ] No three-equal-card row anywhere
 [ ] All 8 sections use 8 different layout families
+[ ] The explorer light theme is reachable only through the `data-explorer-theme="light"` attribute on `<html>`; the marketing route never carries that attribute, and the attribute is removed when the explorer unmounts
+[ ] `globals.css` overrides the ink ramp, `accent`, `rule`, `rule-strong` and `selection` custom properties under `html[data-explorer-theme="light"]`, and the dark values in the `@theme` block are unchanged
+[ ] The theme toggle lives in the explorer header, carries `aria-pressed`, and its state survives a reload through `localStorage["tuklas-explorer-theme"]`
+[ ] The explorer renders in both themes in a real browser
 ```

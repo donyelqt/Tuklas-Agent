@@ -1,4 +1,4 @@
-import { BrandMark } from "@/components/marketing/brand-mark";
+import { BrandMark } from "@/components/brand/brand-mark";
 import { nav } from "@/lib/copy";
 import { site } from "@/lib/site";
 /**
