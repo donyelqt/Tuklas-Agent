@@ -181,7 +181,7 @@ Export: `architecture`
 | `workflow.caption` | The compiled graph, node by node |
 | `workflow.lead` | Nine graph nodes and one back-edge. The sufficiency gate can send a run back through a single retry before the answer is built. A separate, non-graph retry re-plans an empty plan once. |
 | `workflow.branchLabel` | RETRY |
-| `workflow.legend` | legend |
+| `workflow.legend` | White boxes are the forward path. Magenta marks the retry path: the gate can loop back through broaden_search once per run. |
 | `channels.caption` | Five channels, one rank |
 | `channels.lead` | Retrieval scores every node in the document on five channels, all weights 1.0 by default, then ranks once. There is no embedding on this path. |
 | `channels.footnote` | The rank is one order: the node the query identifies first, then score descending, then depth, position, and id. |

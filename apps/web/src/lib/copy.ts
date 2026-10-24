@@ -349,7 +349,8 @@ export const architecture = {
     lead:
       "Nine graph nodes and one back-edge. The sufficiency gate can send a run back through a single retry before the answer is built. A separate, non-graph retry re-plans an empty plan once.",
     branchLabel: "RETRY",
-    legend: "legend",
+    legend:
+      "White boxes are the forward path. Magenta marks the retry path: the gate can loop back through broaden_search once per run.",
     /**
      * The edges are a separate table because the graph is not a list: a node
      * can have more than one outgoing edge, and one of them can go backwards.

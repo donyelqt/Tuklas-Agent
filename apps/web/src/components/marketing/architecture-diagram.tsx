@@ -71,11 +71,16 @@ export function ArchitectureDiagram(): React.JSX.Element {
         </div>
 
         {/* The layers, in request order. */}
-        <ol className="border-b border-ink-4/60">
-          {architecture.layers.map((layer, index) => (
-            <Layer key={layer.id} index={index} {...layer} />
-          ))}
-        </ol>
+        <div className="flex flex-col gap-2">
+          <h3 className="font-sans text-xl font-semibold tracking-tight text-ink-9">
+            {architecture.layersCaption}
+          </h3>
+          <ol className="border-b border-ink-4/60">
+            {architecture.layers.map((layer, index) => (
+              <Layer key={layer.id} index={index} {...layer} />
+            ))}
+          </ol>
+        </div>
 
         {/* The compiled graph, drawn in one of three views. */}
         <div className="flex flex-col gap-6">
@@ -129,6 +134,10 @@ export function ArchitectureDiagram(): React.JSX.Element {
                 </label>
               ))}
             </div>
+
+            <p className="max-w-[62ch] text-sm leading-relaxed text-ink-7">
+              {architecture.workflow.legend}
+            </p>
 
             <div data-arch-panels className="pt-2">
               <div data-arch-panel="terminal-graph" className="arch-panel">
