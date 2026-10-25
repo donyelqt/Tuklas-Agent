@@ -288,6 +288,18 @@ export const architecture = {
     caption: "Diagram view",
     variants: architectureVariants,
   },
+  /**
+   * The node graph view alone carries a second, narrower control: whether
+   * each node's description is shown. It rides inside that view's panel, so
+   * it is only ever on screen in the view it belongs to. Both states read
+   * the same `workflow.edges` and `layerOf`; the control changes how much
+   * of `workflow.steps[].body` is drawn, never the graph.
+   */
+  nodeDetail: {
+    caption: "Node detail",
+    on: "Description",
+    off: "Name only",
+  },
   layersCaption: "Package layers",
   /**
    * The layers, top to bottom, roughly in the order a request travels. The

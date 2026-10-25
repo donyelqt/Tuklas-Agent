@@ -192,13 +192,21 @@ Export: `architecture`
 | `baseline.status` | The comparison is run and its reports are published. The outcome is undecided. |
 | `footnote` | The node tree is written at ingest and read through the tools. The agent writes no document rows of its own: its only database write is the ask-trace row that records the run. |
 
-`diagram.variants`, three entries. The `id` is the variant key the component reads, and the `label` is the name shown on the switcher:
+| `diagram.variants`, three entries. The `id` is the variant key the component reads, and the `label` is the name shown on the switcher:
 
 | `id` | `label` |
 |---|---|
 | node-graph | Node graph |
 | pipeline-rail | Pipeline rail |
 | terminal-graph | Terminal graph |
+
+| Field | String |
+|---|---|
+| `nodeDetail.caption` | Node detail |
+| `nodeDetail.on` | Description |
+| `nodeDetail.off` | Name only |
+
+`nodeDetail` drives the narrower control inside the node graph view only, which toggles whether `workflow.steps[].body` is drawn under each node name. The other two views carry no such control.
 
 All three variants draw the same graph from the same `workflow.edges` table and the same `layerOf` map, so the switcher changes the drawing and not the data.
 
