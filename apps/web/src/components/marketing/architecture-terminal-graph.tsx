@@ -28,14 +28,16 @@ import { architecture } from "@/lib/copy";
 const IW = 19; // box interior width; fits the longest node name
 const BOX_W = IW + 2; // box width including both borders
 const RAIL_X = 0; // the retry rail runs down column 0
-const SIDE_X = 2; // the side box (broaden_search) left border
+const SIDE_X = 4; // the side box (broaden_search) left border
 const MAIN_X = 27; // the main chain left border
 const W = MAIN_X + BOX_W; // rows are padded to this width
 
-/**
- * The main-chain column. The side box occupies columns 0..22, the connector
- * between the two boxes occupies 23..25, and the main box starts at 27 so a
- * one-column gutter keeps the connector clear of both borders.
+/*
+ * The side box starts at column 4, not 2. The rail runs at column 0, the
+ * return edge's arrival notch takes column 3, and the box's own left border
+ * takes column 4: three distinct glyphs in three distinct columns. At a
+ * one-column gutter the notch and the border collided and the rail's corner
+ * read as a smear against the box edge.
  */
 
 /* --- colour roles ------------------------------------------------------- */
