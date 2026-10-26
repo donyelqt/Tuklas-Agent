@@ -32,7 +32,14 @@ import { architecture } from "@/lib/copy";
 
 const NODE_W = 16.8; // percent of canvas width
 const NODE_H_DESCRIBED = 21; // percent of canvas height; carries name and body
-const NODE_H_COMPACT = 11; // percent of canvas height; index, name and layer only
+/*
+ * Compact is the geometry the node graph used before descriptions were
+ * added: three short lines, index, name and layer id, in a 9-percent box.
+ * Raising it to make room for a layer id was the wrong reading of that
+ * layout; the reference fits all three lines inside 9 percent, and a taller
+ * box is what made the chips look oversized beside the described view.
+ */
+const NODE_H_COMPACT = 9;
 const RETRY_EXTRA_H = 6; // the retry node's body is longer, so its box is taller
 
 /*
@@ -53,16 +60,45 @@ const ROW = [
   { x: 60.8, y: 78 },
 ];
 
+/*
+ * The compact layout keeps its own row table because the described one puts
+ * the retry pair far apart. That separation is right when the boxes carry
+ * paragraphs and the reader follows a serpentine; it reads as an empty
+ * crossing when the boxes are chips, since the return edge then travels the
+ * full width through nothing. Here the retry pair sits side by side, so the
+ * loop is a local mark beside the gate.
+ *
+ * The row positions and box height are the ones the node graph used before
+ * descriptions were added, so the name-only view looks like the version it
+ * replaced rather than a compressed copy of the described one.
+ */
+const ROW_COMPACT = [
+  { x: 2, y: 5 },
+  { x: 21.6, y: 5 },
+  { x: 40.8, y: 5 },
+  { x: 60.4, y: 5 },
+  { x: 79.6, y: 5 },
+  { x: 80.4, y: 43 },
+  { x: 2, y: 43 },
+  { x: 80.4, y: 81 },
+  { x: 60.8, y: 81 },
+];
+
 const heightFor = (i: number, compact: boolean): number => {
   const step = architecture.workflow.steps[i];
-  const extra = step?.branch === true ? RETRY_EXTRA_H : 0;
   const base = compact ? NODE_H_COMPACT : NODE_H_DESCRIBED;
+  /* The retry node carries the longest body of the nine, so in the described
+   * layout its box is taller to hold the text. Compact boxes carry no body,
+   * so the extra height only makes that one box dwarf its neighbours; the
+   * name-only layout draws all nine boxes the same height, as it did before
+   * descriptions were added. */
+  const extra = !compact && step?.branch === true ? RETRY_EXTRA_H : 0;
   return base + extra;
 };
 
-/* Edge routing uses the described geometry, which is the layout the prototype
- * matches. Its coordinates feed both renders, so the two layouts share one
- * edge model and cannot disagree about which node an edge connects. */
+/* Edge routing follows the layout being drawn. Each render passes its own
+ * rows and canvas height, so the two layouts cannot disagree about which
+ * node an edge connects. */
 
 interface Bounds {
   x1: number;
@@ -73,25 +109,31 @@ interface Bounds {
   cy: number;
 }
 
-const nodeBounds = (i: number): Bounds => {
-  const p = ROW[i]!;
-  const h = heightFor(i, false);
+const nodeBounds = (
+  i: number,
+  rows: { x: number; y: number }[],
+  canvasH: number,
+  compact: boolean
+): Bounds => {
+  const p = rows[i]!;
+  const h = heightFor(i, compact);
   const x1 = p.x * 10;
-  const y1 = p.y * 6;
+  const y1 = (p.y / 100) * canvasH;
+  const boxH = (h / 100) * canvasH;
   return {
     x1,
     y1,
     x2: x1 + NODE_W * 10,
-    y2: y1 + h * 6,
+    y2: y1 + boxH,
     cx: x1 + NODE_W * 5,
-    cy: y1 + h * 3,
+    cy: y1 + boxH * 0.5,
   };
 };
 
 // Derive an SVG path between two nodes from their canvas coordinates.
-function edgeD(from: number, to: number): string {
-  const a = nodeBounds(from);
-  const b = nodeBounds(to);
+function edgeD(from: number, to: number, rows: typeof ROW, canvasH: number, compact: boolean): string {
+  const a = nodeBounds(from, rows, canvasH, compact);
+  const b = nodeBounds(to, rows, canvasH, compact);
   const sameRow = Math.abs(a.cy - b.cy) < 1;
   const sameCol = Math.abs(a.cx - b.cx) < 1;
 
@@ -165,7 +207,7 @@ function NodeBoxes({
   return (
     <>
       {steps.map((step, i) => {
-        const p = ROW[i]!;
+        const p = (compact ? ROW_COMPACT : ROW)[i]!;
         const layerId = layerOf[step.name] ?? "";
         const isRetry = step.branch === true;
         return (
@@ -221,9 +263,16 @@ function NodeBoxes({
   );
 }
 
-function Edges(): React.JSX.Element {
+function Edges({
+  compact,
+  canvasH,
+}: {
+  compact: boolean;
+  canvasH: number;
+}): React.JSX.Element {
   const steps = architecture.workflow.steps;
   const edges = architecture.workflow.edges;
+  const rows = compact ? ROW_COMPACT : ROW;
   return (
     <>
       <defs>
@@ -259,7 +308,7 @@ function Edges(): React.JSX.Element {
         return (
           <path
             key={`${edge.from}-${edge.to}`}
-            d={edgeD(fi, ti)}
+            d={edgeD(fi, ti, rows, canvasH, compact)}
             fill="none"
             stroke={isRetry ? "var(--color-accent)" : "var(--color-ink-4)"}
             strokeWidth="1.5"
@@ -336,13 +385,16 @@ export function ArchitectureNodeGraph(): React.JSX.Element {
                 aria-hidden="true"
                 className="absolute inset-0 h-full w-full"
               >
-                <Edges />
+                <Edges compact={false} canvasH={600} />
               </svg>
               <NodeBoxes steps={steps} layerOf={layerOf} compact={false} />
             </div>
           </div>
 
           <div data-node-detail="off" className="relative h-full">
+            {/* The compact canvas keeps the described one's proportions, so a
+                compact box is the height the pre-description node graph drew
+                rather than a shrunken copy of the described box. */}
             <div className="relative" style={{ aspectRatio: "1000/600" }}>
               <svg
                 viewBox="0 0 1000 600"
@@ -350,7 +402,7 @@ export function ArchitectureNodeGraph(): React.JSX.Element {
                 aria-hidden="true"
                 className="absolute inset-0 h-full w-full"
               >
-                <Edges />
+                <Edges compact canvasH={600} />
               </svg>
               <NodeBoxes steps={steps} layerOf={layerOf} compact />
             </div>
