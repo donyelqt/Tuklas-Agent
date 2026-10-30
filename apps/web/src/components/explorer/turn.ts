@@ -18,15 +18,12 @@ import type { AskResponse, Step } from "./types";
 export interface AskTurn {
   /** Stable identity within the transcript, used as the React key. */
   id: number;
-  /** The document the question was asked against. */
   documentId: string;
-  /** The question as it was asked, trimmed. */
   question: string;
   /** The streamed agent steps, in the order the server sent them. */
   steps: Step[];
   /** The replayed token text, shown only while the run is unfinished. */
   tokenText: string;
-  /** The terminal `done` event's AskResponse, or null if none arrived. */
   response: AskResponse | null;
   status: "asking" | "done" | "error";
   /** The failure message, set only when `status` is `error`. */

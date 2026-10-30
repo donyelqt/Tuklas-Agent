@@ -43,7 +43,6 @@ export interface TreeNode {
   children: TreeNode[];
 }
 
-/** The tree response: a root plus the root's children. */
 export interface TreeResponse {
   root: TreeNode;
   children: TreeNode[];
