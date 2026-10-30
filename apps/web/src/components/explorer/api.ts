@@ -118,7 +118,6 @@ export async function fetchTree(
   return (await response.json()) as TreeResponse;
 }
 
-/** `GET /v1/nodes/{id}/source` (api.md section 3). */
 export async function fetchNodeSource(
   nodeId: string,
   signal: AbortSignal,
@@ -260,7 +259,6 @@ export interface AskStreamHandlers {
   onStep(step: Step): void;
   /** One `token` event. The deltas are a replay that arrives in a burst. */
   onToken(text: string): void;
-  /** The terminal `done` event, carrying the authoritative AskResponse. */
   onDone(response: AskResponse): void;
 }
 
