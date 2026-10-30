@@ -1,8 +1,6 @@
 import { pipeline } from "@/lib/copy";
 
-/**
- * Seven steps as a ledger. One band background, rules between rows, no cards.
- */
+/** Seven-step ledger: one band background, rules between rows, no cards. */
 export function Pipeline(): React.JSX.Element {
   return (
     <section
