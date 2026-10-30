@@ -38,7 +38,6 @@ export interface ExplorerFailure {
   status: number | null;
 }
 
-/** The thrown carrier of an `ExplorerFailure`. */
 export class ExplorerError extends Error {
   readonly failure: ExplorerFailure;
 
@@ -52,7 +51,6 @@ export class ExplorerError extends Error {
 const UNREACHABLE_CODE = "API_UNREACHABLE";
 const UNEXPECTED_CODE = "UNEXPECTED_RESPONSE";
 
-/** Map a thrown transport error onto the unreachable failure. */
 export function toUnreachableFailure(error: unknown): ExplorerFailure {
   const reason = error instanceof Error ? error.message : String(error);
   return {
@@ -135,7 +133,6 @@ export async function fetchNodeSource(
   return (await response.json()) as NodeSource;
 }
 
-/** One parsed SSE frame: the event name and its JSON payload. */
 interface SseFrame {
   event: string;
   data: string;
@@ -258,7 +255,6 @@ function toStep(event: string, payload: unknown): Step | null {
   }
 }
 
-/** The handlers the stream calls as it goes. */
 export interface AskStreamHandlers {
   /** A live step of the frozen sequence, in the order the server sent it. */
   onStep(step: Step): void;
