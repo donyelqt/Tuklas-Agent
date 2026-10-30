@@ -10,28 +10,18 @@ import type { AskTurn } from "./turn";
 import type { DocumentSummary, NodeSource } from "./types";
 
 /**
- * The chat view: the explorer's question-and-answer runtime as a full-screen
- * chat.
+ * The chat view: the explorer's Q&A runtime as a full-screen chat.
  *
- * It is the same tool as `answer-pane.tsx`, not a different one. The
- * streamed steps, the refusal, the cited answer, the metrics and the
- * disclaimer render through `answer-body.tsx`, which the answer pane also
- * uses, so one run of the agent reads the same in both views.
+ * Same tool as `answer-pane.tsx` — streamed steps, refusal, cited answer,
+ * metrics and disclaimer all render through `answer-body.tsx`, so one run
+ * reads the same in both views. Chat distinguishes itself by:
+ * 1. a TRANSCRIPT list — previous turns stay while the next is asked;
+ *    the explorer shows only the latest.
+ * 2. inline source on citation click — the chat has no source pane.
+ * 3. a docked question input that clears on send.
  *
- * What makes this a chat rather than a second answer pane:
- *
- * 1. It keeps a TRANSCRIPT. The turns are a list, so a previous question
- *    and its answer stay on screen while the next one is asked. The
- *    explorer shows the latest turn only.
- * 2. A citation opens the source INLINE, because the chat has no source
- *    pane beside it. The source is the same node the explorer would show,
- *    fetched by the same call.
- * 3. The question input is docked at the bottom and clears after a
- *    question is sent.
- *
- * It is document-scoped because the API is: `streamAsk` requires a
- * `document_id`, so the chat asks about the active document and the
- * document selector stays visible in this mode.
+ * Document-scoped: `streamAsk` requires a `document_id`, so the chat asks
+ * about the active document and the selector stays visible.
  */
 export function ChatView({
   documentId,

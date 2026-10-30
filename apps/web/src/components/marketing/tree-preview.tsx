@@ -9,8 +9,7 @@ import { problem } from "@/lib/copy";
  * II / Chapter 1 path with Articles 1318, 1319 and 1320 as siblings, the
  * example the product docs use throughout.
  *
- * Static Server Component: no client directive, no state, no effects, no
- * event handlers. Rendering it twice produces identical markup.
+ * Static Server Component (no client directive, state, effects, or handlers); deterministic.
  */
 
 type NodeType = "book" | "title" | "chapter" | "section" | "article";

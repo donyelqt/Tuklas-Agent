@@ -3,46 +3,25 @@ import { architecture } from "@/lib/copy";
 /**
  * The compiled graph, drawn as terminal box-drawing ASCII.
  *
- * The layout is DERIVED, not composed. Every node box, every connector and
- * both retry edges are placed by walking `architecture.workflow.edges` and
- * `architecture.layerOf`, so the drawing cannot drift from the compiled
- * graph in apps/api/agent/graph.py.
+ * Layout is DERIVED, not composed: every box, connector and retry edge is
+ * placed by walking `architecture.workflow.edges` and `architecture.layerOf`,
+ * so the drawing cannot drift from apps/api/agent/graph.py.
  *
- * What this fixes, and why the previous drawing could not be fixed by
- * adjusting it (measured: 49 columns wide, 43 rows tall, 70.7% empty space,
- * because a 21-character box for `expand_or_backtrack` forced 27 unused
- * columns beside the whole chain and the retry rail then ran 27 columns
- * through them. Any back edge in that gap is a long line crossing nothing,
- * which is why patching coordinates never converged):
+ * Measured fix (was 49x43, 70.7% empty): the flow chain runs vertically in one
+ * column; THE RETRY PAIR (sufficiency_gate + broaden_search) sits side by side
+ * one 6-column corridor apart, so the retry bracket is 6 columns wide, not 27;
+ * the return edge runs as a magenta bus through that same corridor. No line crosses
+ * empty space. The reader follows gate -> broaden_search -> inspect -> gate as a
+ * closed loop.
  *
- *   - the flow chain runs vertically in one column, unbroken,
- *   - THE RETRY PAIR, sufficiency_gate and broaden_search, sits SIDE BY SIDE
- *     at the same height: the gate keeps its place in the chain column and
- *     the bridge box takes the column one corridor to its right, so the two
- *     boxes are ADJACENT and separated by one 6-column corridor,
- *   - the retry loop's horizontal extent is therefore a SHORT bracket across
- *     6 columns between two ADJACENT boxes, not a 27-column rail,
- *   - the return, broaden_search -> inspect, runs as a magenta bus through
- *     that same corridor, so no line ever crosses a wide empty range,
- *   - the reader follows gate -> broaden_search -> inspect -> ... -> gate as
- *     a closed loop instead of inferring it from spacing.
+ * NOTE ON COLUMN ORDER. The brief asks for the pair "in a left column" with the chain
+ * right. A literal reading reserves 27 dead columns above the pair (offline sweep:
+ * 57.9% empty best-case), so the columns are swapped — gate left, bridge right —
+ * so the second column exists only where the graph needs a second box.
  *
- * NOTE ON THE COLUMN ORDER. The brief asks for the pair "in a left column"
- * with the chain in a right one. A literal reading reserves the left column
- * for the drawing's full height, which is exactly the 27 dead columns the
- * shipped drawing has: every chain row above the pair would carry 21 columns
- * of nothing, and the measurement lands back above 60% empty space (an
- * offline sweep scored that arrangement 57.9% at best). The columns are
- * swapped instead, gate left and bridge right, so the second column exists
- * ONLY where the graph actually needs a second box. Both measured properties
- * are then true at once: the pair is adjacent at one height, and no row of
- * the art is padded with space it does not draw into.
- *
- * Colour roles (DESIGN.md section 7, the architecture section contract):
- *   - readable characters use ink-9 (node name) or ink-7 (layer id),
- *   - box-drawing rules are ink-5 decoration only,
- *   - both retry edges are the ONLY magenta in the drawing and both carry
- *     the RETRY label.
+ * Colour roles (DESIGN.md §7): ink-9 for node names, ink-7 for layer ids, ink-5
+ * for box-drawing rules, and magenta for both retry edges (the ONLY magenta, both
+ * carrying the RETRY label).
  *
  * No client code: static markup built at render time on the server.
  */
