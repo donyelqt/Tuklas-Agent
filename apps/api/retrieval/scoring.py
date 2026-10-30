@@ -41,23 +41,12 @@ WEIGHT_DEFAULTS: dict[str, float] = {
     "ref": 1.0,
     "hier": 1.0,
 }
+#: The ONLY bonuses this layer applies. retrieval.md §3 names phrase/fuzzy
+#: bonuses and says they are off by default; the §3 formula has exactly five
+#: terms, and this module implements neither. A config claiming one would
+#: record what was ASKED for, not what was APPLIED — the failure this
+#: constant prevents by giving the truth a single checkable source.
 
-#: The bonus flags the retrieval layer ACTUALLY applies.
-#:
-#: retrieval.md §3 names two bonuses - the phrase bonus and the fuzzy
-#: bonus - and says they are "off by default and enabled only via tuning".
-#: It does not define their magnitude, their component, or how they enter
-#: the §3 formula, and this layer implements NEITHER of them. The §3
-#: formula has exactly five terms and this module does not add a sixth:
-#: a bonus term with an invented weight would be an unrecorded design
-#: decision inside a scoring function, and the numbers this harness
-#: publishes would then carry a constant nobody chose on the record.
-#:
-#: The constant exists so that the truth about the bonuses lives in ONE
-#: place and the run config can be checked AGAINST it. A config that
-#: claims a bonus this layer does not apply is a config that records what
-#: was ASKED for and not what was APPLIED, which is the failure this
-#: whole value is here to prevent.
 APPLIED_BONUS_FLAGS: dict[str, bool] = {
     "phrase": False,
     "fuzzy": False,
@@ -102,24 +91,16 @@ _TOKENIZER_VERSION = "fold-alnum-v2"
 
 @dataclass(frozen=True)
 class LexPathInfo:
-    """WHICH lex source produced the scores of one ``score_nodes`` call.
+    """WHICH lex source produced one score_nodes call, and WHY reported not re-derived.
 
-    The choice between the per-document BM25 artifact and the FTS5
-    fallback is made INSIDE this module, at scoring time — it depends on
-    the artifact's presence AND on its tokenizer version (a stale
-    artifact falls back too). A caller who re-derived the fact by
-    re-stat-ing ``bm25.json`` could disagree with what actually ran, so
-    the layer REPORTS the decision instead: every ``ScoredNode`` carries
-    the info of the call that produced it, and the evaluation harness
-    records the rendered form in the run row.
-
-    ``path`` is one of the two ``LEX_PATH_*`` constants below.
-    ``tokenizer_version`` and ``artifact_sha256_16`` are facts about the
-    persisted artifact and are set only on the per-document path. The
-    hash is sha256 over the artifact's FILE CONTENT, truncated to 16 hex
-    chars: it is content-addressed, so two reads of the same artifact
-    hash the same regardless of mtime, and it changes only when the
-    artifact's content changes.
+    The per-document-vs-FTS5 choice is made inside this module at scoring time
+    (artifact presence + tokenizer version). Letting a caller re-derive it by
+    re-stat-ing bm25.json could disagree with what ran, so every ScoredNode
+    carries the info and the harness records it. path is one of the LEX_PATH_*
+    constants. tokenizer_version and artifact_sha256_16 are facts about the
+    persisted artifact (per-document path only); the hash is sha256 over the
+    artifact's FILE CONTENT, truncated to 16 hex chars — content-addressed so
+    mtime can't lie, changing only when content does.
     """
 
     path: str
@@ -127,14 +108,13 @@ class LexPathInfo:
     artifact_sha256_16: str | None = None
 
 
-#: The lex path where the document's own persisted rank-bm25 model
-#: (``data/indexes/{doc_id}/bm25.json``) produced the scores.
+#: The lex path where the document's persisted rank-bm25 model
+#: (data/indexes/{doc_id}/bm25.json) produced the scores.
 LEX_PATH_PER_DOCUMENT_BM25 = "per-document-bm25"
 
-#: The lex path where no usable artifact was found (absent, or persisted
-#: under a stale tokenizer version) and the scores came from FTS5's
-#: bm25() over the MATCH prefilter. FTS5's N/avgdl are TABLE-GLOBAL, so
-#: scores on this path can drift when another document is ingested;
+#: The lex path where no usable artifact was found (absent, or stale
+#: tokenizer) and scores came from FTS5's bm25() over the MATCH prefilter.
+#: FTS5's N/avgdl are TABLE-GLOBAL, so this path drifts on ingest;
 #: reproducibility holds only until the next ingest.
 LEX_PATH_FTS5_FALLBACK = "fts5-fallback"
 
@@ -433,9 +413,7 @@ def _title_scores(
     qwords = set(tokenize_for_bm25(query)) - query_labels
     if not qwords:
         return {}
-    rows = conn.execute(
-        "SELECT id, title FROM nodes WHERE document_id = ?", (doc_id,)
-    ).fetchall()
+    rows = conn.execute("SELECT id, title FROM nodes WHERE document_id = ?", (doc_id,)).fetchall()
     raw: dict[str, float] = {}
     for row in rows:
         title_words = set(tokenize_for_bm25(str(row["title"])))
@@ -522,17 +500,12 @@ def _ident_lookup(
         if value >= 1.0 and _row_owns(row):
             owners.setdefault(label, []).append(node_id)
     identified = {
-        node_id
-        for label, node_ids in owners.items()
-        if len(node_ids) == 1
-        for node_id in node_ids
+        node_id for label, node_ids in owners.items() if len(node_ids) == 1 for node_id in node_ids
     }
     return raw, identified
 
 
-def _reachable_within_2(
-    conn: sqlite3.Connection, doc_id: str, seeds: set[str]
-) -> set[str]:
+def _reachable_within_2(conn: sqlite3.Connection, doc_id: str, seeds: set[str]) -> set[str]:
     """Node ids reachable within 2 references_ hops from any seed.
 
     Edges are resolved (target_node_id NOT NULL) and scoped to this document.
@@ -626,7 +599,8 @@ def score_nodes(
             title = _title_scores(conn, real_doc_id, query, query_label_tokens)
 
         lex_top_sorted = sorted(
-            lex.items(), key=lambda kv: (-kv[1], by_id[kv[0]]["depth"], by_id[kv[0]]["position"], kv[0])
+            lex.items(),
+            key=lambda kv: (-kv[1], by_id[kv[0]]["depth"], by_id[kv[0]]["position"], kv[0]),
         )
         lex_top5 = {node_id for node_id, _ in lex_top_sorted[:_LEX_TOP_FOR_REF]}
         lex_top3 = {node_id for node_id, _ in lex_top_sorted[:_LEX_TOP_FOR_HIER]}
