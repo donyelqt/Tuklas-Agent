@@ -20,14 +20,12 @@ import { TreePane } from "./tree-pane";
 import type { AskTurn } from "./turn";
 import type { DocumentSummary, NodeSource, TreeNode } from "./types";
 
-/** The tree of one document at one depth, tagged with what produced it. */
 interface TreeState {
   documentId: string;
   depth: number;
   root: TreeNode;
 }
 
-/** The source of one node, tagged with the node it belongs to. */
 interface SourceState {
   nodeId: string;
   source: NodeSource;
@@ -171,7 +169,6 @@ export function Explorer() {
     return () => controller.abort();
   }, []);
 
-  // The tree of the active document.
   useEffect(() => {
     if (documentId === "") {
       return;

@@ -67,7 +67,6 @@ function NodeRow({
   );
 }
 
-/** One row of the tree, with its children nested under it. */
 function NodeList({
   nodes,
   selectedId,
@@ -91,7 +90,6 @@ function NodeList({
   );
 }
 
-/** Whether the tree contains the node the source pane is showing. */
 function containsNode(node: TreeNode, nodeId: string): boolean {
   if (node.id === nodeId) {
     return true;
