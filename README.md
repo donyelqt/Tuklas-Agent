@@ -45,22 +45,18 @@ legal advice, and it has no users, no release, and no support.
   first request. The answer is grounded strictly on the retrieved evidence,
   with a refusal path when the sufficiency gate fails and an advice-phrase
   blocklist on the way out.
-- **Baseline.** A dense-vector arm lives in `experiments/vector/` and is
-  imported only by the evaluation package, so the comparison is real and the
-  primary path stays vectorless. CI enforces this with
-  `scripts/check_no_vectors.py`. It is not a second system: the dense arm
-  runs the **same agent graph, the same planner, the same generation model,
-  the same judge and the same metric**, with one substitution - its
-  `search_nodes` returns a dense ranking instead of the vectorless one. A
-  second agent would differ in more than retrieval, which is the confound
-  the experiment forbids.
+- **Baseline.** A dense-vector arm lives in `experiments/vector/`, imported
+  only by the evaluation package, so the primary path stays vectorless (CI
+  enforces this with `scripts/check_no_vectors.py`).
 
-  What the substitution does **not** do is make this a one-variable swap.
-  The two ranking functions do not draw on the same signals: the vectorless
-  arm scores five components and orders identified provisions first, over
-  the whole 2,579-node tree; the dense arm has **one** component - a
+  The dense arm runs the same agent graph, planner, generation model, judge
+  and metric as Tuklas, with one substitution: its `search_nodes` returns a
+  dense ranking instead of the vectorless one. That is not a one-variable
+  swap — the ranking functions draw on different signals: the vectorless arm
+  scores five components and orders identified provisions first, over the
+  whole 2,579-node tree; the dense arm has **one** component — a
   min-max-normalised cosine with no BM25, no sparse term and no hybrid
-  fusion, `ident`/`title`/`ref`/`hier` hard-coded to 0 - over the 2,392
+  fusion, `ident`/`title`/`ref`/`hier` hard-coded to 0 — over the 2,392
   lexical nodes, with no identifier precedence. So the dense arm cannot name
   a provision and cannot reach the container nodes the vectorless arm's
   channels score. The published report says so at length ("THE ARMS ARE NOT
@@ -91,9 +87,9 @@ legal advice, and it has no users, no release, and no support.
 ## What the measured runs show
 
 The published reports are `data/eval-reports/v1-test.md` (48 questions) and
-`data/eval-reports/v1-dev.md` (24 questions). Each publishes both arms'
-numbers and a store-state note; `data/eval-reports/README.md` is the index
-and says what each file is.
+`data/eval-reports/v1-dev.md` (24 questions); `data/eval-reports/README.md`
+is the index. The table below shows both arms' measured numbers — read the
+reports for the full store-state notes and per-category breakdown.
 
 | Run | Arm | recall@5 | recall@1 | mrr@10 | Answerable questions |
 |---|---|---|---|---|---|
