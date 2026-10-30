@@ -57,23 +57,12 @@ export function HeroRail() {
       return;
     }
     /*
-     * The observer callback only receives the entries whose intersection
-     * state CHANGED, so picking the "best" entry from that batch is wrong:
-     * a section scrolling out of view arrives in the same batch and can win
-     * the comparison, which is what pinned the indicator to a stale section.
-     *
-     * Instead every callback recomputes the active section from the live
-     * rects of all six sections. The rule is positional and direction
-     * independent: the active section is the last one whose top has risen
-     * above the activation line (35% of the viewport down). Before the
-     * first section reaches that line the first section is active, which is
-     * the section the reader is about to reach at the top of the page.
-     *
-     * The activation line sits strictly inside the observer band
-     * ("-30% 0px -60% 0px", i.e. 30%-40% of the viewport) so that every
-     * crossing of the line is guaranteed to also cross the band, which is
-     * what makes the observer fire. With the line outside the band the
-     * update lands one section late.
+     * The callback only gets changed entries, so picking "best" from the
+     * batch is wrong — a scrolling-out section can win and pin a stale active.
+     * Instead recompute from live rects: active = last section whose top has
+     * risen above the line (35% of viewport). The line sits inside the band
+     * ("-30% 0px -60% 0px") so every line crossing also crosses the band —
+     * a line outside the band updates one section late.
      */
     const ACTIVATION_RATIO = 0.35;
     const observer = new IntersectionObserver(
