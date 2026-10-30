@@ -57,38 +57,31 @@ interface SourceState {
 export function Explorer() {
   const [documents, setDocuments] = useState<DocumentSummary[] | null>(null);
   const [documentId, setDocumentId] = useState("");
-  // The tree endpoint counts LEVELS with the root at level 1
-  // (apps/api/ingestion/service.py `_build_tree_node`), so the `depth=3`
-  // in the api.md example returns document -> title -> chapter and never
-  // reaches the articles. The explorer's tree pane is for the
-  // Book/Title/Chapter/Article structure, so it asks for the level that
-  // carries it and exposes the others in the depth control.
+  // Tree endpoint counts levels with root at level 1, so api.md's depth=3
+  // returns document -> title -> chapter and misses articles. This pane
+  // needs the Article level, so it asks for depth 5 and exposes the rest
+  // in the depth control.
   const [depth, setDepth] = useState(5);
   const [treeState, setTreeState] = useState<TreeState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sourceState, setSourceState] = useState<SourceState | null>(null);
   const [question, setQuestion] = useState("");
-  // The ask runtime is one run at a time, and the run is a TURN in the
-  // transcript. The chat keeps the whole transcript; the explorer's answer
-  // pane shows the latest turn. Keeping the turns in one list is what lets
-  // the two views share one runtime instead of keeping two copies of the
-  // same run.
+  // One ask runtime, two views: the chat keeps the whole transcript; the
+  // explorer pane shows the latest turn. One list is what lets them share it.
   const [turns, setTurns] = useState<AskTurn[]>([]);
   const [asking, setAsking] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [apiUnreachable, setApiUnreachable] = useState(false);
-  // The header is a mode switcher, not a label: the same question-and-answer
-  // runtime renders as the three-pane explorer or as a full-screen chat.
-  // Both panels stay mounted and the inactive one carries `hidden`, so a
-  // tab's `aria-controls` always names an element that exists. The
-  // discovery UI is the same in both modes.
+  // The header is a mode switcher, not a label: the same runtime renders as
+  // the three-pane explorer or a full-screen chat. Both panels stay mounted;
+  // the inactive one is `hidden` so a tab's aria-controls always names a real
+  // element. The discovery UI is identical in both modes.
   const [mode, setMode] = useState<"explorer" | "chat">("explorer");
-  // The explorer's theme. The first client render reads the theme from the
-  // DOM, because the pre-paint script on this route may already have set
-  // `data-explorer-theme` before this module loaded. The server render has
-  // no DOM, so it defaults to dark; the html element carries
-  // suppressHydrationWarning so the one-frame icon difference is silent.
+  // First client render reads the theme from the DOM, because the pre-paint
+  // script may already have set data-explorer-theme before this module loads.
+  // Server render has no DOM, so it defaults to dark; suppressHydrationWarning
+  // silences the one-frame icon gap.
   const initialTheme: "dark" | "light" = (() => {
     if (typeof window === "undefined") {
       return "dark";
