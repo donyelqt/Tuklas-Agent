@@ -150,6 +150,40 @@ class CitationClaim:
     sentence: str
 
 
+def split_sentences(text: str) -> list[str]:
+    """The sentences of a text, by the one splitter this harness uses.
+
+    The splitter is exported because the sentence is the unit of the judge,
+    of the citation check and of the v2 verification: a second splitter
+    would let the same answer be segmented two ways, and a sentence one
+    measure sees would be a sentence another measure does not.
+    """
+    if not text:
+        return []
+    return [part.strip() for part in _SENTENCE_RE.split(text) if part.strip()]
+
+
+def citation_markers(text: str) -> list[int]:
+    """The citation numbers a text names, with a range expanded.
+
+    ``[3]`` names 3 and ``[1-5]`` names 1, 2, 3, 4 and 5, because a range
+    marker attaches the sentence to EVERY node in it.
+    """
+    markers: list[int] = []
+    for match in _MARKER_RE.finditer(text):
+        first = int(match.group(1))
+        last = int(match.group(2)) if match.group(2) else first
+        if last < first:
+            first, last = last, first
+        markers.extend(range(first, last + 1))
+    return markers
+
+
+def strip_citation_markers(text: str) -> str:
+    """The text with every citation marker removed."""
+    return _MARKER_RE.sub(" ", text).strip()
+
+
 def split_citation_claims(answer_markdown: str) -> list[CitationClaim]:
     """The (marker, sentence) pairs of an answer's citation claims.
 
@@ -162,25 +196,14 @@ def split_citation_claims(answer_markdown: str) -> list[CitationClaim]:
     in would let the checker's comparison be helped by the very number it
     is supposed to be checking.
     """
-    if not answer_markdown:
-        return []
     claims: list[CitationClaim] = []
-    for raw in _SENTENCE_RE.split(answer_markdown):
-        sentence = raw.strip()
-        if not sentence:
-            continue
-        markers: list[int] = []
-        for match in _MARKER_RE.finditer(sentence):
-            first = int(match.group(1))
-            last = int(match.group(2)) if match.group(2) else first
-            if last < first:
-                first, last = last, first
-            markers.extend(range(first, last + 1))
+    for sentence in split_sentences(answer_markdown):
+        markers = citation_markers(sentence)
         if not markers:
             continue
         if len(markers) > MAX_MARKERS_PER_SENTENCE:
             continue
-        text = _MARKER_RE.sub(" ", sentence).strip()
+        text = strip_citation_markers(sentence)
         if not text:
             continue
         for marker in markers:
@@ -212,11 +235,14 @@ __all__ = [
     "DEFAULT_FUZZY_THRESHOLD",
     "CitationClaim",
     "MAX_MARKERS_PER_SENTENCE",
+    "citation_markers",
     "citation_supports",
     "claim_fraction",
     "claim_matches",
     "matched_claims",
     "normalize",
     "split_citation_claims",
+    "split_sentences",
+    "strip_citation_markers",
     "token_set_ratio",
 ]
