@@ -695,6 +695,44 @@ DENSE_GATE_NOTE = (
     "unanswerable questions there were to refuse."
 )
 
+#: The note about what the v2 VERIFICATION number MEASURES.
+#:
+#: The v2 layer checks each answer's claims against the cited nodes with
+#: three mechanical rules - quantity, article identifier and polarity - plus
+#: the v1 scorer's support check, and a strict gate over the whole answer.
+#: It is a LOWER BOUND on answer quality for three reasons:
+#:
+#: * the support check is the same string rule that dominates the citation
+#:   metric's remainder, so a proposition ABOUT a provision cannot be matched
+#:   to the provision's own words by a string rule;
+#: * a check the evidence cannot decide scores neither a pass nor a
+#:   mismatch, so a node that states no quantity removes the number check
+#:   rather than passing it, and an undecided check is reported as
+#:   ``answer_semantic_uncertainty`` rather than being folded silently into
+#:   the pass rate;
+#: * the gate does NOT require a gold node to be cited. Whether the right
+#:   provision was retrieved is a retrieval question, and it is reported
+#:   beside the gate as the run's Recall@5; folding it into ``answer_verified``
+#:   would make one number answer two questions.
+#:
+#: The counts are TOTALS over the arm's answerable rows, and the two rates
+#: are averages over the same rows. An unanswerable row is excluded from the
+#: rates because it passes as a refusal, which is a property of the question
+#: rather than of the answer.
+V2_VERIFICATION_NOTE = (
+    "The numbers above are LOWER BOUNDS on answer quality. The support check "
+    "is a string rule, so a proposition ABOUT a provision cannot be matched to "
+    "the provision's own words: a claim the rule cannot match is most likely "
+    "the rule being strict. answer_semantic_uncertainty counts the rows whose "
+    "checks could NOT decide - a check the cited evidence is silent about "
+    "scores neither a pass nor a mismatch - so a low uncertainty rate is not a "
+    "high-confidence verdict either. The gate does NOT require a gold node to "
+    "be cited: whether the right provision was retrieved is a retrieval "
+    "question reported as Recall@5 above, and folding it into answer_verified "
+    "would make one number answer two questions."
+)
+
+
 
 #: The note about the INSTRUMENT and the STORE STATE, for a reader who holds
 #: an earlier report of the same split.
@@ -1097,6 +1135,44 @@ def _arm_lines(name: str, aggregates: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _verification_lines(name: str, verification: dict[str, Any]) -> list[str]:
+    """The v2 verification lines of one arm, over its ANSWERABLE rows."""
+    n = int(verification.get("n_answerable", 0))
+    lines: list[str] = [f"  arm {name}"]
+    if not n:
+        lines.append("    no answerable rows carried a verification record")
+        return lines
+    rate = verification.get("verified_rate")
+    if isinstance(rate, int | float):
+        lines.append(
+            f"    answer_verified: {_fmt(rate)} "
+            f"({verification.get('n_verified', 0)} of {n} answerable rows passed "
+            f"the strict gate)"
+        )
+    else:
+        lines.append("    answer_verified: n/a")
+    lines.append(
+        f"    claims: checks={verification.get('answer_claim_checks', 0)} "
+        f"supported={verification.get('answer_claims_supported', 0)} "
+        f"unsupported={verification.get('answer_claims_unsupported', 0)}"
+    )
+    lines.append(
+        f"    consistency: checks={verification.get('answer_consistency_checks', 0)} "
+        f"mismatches={verification.get('answer_consistency_mismatches', 0)}"
+    )
+    lines.append(
+        f"    citations unreferenced: {verification.get('answer_citations_unreferenced', 0)}"
+    )
+    n_uncertain = int(verification.get("n_semantic_uncertainty", 0))
+    lines.append(
+        f"    answer_semantic_uncertainty: {_fmt(n_uncertain / n)} "
+        f"({n_uncertain} of {n} rows had a check the evidence could not decide)"
+    )
+    version = verification.get("verification_version")
+    lines.append(f"    verification_version: {version}")
+    return lines
+
+
 def _category_lines(aggregates: dict[str, Any]) -> list[str]:
     """The per-category retrieval lines, per arm."""
     lines: list[str] = []
@@ -1391,6 +1467,26 @@ def render_report(
             )
         lines.append("")
         for line in _wrap(SPOT_CHECK_METHOD_NOTE, 74):
+            lines.append(f"  {line}")
+        lines.append("")
+    verification_by_arm = {
+        name: payload.get("verification")
+        for name, payload in aggregates.get("arms", {}).items()
+        if isinstance(payload, dict) and isinstance(payload.get("verification"), dict)
+    }
+    if verification_by_arm:
+        # The v2 verification only reaches a reader here. The layer has
+        # computed these numbers since PR #88; nothing printed them, so a
+        # reader of an earlier report could not tell that evaluation
+        # QUALITY was measured at all.
+        lines.append("THE V2 VERIFICATION (evaluation.md §4, verification-v2)")
+        for name in sorted(verification_by_arm):
+            record = verification_by_arm[name]
+            if record is None:
+                continue
+            lines.extend(_verification_lines(name, record))
+        lines.append("")
+        for line in _wrap(V2_VERIFICATION_NOTE, 74):
             lines.append(f"  {line}")
         lines.append("")
     lines.append("MEASURED LIMITATIONS")

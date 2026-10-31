@@ -43,6 +43,7 @@ absent is an unknown evaluation.
 from __future__ import annotations
 
 import json
+import sqlite3
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -59,6 +60,25 @@ def new_evaluation_id() -> str:
 def _now() -> str:
     """The row's timestamp, in UTC ISO-8601."""
     return datetime.now(UTC).isoformat()
+
+
+def _ensure_verification_column(conn: Any) -> None:
+    """Add the ``verification`` column if the store does not have it yet.
+
+    The frozen §8 DDL and the eval column migrations in
+    ``apps/api/ingestion/db.py`` predate this slice, so a store produced
+    by an earlier run has no such column. The column is nullable TEXT:
+    a row produced before this slice stores NULL, which reads back as
+    "no verification was recorded" rather than as an empty record.
+
+    The ALTER is idempotent (it catches the "duplicate column" error),
+    so a store that already has the column is untouched and a store that
+    does not gets exactly one addition.
+    """
+    try:
+        conn.execute("ALTER TABLE retrieval_runs ADD COLUMN verification TEXT")
+    except sqlite3.OperationalError:
+        return
 
 
 @dataclass
@@ -151,6 +171,7 @@ class RetrievalRun:
     judge_verdicts: str = "[]"
     answer_markdown: str = ""
     judge_prompt_version: str = ""
+    verification_record: dict[str, Any] | None = None
 
 
 def write_evaluation(
@@ -163,6 +184,7 @@ def write_evaluation(
     Returns the evaluation id.
     """
     with ingestion_db.connect(db_path) as conn:
+        _ensure_verification_column(conn)
         conn.execute(
             "INSERT INTO evaluation_runs (id, dataset, dataset_snapshot, config,"
             " config_id, code_version, model, backend, temperature, seed,"
@@ -207,9 +229,9 @@ def write_evaluation(
             " gold_hit, generation_latency_ms, total_latency_ms, tokens_in,"
             " tokens_out, tokens_source, tool_iterations, insufficient,"
             " citations_valid, citation_node_ids, claims_matched, claims_total,"
-            " faithfulness, judge_verdicts, answer_markdown, judge_prompt_version)"
+            " faithfulness, judge_verdicts, answer_markdown, judge_prompt_version, verification)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-            " ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     f"rr_{uuid.uuid4().hex[:12]}",
@@ -243,6 +265,11 @@ def write_evaluation(
                     row.judge_verdicts,
                     row.answer_markdown,
                     row.judge_prompt_version,
+                    (
+                        json.dumps(row.verification_record, sort_keys=True)
+                        if row.verification_record is not None
+                        else None
+                    ),
                 )
                 for row in rows
             ],
@@ -266,6 +293,7 @@ def write_evaluation_rows(db_path: str, rows: list[RetrievalRun]) -> None:
     if not rows:
         return
     with ingestion_db.connect(db_path) as conn:
+        _ensure_verification_column(conn)
         conn.executemany(
             "INSERT INTO retrieval_runs (id, query_id, algorithm, latency_ms,"
             " retrieved_nodes, weights, normalization, created_at, evaluation_id,"
@@ -273,9 +301,9 @@ def write_evaluation_rows(db_path: str, rows: list[RetrievalRun]) -> None:
             " gold_hit, generation_latency_ms, total_latency_ms, tokens_in,"
             " tokens_out, tokens_source, tool_iterations, insufficient,"
             " citations_valid, citation_node_ids, claims_matched, claims_total,"
-            " faithfulness, judge_verdicts, answer_markdown, judge_prompt_version)"
+            " faithfulness, judge_verdicts, answer_markdown, judge_prompt_version, verification)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-            " ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     f"rr_{uuid.uuid4().hex[:12]}",
@@ -309,6 +337,11 @@ def write_evaluation_rows(db_path: str, rows: list[RetrievalRun]) -> None:
                     row.judge_verdicts,
                     row.answer_markdown,
                     row.judge_prompt_version,
+                    (
+                        json.dumps(row.verification_record, sort_keys=True)
+                        if row.verification_record is not None
+                        else None
+                    ),
                 )
                 for row in rows
             ],
@@ -357,6 +390,16 @@ def _question_row(row: dict[str, Any]) -> dict[str, Any]:
                 row[key] = json.loads(raw)
             except json.JSONDecodeError:
                 row[key] = []
+    # The v2 verification record is stored as JSON, or NULL for rows
+    # produced before this column existed. A NULL reads back as None -
+    # the fact "no verification was recorded" - and is never mapped to
+    # an empty dict, which would be a claim that the layer ran.
+    raw = row.get("verification")
+    if isinstance(raw, str):
+        try:
+            row["verification"] = json.loads(raw)
+        except json.JSONDecodeError:
+            row["verification"] = None
     row["answerable"] = bool(row.get("answerable"))
     row["gold_hit"] = bool(row.get("gold_hit"))
     row["insufficient"] = bool(row.get("insufficient"))
