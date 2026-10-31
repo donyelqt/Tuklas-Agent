@@ -9,9 +9,19 @@ here is exact.
 from __future__ import annotations
 
 import inspect
+import json
+from pathlib import Path
 
 import pytest
 from apps.api.evaluation import verification
+from apps.api.evaluation.report import render_report
+from apps.api.evaluation.store import (
+    EvaluationRun,
+    RetrievalRun,
+    load_evaluation,
+    write_evaluation,
+)
+from apps.api.ingestion import db as ingestion_db
 
 ARTICLE_2 = verification.EvidenceNode(
     node_id="node_article_2",
@@ -502,3 +512,147 @@ def test_dataclasses_are_frozen() -> None:
             polarity_mismatches=0,
             values={},
         ).supported = False
+
+
+# ---------------------------------------------------------------------------
+# The wiring: the store column and the report section
+# ---------------------------------------------------------------------------
+
+
+def _verification_record() -> dict[str, object]:
+    """One flat record, of the shape ``AnswerVerification.to_record`` yields."""
+    return verification.verify_answer(
+        answerable=True,
+        insufficient=False,
+        answer_markdown="Article 2 provides that laws take effect after fifteen days [1].",
+        citations=[_cited(1, ARTICLE_2)],
+        evidence={ARTICLE_2.node_id: ARTICLE_2},
+        gold_nodes=[ARTICLE_2.node_id],
+    ).to_record()
+
+
+def _row(record: dict[str, object] | None) -> RetrievalRun:
+    """One ``retrieval_runs`` row, with or without a verification record."""
+    return RetrievalRun(
+        evaluation_id="eval_test",
+        question_id="q001",
+        arm="tuklas",
+        category="direct-lookup",
+        answerable=True,
+        retrieved_node_ids=[ARTICLE_2.node_id],
+        gold_node_ids=[ARTICLE_2.node_id],
+        weights={},
+        normalization="none",
+        latency_ms=1,
+        verification_record=record,
+    )
+
+
+def _write(db_path: str, rows: list[RetrievalRun]) -> None:
+    """Write a run row and its per-question rows, as the runner does.
+
+    ``write_evaluation`` writes both in one transaction; without the run
+    row, ``load_evaluation`` returns ``None``, so the rows would not be
+    joinable to the evaluation they belong to.
+    """
+    write_evaluation(
+        db_path,
+        EvaluationRun(
+            id="eval_test",
+            dataset="test",
+            dataset_snapshot="snap",
+            config={},
+            config_id="cfg_x",
+            code_version="test",
+            model="test",
+            backend="test",
+            temperature=0.0,
+            seed=42,
+            judge_prompt_version="judge-v1",
+            split_seed=42,
+            arms=["tuklas", "vector"],
+            k=[1, 3, 5, 10],
+            status="done",
+            metrics={},
+        ),
+        rows,
+    )
+
+
+def test_verification_record_is_stored_and_read_back(tmp_path: Path) -> None:
+    """The v2 record round-trips through the store unchanged.
+
+    The layer has computed these numbers since PR #88; a reader could not
+    see any of them, because nothing carried the record past the verdict
+    it was computed from. This is the round trip that makes it visible.
+    """
+    record = _verification_record()
+    db_path = str(tmp_path / "eval.sqlite")
+    _write(db_path, [_row(record)])
+
+    with ingestion_db.connect(db_path) as conn:
+        raw = conn.execute("SELECT verification FROM retrieval_runs").fetchall()
+    assert len(raw) == 1
+    assert json.loads(raw[0]["verification"]) == record
+
+    stored = load_evaluation(db_path, "eval_test")
+    assert stored is not None
+    assert stored["questions"][0]["verification"] == record
+    assert stored["questions"][0]["verification"]["verification_version"] == "verification-v2"
+
+
+def test_verification_column_is_nullable(tmp_path: Path) -> None:
+    """A row produced before this slice reads back as None, not an empty record.
+
+    The column is added by ``_ensure_verification_column`` on the first
+    write, so a store whose rows all predate the wiring still accepts one
+    and the NULL is the honest fact: no verification was recorded for it.
+    """
+    db_path = str(tmp_path / "eval.sqlite")
+    _write(db_path, [_row(None)])
+
+    stored = load_evaluation(db_path, "eval_test")
+    assert stored is not None
+    assert stored["questions"][0]["verification"] is None
+
+
+def test_report_emits_the_v2_verification_section() -> None:
+    """The rendered report carries THE V2 VERIFICATION and its per-arm lines.
+
+    A report without this section lets a reader assume evaluation QUALITY
+    was never measured, so the section's presence is itself the acceptance.
+    """
+    record = _verification_record()
+    aggregates = {
+        "arms": {
+            "tuklas": {
+                "verification": {
+                    "n_answerable": 3,
+                    "n_verified": 1,
+                    "verified_rate": 1 / 3,
+                    **record,
+                    "answer_consistency_checks": 2,
+                    "answer_consistency_mismatches": 1,
+                    "answer_citations_unreferenced": 4,
+                    "n_semantic_uncertainty": 1,
+                }
+            }
+        }
+    }
+    text = render_report(
+        evaluation_id="eval_test",
+        config={"config": {}, "config_id": "cfg_x", "k": [1, 3, 5, 10]},
+        dataset_name="test",
+        dataset_snapshot="snap",
+        split_seed=42,
+        n_questions=3,
+        aggregates=aggregates,
+    )
+    assert "THE V2 VERIFICATION" in text
+    assert "verification-v2" in text
+    assert "arm tuklas" in text
+    assert "answer_verified" in text
+    assert "answer_semantic_uncertainty" in text
+    assert "citations unreferenced" in text
+    # The LOWER BOUND caveat a reader must not be left to infer.
+    assert "LOWER BOUND" in text

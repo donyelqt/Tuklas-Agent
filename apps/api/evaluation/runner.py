@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from apps.api.evaluation import spot_check
+from apps.api.evaluation import spot_check, verification
 from apps.api.evaluation.arms import (
     ARM_NAMES,
     ARM_TUKLAS,
@@ -96,6 +96,7 @@ class ArmResult:
     verdicts_json: str
     citations_valid: bool
     evidence_text: dict[str, str] = field(default_factory=dict)
+    verification_record: dict[str, Any] = field(default_factory=dict)
 
 
 class Runner:
@@ -236,6 +237,20 @@ class Runner:
             citation_node_ids,
         )
         citations_valid = self._citations_valid(answer, citation_node_ids)
+        # The v2 verification layer checks the answer's claims against the
+        # cited nodes. It is arm-blind by construction, so it is run here
+        # rather than in the judge, and its record is carried on the result
+        # so the store and the report can surface it. The layer reads each
+        # cited node's HEADING (for the article check), not only its body,
+        # so the evidence is the node-shaped dict the store yields.
+        verification_record = verification.verify_answer(
+            answerable=question.answerable,
+            insufficient=answer.insufficient,
+            answer_markdown=answer.answer_markdown,
+            citations=answer.citations,
+            evidence=self._evidence_nodes(citation_node_ids),
+            gold_nodes=question.gold_nodes,
+        ).to_record()
         return ArmResult(
             question=question,
             arm=arm.name,
@@ -248,6 +263,7 @@ class Runner:
             verdicts_json=verdicts_to_json(verdicts),
             citations_valid=citations_valid,
             evidence_text=evidence_text,
+            verification_record=verification_record,
         )
 
     def _evidence_text(self, node_ids: list[str]) -> dict[str, str]:
@@ -268,6 +284,33 @@ class Runner:
                 tuple(node_ids),
             ).fetchall()
         return {str(row["id"]): str(row["text"]) for row in rows}
+
+    def _evidence_nodes(self, node_ids: list[str]) -> dict[str, verification.EvidenceNode]:
+        """The cited nodes as the v2 verification layer reads them.
+
+        The layer's article check reads each cited node's OWN HEADING, so
+        the evidence it gets is the node-shaped record (id, title, text)
+        rather than the text-only dict the judge gets. The two are read
+        from the same store query shape; only the projection differs.
+        """
+        if not node_ids:
+            return {}
+        from apps.api.ingestion import db as ingestion_db
+
+        placeholders = ",".join("?" * len(node_ids))
+        with ingestion_db.connect(self.db_path) as conn:
+            rows = conn.execute(
+                f"SELECT id, title, text FROM nodes WHERE id IN ({placeholders})",
+                tuple(node_ids),
+            ).fetchall()
+        return {
+            str(row["id"]): verification.EvidenceNode(
+                node_id=str(row["id"]),
+                title=str(row["title"]),
+                text=str(row["text"]),
+            )
+            for row in rows
+        }
 
     def _citations_valid(self, answer: AnswerResult, citation_node_ids: list[str]) -> bool:
         """Whether the answer's citations are valid (evaluation.md §4).
@@ -461,6 +504,7 @@ class Runner:
             judge_verdicts=result.verdicts_json,
             answer_markdown=result.answer.answer_markdown,
             judge_prompt_version=self._judge_prompt_version(),
+            verification_record=result.verification_record,
         )
         return retrieval_row, generation_row, system_row, store_row
 
@@ -606,6 +650,7 @@ class Runner:
                 "retrieval": retrieval_aggregates(arm_retrieval, k_values=self.config.k),
                 "generation": generation_aggregates(arm_generation),
                 "system": system_aggregates(arm_system),
+                "verification": _verification_aggregates(results[name]),
             }
         return {
             "arms": per_arm,
@@ -737,6 +782,55 @@ class Runner:
             "threshold": 0.15,
             "valid": disagreement <= 0.15,
         }
+
+
+def _verification_aggregates(results: list[ArmResult]) -> dict[str, Any]:
+    """The v2 verification aggregate, over the ANSWERABLE rows only.
+
+    The verification layer runs on every answer, but the gate's pass rate
+    is only meaningful over answerable rows: an unanswerable row passes
+    as a refusal, so including it would dilute the rate with rows whose
+    pass is a property of the question, not of the answer. The
+    semantic_uncertainty rate is likewise over answerable rows, because
+    an undecided check is a claim the checks could not decide and a
+    refusal has no claim to be undecided about.
+    """
+    records = [
+        result.verification_record
+        for result in results
+        if result.question.answerable and result.verification_record
+    ]
+    if not records:
+        return {"n_answerable": 0, "n_verified": 0, "verified_rate": None}
+    n = len(records)
+    n_verified = sum(1 for record in records if record.get("answer_verified"))
+    return {
+        "n_answerable": n,
+        "n_verified": n_verified,
+        "verified_rate": n_verified / n,
+        "verification_version": records[0].get("verification_version"),
+        "answer_claim_checks": sum(
+            int(record.get("answer_claim_checks", 0)) for record in records
+        ),
+        "answer_claims_supported": sum(
+            int(record.get("answer_claims_supported", 0)) for record in records
+        ),
+        "answer_claims_unsupported": sum(
+            int(record.get("answer_claims_unsupported", 0)) for record in records
+        ),
+        "answer_consistency_checks": sum(
+            int(record.get("answer_consistency_checks", 0)) for record in records
+        ),
+        "answer_consistency_mismatches": sum(
+            int(record.get("answer_consistency_mismatches", 0)) for record in records
+        ),
+        "answer_citations_unreferenced": sum(
+            int(record.get("answer_citations_unreferenced", 0)) for record in records
+        ),
+        "n_semantic_uncertainty": sum(
+            1 for record in records if record.get("answer_semantic_uncertainty")
+        ),
+    }
 
 
 def _rank_first_hit(retrieved: list[str], gold: list[str]) -> int | None:
