@@ -540,6 +540,45 @@ def test_scorer_fraction_counts_matched_claims() -> None:
     assert eval_scorer.claim_fraction(["consent"], "the consent") == 1.0
 
 
+def test_split_sentences_is_the_one_splitter() -> None:
+    """Sentences end at a terminator plus a capital, and are stripped."""
+    text = "Article 2 applies.  It takes effect after publication.\n\nIs it retroactive?"
+    assert eval_scorer.split_sentences(text) == [
+        "Article 2 applies.",
+        "It takes effect after publication.",
+        "Is it retroactive?",
+    ]
+    assert eval_scorer.split_sentences("") == []
+
+
+def test_citation_markers_expand_a_range() -> None:
+    """A range marker names every number in the range, in order."""
+    assert eval_scorer.citation_markers("a [3] b") == [3]
+    assert eval_scorer.citation_markers("a [1-3] b") == [1, 2, 3]
+    assert eval_scorer.citation_markers("a [3-1] b") == [1, 2, 3]
+    assert eval_scorer.citation_markers("a [2] b [4]") == [2, 4]
+    assert eval_scorer.citation_markers("no marker here") == []
+
+
+def test_strip_citation_markers_leaves_the_proposition() -> None:
+    """The marker is removed and the words of the sentence stay."""
+    stripped = eval_scorer.strip_citation_markers("A sentence [2] with a marker [1-3].")
+    assert "[" not in stripped and "]" not in stripped
+    assert "A sentence" in stripped and "with a marker" in stripped
+
+
+def test_split_citation_claims_attaches_each_marker_to_its_sentence() -> None:
+    """One claim per marker, with the markers stripped from the sentence."""
+    claims = eval_scorer.split_citation_claims(
+        "Article 2 applies [3]. It is not retroactive [1-2]. No marker here."
+    )
+    assert [claim.marker for claim in claims] == [3, 1, 2]
+    assert claims[0].sentence.startswith("Article 2 applies")
+    assert claims[1].sentence.startswith("It is not retroactive")
+    assert claims[1].sentence == claims[2].sentence
+    assert all("[" not in claim.sentence for claim in claims)
+
+
 # ---------------------------------------------------------------------------
 # 3. The retrieval metrics (evaluation.md §3)
 # ---------------------------------------------------------------------------
