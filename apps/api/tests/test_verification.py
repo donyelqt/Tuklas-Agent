@@ -156,6 +156,8 @@ def test_claim_records_a_quantity_the_node_cannot_back() -> None:
     assert (claim.numeric_unsupported_checks, claim.numeric_unsupported) == (1, 1)
     assert claim.numeric_checks == 1
     assert claim.numeric_mismatches == 1
+    assert claim.numeric_unsupported == 1
+    assert claim.numeric_mismatches == 1
     assert not claim.consistent
 
 

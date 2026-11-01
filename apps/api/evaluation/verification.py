@@ -147,19 +147,31 @@ _UNIT_GROUPS: dict[str, tuple[str, float]] = {
     "dollar": ("dollar", 1.0),
 }
 
-#: The measurement class each unit family belongs to. Unlike
+#: The measurement class each family belongs to. Unlike
 #: ``_UNIT_GROUPS`` this does NOT compare: it groups the families that
 #: measure the same kind of thing, so a node that states a duration can be
 #: shown to have failed to state a DIFFERENT duration. Two families in one
 #: class are comparable quantities; two families in different classes are
 #: not, and a check that crossed classes would flag an off-subject node,
-#: which is the support check's job and not this one's.
-_MEASUREMENT_CLASS: dict[str, str] = {
-    "duration": "elapsed-time",
+#: which is the support check's job and not this one's. A family with no
+#: entry here is classless and never counts as shared, so a node about
+MEASUREMENT_CLASS: dict[str, str] = {
+    "day": "duration",
+    "week": "duration",
+    "month": "duration",
+    "year": "duration",
+    "hour": "duration",
+    "minute": "duration",
+    "peso": "monetary",
+    "centavo": "monetary",
     "percent": "proportion",
-    "peso": "money",
-    "dollar": "money",
 }
+
+
+def _measurement_class(family: str) -> str:
+    """The class a family belongs to, or "" when it is classless."""
+    return MEASUREMENT_CLASS.get(family, "")
+
 
 _UNIT_WORDS: dict[str, str] = {
     "day": "day",
@@ -472,35 +484,51 @@ def _answer_consistency(claims: Sequence[ClaimVerification]) -> tuple[int, int]:
     return checked, mismatched
 
 
-def numeric_unsupported(sentence: str, node_text: str) -> tuple[int, int]:
-    """(checked, unsupported): a quantity the cited node cannot back.
+def _numeric_unsupported(sentence: str, node_text: str) -> int:
+    """1 when the sentence states a unit the node never states, else 0.
 
-    Unlike :func:`numeric_consistency`, which asks whether two quantities
-    in one family DISAGREE, this asks whether the node states the class at
-    all. It is CHECKED only when the sentence states a quantity AND the
-    node states a quantity in the SAME measurement class, and it is
-    UNSUPPORTED only when the sentence's own unit family is one the node
-    never states: the node demonstrably discusses the kind of thing and
-    still never mentions this quantity.
-
-    The shared-class requirement is what keeps the false-positive rate
-    near zero. A sentence about a fine and a node about an interest rate
-    share no class, so the node is off-subject and the support check owns
-    it; a node that states no quantity at all discusses no class, so
-    there is nothing to compare against. Neither is a numeric defect.
+    The narrow condition: the sentence states a quantity in a unit the
+    cited node never states, AND the node states a quantity in a unit of
+    the SAME measurement class. The shared-class requirement is what
+    keeps the false-positive rate near zero. A sentence about a fine and
+    a node about an interest rate share no class, so the node is
+    off-subject and the support check owns it; a node that states no
+    quantity at all discusses no class, so there is nothing to compare
+    against. Neither is a numeric defect.
     """
     sentence_units = {m.unit for m in numeric_mentions(sentence)}
     node_units = {m.unit for m in numeric_mentions(node_text)}
     if not sentence_units or not node_units:
-        return 0, 0
-    sentence_classes = {_UNIT_GROUPS[unit][0] for unit in sentence_units}
-    node_classes = {_UNIT_GROUPS[unit][0] for unit in node_units}
+        return 0
+    sentence_classes = {_measurement_class(_UNIT_GROUPS[unit][0]) for unit in sentence_units}
+    node_classes = {_measurement_class(_UNIT_GROUPS[unit][0]) for unit in node_units}
     if sentence_classes.isdisjoint(node_classes):
-        return 0, 0
+        return 0
     unsupported = sum(1 for unit in sentence_units if unit not in node_units)
-    if not unsupported:
+    return 1 if unsupported else 0
+
+
+def numeric_unsupported(sentence: str, node_text: str) -> tuple[int, int]:
+    """(checked, unsupported): a quantity the cited node cannot back.
+
+    Like :func:`numeric_consistency`, which asks whether two quantities in
+    one family DISAGREE, this asks whether the node states the class at
+    all. It is CHECKED only when the sentence states a quantity AND the
+    node states a quantity in the SAME measurement class, and it is
+    UNSUPPORTED only when the sentence's own unit is one the node never
+    states: the node demonstrably discusses the kind of thing and still
+    never mentions this quantity. The second value counts the distinct
+    units the sentence states that the node never states, so a caller can
+    count it the way :func:`numeric_consistency` counts mismatched
+    families.
+    An UNDECIDED check is 0, 0: a sentence the node states the unit for is
+    checked by :func:`numeric_consistency` instead, and counting it again
+    here would double-count one quantity in two measures.
+    """
+    verdict = _numeric_unsupported(sentence, node_text)
+    if verdict == 0:
         return 0, 0
-    return 1, unsupported
+    return 1, verdict
 
 
 # ---------------------------------------------------------------------------
