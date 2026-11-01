@@ -1,4 +1,4 @@
-"""The mechanical answer verification layer (evaluation.md §4, ``verification-v2``).
+"""The mechanical answer verification layer (evaluation.md §4, ``verification-v3``).
 
 The v1 citation check answers one question: do the ids exist, and does each
 cited node's text match the sentence that cites it? That check is necessary
@@ -69,7 +69,7 @@ from apps.api.evaluation.scorer import (
 
 #: The version of the rules in this module. Bump it whenever a rule changes:
 #: two runs are comparable on these measures only under the same version.
-VERIFICATION_VERSION = "verification-v2"
+VERIFICATION_VERSION = "verification-v3"
 
 #: The minimum ``token_set_ratio`` between a sentence and a node sentence
 #: before their polarity is compared. Below it the two sentences are about
@@ -145,6 +145,20 @@ _UNIT_GROUPS: dict[str, tuple[str, float]] = {
     "percent": ("percent", 1.0),
     "peso": ("peso", 1.0),
     "dollar": ("dollar", 1.0),
+}
+
+#: The measurement class each unit family belongs to. Unlike
+#: ``_UNIT_GROUPS`` this does NOT compare: it groups the families that
+#: measure the same kind of thing, so a node that states a duration can be
+#: shown to have failed to state a DIFFERENT duration. Two families in one
+#: class are comparable quantities; two families in different classes are
+#: not, and a check that crossed classes would flag an off-subject node,
+#: which is the support check's job and not this one's.
+_MEASUREMENT_CLASS: dict[str, str] = {
+    "duration": "elapsed-time",
+    "percent": "proportion",
+    "peso": "money",
+    "dollar": "money",
 }
 
 _UNIT_WORDS: dict[str, str] = {
@@ -458,6 +472,37 @@ def _answer_consistency(claims: Sequence[ClaimVerification]) -> tuple[int, int]:
     return checked, mismatched
 
 
+def numeric_unsupported(sentence: str, node_text: str) -> tuple[int, int]:
+    """(checked, unsupported): a quantity the cited node cannot back.
+
+    Unlike :func:`numeric_consistency`, which asks whether two quantities
+    in one family DISAGREE, this asks whether the node states the class at
+    all. It is CHECKED only when the sentence states a quantity AND the
+    node states a quantity in the SAME measurement class, and it is
+    UNSUPPORTED only when the sentence's own unit family is one the node
+    never states: the node demonstrably discusses the kind of thing and
+    still never mentions this quantity.
+
+    The shared-class requirement is what keeps the false-positive rate
+    near zero. A sentence about a fine and a node about an interest rate
+    share no class, so the node is off-subject and the support check owns
+    it; a node that states no quantity at all discusses no class, so
+    there is nothing to compare against. Neither is a numeric defect.
+    """
+    sentence_units = {m.unit for m in numeric_mentions(sentence)}
+    node_units = {m.unit for m in numeric_mentions(node_text)}
+    if not sentence_units or not node_units:
+        return 0, 0
+    sentence_classes = {_UNIT_GROUPS[unit][0] for unit in sentence_units}
+    node_classes = {_UNIT_GROUPS[unit][0] for unit in node_units}
+    if sentence_classes.isdisjoint(node_classes):
+        return 0, 0
+    unsupported = sum(1 for unit in sentence_units if unit not in node_units)
+    if not unsupported:
+        return 0, 0
+    return 1, unsupported
+
+
 # ---------------------------------------------------------------------------
 # Article identifiers
 # ---------------------------------------------------------------------------
@@ -544,6 +589,8 @@ class ClaimVerification:
     article_mismatches: int
     polarity_checks: int
     polarity_mismatches: int
+    numeric_unsupported_checks: int
+    numeric_unsupported: int
     values: dict[str, frozenset[float]]
 
     @property
@@ -554,6 +601,7 @@ class ClaimVerification:
             and self.numeric_mismatches == 0
             and self.article_mismatches == 0
             and self.polarity_mismatches == 0
+            and self.numeric_unsupported == 0
         )
 
     @property
@@ -583,6 +631,8 @@ class AnswerVerification:
     n_article_mismatches: int
     n_polarity_checks: int
     n_polarity_mismatches: int
+    n_numeric_unsupported_checks: int
+    n_numeric_unsupported: int
     n_gold_nodes: int
     n_gold_nodes_cited: int
     claims: tuple[ClaimVerification, ...]
@@ -626,6 +676,8 @@ class AnswerVerification:
             "article_mismatches": self.n_article_mismatches,
             "polarity_checks": self.n_polarity_checks,
             "polarity_mismatches": self.n_polarity_mismatches,
+            "numeric_unsupported_checks": self.n_numeric_unsupported_checks,
+            "numeric_unsupported": self.n_numeric_unsupported,
             "gold_nodes_total": self.n_gold_nodes,
             "gold_nodes_cited": self.n_gold_nodes_cited,
             "answer_claim_checks": self.n_cited_claim_checks,
@@ -663,12 +715,15 @@ def verify_claim(
             article_mismatches=0,
             polarity_checks=0,
             polarity_mismatches=0,
+            numeric_unsupported_checks=0,
+            numeric_unsupported=0,
             values={},
         )
     supported = citation_supports(sentence, node.text, threshold=threshold)
     numeric_checks, numeric_mismatches = numeric_consistency(sentence, node.text)
     article_checks, article_mismatches = article_consistency(sentence, node)
     polarity_checks, polarity_mismatches = polarity_consistency(sentence, node.text)
+    unsupported_checks, unsupported = numeric_unsupported(sentence, node.text)
     return ClaimVerification(
         marker=marker,
         node_id=node.node_id,
@@ -680,6 +735,8 @@ def verify_claim(
         article_mismatches=article_mismatches,
         polarity_checks=polarity_checks,
         polarity_mismatches=polarity_mismatches,
+        numeric_unsupported_checks=unsupported_checks,
+        numeric_unsupported=unsupported,
         values={group: frozenset(values) for group, values in _comparable_values(sentence).items()},
     )
 
@@ -765,6 +822,8 @@ def verify_answer(
     n_article_mismatches = sum(claim.article_mismatches for claim in claims)
     n_polarity_checks = sum(claim.polarity_checks for claim in claims)
     n_polarity_mismatches = sum(claim.polarity_mismatches for claim in claims)
+    n_numeric_unsupported_checks = sum(claim.numeric_unsupported_checks for claim in claims)
+    n_numeric_unsupported = sum(claim.numeric_unsupported for claim in claims)
 
     consistency = _answer_consistency(claims)
     unreferenced = sum(
@@ -780,6 +839,7 @@ def verify_answer(
             and n_numeric_mismatches == 0
             and n_article_mismatches == 0
             and n_polarity_mismatches == 0
+            and n_numeric_unsupported == 0
             and uncited == 0
             and consistency[1] == 0
             and unreferenced == 0
@@ -800,6 +860,8 @@ def verify_answer(
         n_article_mismatches=n_article_mismatches,
         n_polarity_checks=n_polarity_checks,
         n_polarity_mismatches=n_polarity_mismatches,
+        n_numeric_unsupported_checks=n_numeric_unsupported_checks,
+        n_numeric_unsupported=n_numeric_unsupported,
         n_gold_nodes=len(gold),
         n_gold_nodes_cited=gold_cited,
         claims=tuple(claims),
@@ -822,6 +884,7 @@ __all__ = [
     "is_negated",
     "numeric_consistency",
     "numeric_mentions",
+    "numeric_unsupported",
     "polarity_consistency",
     "verify_answer",
     "verify_claim",

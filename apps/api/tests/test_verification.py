@@ -11,6 +11,7 @@ from __future__ import annotations
 import inspect
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from apps.api.evaluation import verification
@@ -110,6 +111,77 @@ def test_numeric_cross_unit_duration_mismatch() -> None:
 def test_numeric_check_is_undecided_without_a_node_quantity() -> None:
     """A node that states no quantity cannot contradict one."""
     assert verification.numeric_consistency("within 15 days", ARTICLE_3.text) == (0, 0)
+
+
+# ---------------------------------------------------------------------------
+# Quantities the node's own quantities cannot back
+# ---------------------------------------------------------------------------
+
+
+def test_numeric_unsupported_flags_a_family_the_node_never_states() -> None:
+    """The node speaks of durations and never mentions the sentence's unit."""
+    node = "Laws shall take effect after thirty days following publication."
+    assert verification.numeric_unsupported("within fifteen hours", node) == (1, 1)
+
+
+def test_numeric_unsupported_is_silent_when_the_node_states_that_family() -> None:
+    """A family the node states is the numeric check's, whatever the value."""
+    assert verification.numeric_unsupported("within fifteen days", ARTICLE_2.text) == (0, 0)
+    assert verification.numeric_unsupported("within thirty days", ARTICLE_2.text) == (0, 0)
+
+
+def test_numeric_unsupported_is_silent_without_a_shared_class() -> None:
+    """Different classes: the node is off-subject, which is the support check's job."""
+    assert verification.numeric_unsupported(
+        "a fine of 5000 pesos is imposed.", "The interest rate is twenty percent."
+    ) == (0, 0)
+    assert verification.numeric_unsupported(
+        "within fifteen hours", "The interest rate is twenty percent."
+    ) == (0, 0)
+
+
+def test_numeric_unsupported_is_silent_when_the_node_states_no_quantity() -> None:
+    """A node that states nothing cannot be shown to discuss the class."""
+    assert verification.numeric_unsupported("within fifteen hours", ARTICLE_3.text) == (0, 0)
+
+
+def test_claim_records_a_quantity_the_node_cannot_back() -> None:
+    """The invented quantity reaches the claim record and fails its consistency."""
+    node = verification.EvidenceNode(
+        node_id="n",
+        title="Article 2.",
+        text="Laws shall take effect after thirty days following publication.",
+    )
+    claim = verification.verify_claim(1, "Laws take effect within fifteen hours", node)
+    assert (claim.numeric_unsupported_checks, claim.numeric_unsupported) == (1, 1)
+    assert claim.numeric_checks == 1
+    assert claim.numeric_mismatches == 1
+    assert not claim.consistent
+
+
+def test_invented_quantity_fails_the_gate() -> None:
+    """The claim's wording is the node's, and one of its numbers is not."""
+    node = verification.EvidenceNode(
+        node_id="n",
+        title="Article 2.",
+        text=("Within fifteen days following publication, a fine of 5000 pesos " "is imposed."),
+    )
+    outcome = verification.verify_answer(
+        answerable=True,
+        insufficient=False,
+        answer_markdown="Within fifteen hours following publication, a fine of 5000 pesos is imposed [1].",
+        citations=[_cited(1, node)],
+        evidence={node.node_id: node},
+    )
+    assert outcome.n_numeric_unsupported == 1
+    assert outcome.n_numeric_unsupported_checks == 1
+    assert outcome.n_numeric_mismatches == 1
+    assert not outcome.verified
+
+
+def test_verification_version_is_v3() -> None:
+    """A new rule is a different rule set, so the version travels with it."""
+    assert verification.VERIFICATION_VERSION == "verification-v3"
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +407,7 @@ def test_to_record_carries_the_version_and_the_counts() -> None:
         gold_nodes=[ARTICLE_2.node_id],
     )
     record = outcome.to_record()
-    assert record["verification_version"] == "verification-v2"
+    assert record["verification_version"] == "verification-v3"
     assert record["answer_verified"] is True
     assert record["cited_claim_checks"] == 1
     assert record["cited_claims_supported"] == 1
@@ -357,6 +429,8 @@ def test_to_record_carries_the_version_and_the_counts() -> None:
         "uncited_claims",
         "numeric_checks",
         "numeric_mismatches",
+        "numeric_unsupported_checks",
+        "numeric_unsupported",
         "article_checks",
         "article_mismatches",
         "polarity_checks",
@@ -498,20 +572,25 @@ def test_dataclasses_are_frozen() -> None:
 
     assert dataclasses.is_dataclass(verification.ClaimVerification)
     assert dataclasses.is_dataclass(verification.AnswerVerification)
+    claim = verification.ClaimVerification(
+        marker=1,
+        node_id="n",
+        sentence="x",
+        supported=True,
+        numeric_checks=0,
+        numeric_mismatches=0,
+        article_checks=0,
+        article_mismatches=0,
+        polarity_checks=0,
+        polarity_mismatches=0,
+        numeric_unsupported_checks=0,
+        numeric_unsupported=0,
+        values={},
+    )
+    assert len(dataclasses.fields(verification.ClaimVerification)) > 0
+    mutable: Any = claim
     with pytest.raises(dataclasses.FrozenInstanceError):
-        verification.ClaimVerification(
-            marker=1,
-            node_id="n",
-            sentence="x",
-            supported=True,
-            numeric_checks=0,
-            numeric_mismatches=0,
-            article_checks=0,
-            article_mismatches=0,
-            polarity_checks=0,
-            polarity_mismatches=0,
-            values={},
-        ).supported = False
+        mutable.numeric_checks = 9
 
 
 # ---------------------------------------------------------------------------
@@ -598,7 +677,7 @@ def test_verification_record_is_stored_and_read_back(tmp_path: Path) -> None:
     stored = load_evaluation(db_path, "eval_test")
     assert stored is not None
     assert stored["questions"][0]["verification"] == record
-    assert stored["questions"][0]["verification"]["verification_version"] == "verification-v2"
+    assert stored["questions"][0]["verification"]["verification_version"] == "verification-v3"
 
 
 def test_verification_column_is_nullable(tmp_path: Path) -> None:
@@ -649,7 +728,7 @@ def test_report_emits_the_v2_verification_section() -> None:
         aggregates=aggregates,
     )
     assert "THE V2 VERIFICATION" in text
-    assert "verification-v2" in text
+    assert "verification-v3" in text
     assert "arm tuklas" in text
     assert "answer_verified" in text
     assert "answer_semantic_uncertainty" in text
