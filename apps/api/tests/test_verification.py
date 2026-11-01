@@ -11,6 +11,7 @@ from __future__ import annotations
 import inspect
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from apps.api.evaluation import verification
@@ -156,6 +157,7 @@ def test_claim_records_a_quantity_the_node_cannot_back() -> None:
     assert claim.numeric_checks == 1
     assert claim.numeric_mismatches == 1
     assert claim.numeric_unsupported == 1
+    assert claim.numeric_mismatches == 1
     assert not claim.consistent
 
 
@@ -407,7 +409,7 @@ def test_to_record_carries_the_version_and_the_counts() -> None:
         gold_nodes=[ARTICLE_2.node_id],
     )
     record = outcome.to_record()
-    assert record["verification_version"] == "verification-v2"
+    assert record["verification_version"] == "verification-v3"
     assert record["answer_verified"] is True
     assert record["cited_claim_checks"] == 1
     assert record["cited_claims_supported"] == 1
@@ -429,6 +431,8 @@ def test_to_record_carries_the_version_and_the_counts() -> None:
         "uncited_claims",
         "numeric_checks",
         "numeric_mismatches",
+        "numeric_unsupported_checks",
+        "numeric_unsupported",
         "article_checks",
         "article_mismatches",
         "polarity_checks",
@@ -570,20 +574,25 @@ def test_dataclasses_are_frozen() -> None:
 
     assert dataclasses.is_dataclass(verification.ClaimVerification)
     assert dataclasses.is_dataclass(verification.AnswerVerification)
+    claim = verification.ClaimVerification(
+        marker=1,
+        node_id="n",
+        sentence="x",
+        supported=True,
+        numeric_checks=0,
+        numeric_mismatches=0,
+        article_checks=0,
+        article_mismatches=0,
+        polarity_checks=0,
+        polarity_mismatches=0,
+        numeric_unsupported_checks=0,
+        numeric_unsupported=0,
+        values={},
+    )
+    assert len(dataclasses.fields(verification.ClaimVerification)) > 0
+    mutable: Any = claim
     with pytest.raises(dataclasses.FrozenInstanceError):
-        verification.ClaimVerification(
-            marker=1,
-            node_id="n",
-            sentence="x",
-            supported=True,
-            numeric_checks=0,
-            numeric_mismatches=0,
-            article_checks=0,
-            article_mismatches=0,
-            polarity_checks=0,
-            polarity_mismatches=0,
-            values={},
-        ).supported = False
+        mutable.numeric_checks = 9
 
 
 # ---------------------------------------------------------------------------
@@ -670,7 +679,7 @@ def test_verification_record_is_stored_and_read_back(tmp_path: Path) -> None:
     stored = load_evaluation(db_path, "eval_test")
     assert stored is not None
     assert stored["questions"][0]["verification"] == record
-    assert stored["questions"][0]["verification"]["verification_version"] == "verification-v2"
+    assert stored["questions"][0]["verification"]["verification_version"] == "verification-v3"
 
 
 def test_verification_column_is_nullable(tmp_path: Path) -> None:
@@ -721,7 +730,7 @@ def test_report_emits_the_v2_verification_section() -> None:
         aggregates=aggregates,
     )
     assert "THE V2 VERIFICATION" in text
-    assert "verification-v2" in text
+    assert "verification-v3" in text
     assert "arm tuklas" in text
     assert "answer_verified" in text
     assert "answer_semantic_uncertainty" in text
