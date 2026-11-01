@@ -1,0 +1,306 @@
+{
+  "arms": {
+    "tuklas": {
+      "generation": {
+        "abstention_score": 1.0,
+        "citation_accuracy": 0.5833333333333334,
+        "correctness": 0.6563146997929606,
+        "faithfulness": 0.7706662902315076,
+        "n_answerable": 23,
+        "n_judged": 23,
+        "n_unanswerable": 1
+      },
+      "retrieval": {
+        "by_category": {
+          "comparison": {
+            "mrr10": 0.5333333333333333,
+            "n": 3,
+            "precision@1": 0.3333333333333333,
+            "precision@10": 0.10000000000000002,
+            "precision@3": 0.2222222222222222,
+            "precision@5": 0.13333333333333333,
+            "recall@1": 0.16666666666666666,
+            "recall@10": 0.5,
+            "recall@3": 0.3333333333333333,
+            "recall@5": 0.3333333333333333
+          },
+          "cross-reference": {
+            "mrr10": 0.8333333333333334,
+            "n": 3,
+            "precision@1": 0.6666666666666666,
+            "precision@10": 0.10000000000000002,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.20000000000000004,
+            "recall@1": 0.6666666666666666,
+            "recall@10": 1.0,
+            "recall@3": 1.0,
+            "recall@5": 1.0
+          },
+          "definition": {
+            "mrr10": 0.4444444444444444,
+            "n": 3,
+            "precision@1": 0.3333333333333333,
+            "precision@10": 0.06666666666666667,
+            "precision@3": 0.2222222222222222,
+            "precision@5": 0.13333333333333333,
+            "recall@1": 0.3333333333333333,
+            "recall@10": 0.6666666666666666,
+            "recall@3": 0.6666666666666666,
+            "recall@5": 0.6666666666666666
+          },
+          "direct-lookup": {
+            "mrr10": 0.8666666666666666,
+            "n": 5,
+            "precision@1": 0.8,
+            "precision@10": 0.1,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.2,
+            "recall@1": 0.8,
+            "recall@10": 1.0,
+            "recall@3": 1.0,
+            "recall@5": 1.0
+          },
+          "exception": {
+            "mrr10": 0.75,
+            "n": 2,
+            "precision@1": 0.5,
+            "precision@10": 0.1,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.2,
+            "recall@1": 0.5,
+            "recall@10": 1.0,
+            "recall@3": 1.0,
+            "recall@5": 1.0
+          },
+          "multi-hop": {
+            "mrr10": 0.6666666666666666,
+            "n": 3,
+            "precision@1": 0.6666666666666666,
+            "precision@10": 0.13333333333333333,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.20000000000000004,
+            "recall@1": 0.3333333333333333,
+            "recall@10": 0.6666666666666666,
+            "recall@3": 0.5,
+            "recall@5": 0.5
+          },
+          "multi-section": {
+            "mrr10": 0.09027777777777778,
+            "n": 4,
+            "precision@1": 0.0,
+            "precision@10": 0.07500000000000001,
+            "precision@3": 0.0,
+            "precision@5": 0.05,
+            "recall@1": 0.0,
+            "recall@10": 0.375,
+            "recall@3": 0.0,
+            "recall@5": 0.125
+          }
+        },
+        "n_rows": 24,
+        "n_scored": 23,
+        "n_unanswerable_excluded": 1,
+        "overall": {
+          "mrr10": 0.592512077294686,
+          "n": 23,
+          "precision@1": 0.4782608695652174,
+          "precision@10": 0.09565217391304348,
+          "precision@3": 0.24637681159420288,
+          "precision@5": 0.1565217391304348,
+          "recall@1": 0.41304347826086957,
+          "recall@10": 0.7391304347826086,
+          "recall@3": 0.6304347826086957,
+          "recall@5": 0.6521739130434783
+        }
+      },
+      "system": {
+        "generation_latency_p50": 1675.5,
+        "generation_latency_p95": 6399.7499999999945,
+        "iterations_mean": 6.916666666666667,
+        "latency_p50": 1801.0,
+        "latency_p95": 6546.349999999994,
+        "n": 24,
+        "retrieval_latency_p50": 103.0,
+        "retrieval_latency_p95": 216.85,
+        "tokens_mean": 1003.3333333333334,
+        "tokens_out_mean": 122.79166666666667
+      },
+      "verification": {
+        "answer_citations_unreferenced": 134,
+        "answer_claim_checks": 64,
+        "answer_claims_supported": 39,
+        "answer_claims_unsupported": 25,
+        "answer_consistency_checks": 1,
+        "answer_consistency_mismatches": 0,
+        "n_answerable": 23,
+        "n_semantic_uncertainty": 22,
+        "n_verified": 0,
+        "verification_version": "verification-v2",
+        "verified_rate": 0.0
+      }
+    },
+    "vector": {
+      "generation": {
+        "abstention_score": 0.0,
+        "citation_accuracy": 0.5,
+        "correctness": 0.8079710144927535,
+        "faithfulness": 0.799963924963925,
+        "n_answerable": 23,
+        "n_judged": 24,
+        "n_unanswerable": 1
+      },
+      "retrieval": {
+        "by_category": {
+          "comparison": {
+            "mrr10": 0.5555555555555556,
+            "n": 3,
+            "precision@1": 0.3333333333333333,
+            "precision@10": 0.16666666666666666,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.26666666666666666,
+            "recall@1": 0.16666666666666666,
+            "recall@10": 0.8333333333333334,
+            "recall@3": 0.5,
+            "recall@5": 0.6666666666666666
+          },
+          "cross-reference": {
+            "mrr10": 0.5,
+            "n": 3,
+            "precision@1": 0.3333333333333333,
+            "precision@10": 0.06666666666666667,
+            "precision@3": 0.2222222222222222,
+            "precision@5": 0.13333333333333333,
+            "recall@1": 0.3333333333333333,
+            "recall@10": 0.6666666666666666,
+            "recall@3": 0.6666666666666666,
+            "recall@5": 0.6666666666666666
+          },
+          "definition": {
+            "mrr10": 0.7777777777777778,
+            "n": 3,
+            "precision@1": 0.6666666666666666,
+            "precision@10": 0.10000000000000002,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.20000000000000004,
+            "recall@1": 0.6666666666666666,
+            "recall@10": 1.0,
+            "recall@3": 1.0,
+            "recall@5": 1.0
+          },
+          "direct-lookup": {
+            "mrr10": 1.0,
+            "n": 5,
+            "precision@1": 1.0,
+            "precision@10": 0.1,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.2,
+            "recall@1": 1.0,
+            "recall@10": 1.0,
+            "recall@3": 1.0,
+            "recall@5": 1.0
+          },
+          "exception": {
+            "mrr10": 0.6,
+            "n": 2,
+            "precision@1": 0.5,
+            "precision@10": 0.1,
+            "precision@3": 0.16666666666666666,
+            "precision@5": 0.2,
+            "recall@1": 0.5,
+            "recall@10": 1.0,
+            "recall@3": 0.5,
+            "recall@5": 1.0
+          },
+          "multi-hop": {
+            "mrr10": 0.7777777777777778,
+            "n": 3,
+            "precision@1": 0.6666666666666666,
+            "precision@10": 0.13333333333333333,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.20000000000000004,
+            "recall@1": 0.3333333333333333,
+            "recall@10": 0.6666666666666666,
+            "recall@3": 0.5,
+            "recall@5": 0.5
+          },
+          "multi-section": {
+            "mrr10": 0.2916666666666667,
+            "n": 4,
+            "precision@1": 0.0,
+            "precision@10": 0.125,
+            "precision@3": 0.3333333333333333,
+            "precision@5": 0.2,
+            "recall@1": 0.0,
+            "recall@10": 0.625,
+            "recall@3": 0.5,
+            "recall@5": 0.5
+          }
+        },
+        "n_rows": 24,
+        "n_scored": 23,
+        "n_unanswerable_excluded": 1,
+        "overall": {
+          "mrr10": 0.6608695652173913,
+          "n": 23,
+          "precision@1": 0.5217391304347826,
+          "precision@10": 0.11304347826086956,
+          "precision@3": 0.30434782608695654,
+          "precision@5": 0.2,
+          "recall@1": 0.45652173913043476,
+          "recall@10": 0.8260869565217391,
+          "recall@3": 0.6956521739130435,
+          "recall@5": 0.7608695652173914
+        }
+      },
+      "system": {
+        "generation_latency_p50": 1877.0,
+        "generation_latency_p95": 8752.149999999998,
+        "iterations_mean": 6.958333333333333,
+        "latency_p50": 1939.0,
+        "latency_p95": 8785.549999999997,
+        "n": 24,
+        "retrieval_latency_p50": 31.5,
+        "retrieval_latency_p95": 70.1,
+        "tokens_mean": 1080.4583333333333,
+        "tokens_out_mean": 180.125
+      },
+      "verification": {
+        "answer_citations_unreferenced": 108,
+        "answer_claim_checks": 99,
+        "answer_claims_supported": 56,
+        "answer_claims_unsupported": 43,
+        "answer_consistency_checks": 1,
+        "answer_consistency_mismatches": 0,
+        "n_answerable": 23,
+        "n_semantic_uncertainty": 23,
+        "n_verified": 1,
+        "verification_version": "verification-v2",
+        "verified_rate": 0.043478260869565216
+      }
+    }
+  },
+  "n_arms": 2,
+  "n_questions": 24,
+  "spot_check": {
+    "disagreement": 0.016666666666666666,
+    "method": "mechanical-rejudge (judge self-consistency)",
+    "n_claims_compared": 60,
+    "performed": true,
+    "reason": "the disagreement measured here is the judge's SELF-CONSISTENCY: the same versioned prompt was re-sent to the same backend over the same evidence. It is NOT the builder's human re-scoring that evaluation.md §4 asks for, and a builder re-score would be a different measurement.",
+    "sample": [
+      "q001",
+      "q002",
+      "q003",
+      "q004",
+      "q005",
+      "q006",
+      "q007",
+      "q008",
+      "q009",
+      "q010"
+    ],
+    "sample_size": 10,
+    "threshold": 0.15,
+    "valid": true
+  }
+}
