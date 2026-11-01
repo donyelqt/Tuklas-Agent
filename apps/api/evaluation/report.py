@@ -726,12 +726,14 @@ V2_VERIFICATION_NOTE = (
     "the rule being strict. answer_semantic_uncertainty counts the rows whose "
     "checks could NOT decide - a check the cited evidence is silent about "
     "scores neither a pass nor a mismatch - so a low uncertainty rate is not a "
-    "high-confidence verdict either. The gate does NOT require a gold node to "
-    "be cited: whether the right provision was retrieved is a retrieval "
-    "question reported as Recall@5 above, and folding it into answer_verified "
-    "would make one number answer two questions."
+    "high-confidence verdict either. Invented quantities counts the claims "
+    "that name a unit the cited node never states while discussing the same "
+    "class, so it catches a number the citation cannot back. The gate does "
+    "NOT require a gold node to be cited: whether the right provision was "
+    "retrieved is a retrieval question reported as Recall@5 above, and "
+    "folding it into answer_verified would make one number answer two "
+    "questions."
 )
-
 
 
 #: The note about the INSTRUMENT and the STORE STATE, for a reader who holds
@@ -1099,9 +1101,7 @@ def _arm_lines(name: str, aggregates: dict[str, Any]) -> list[str]:
     n_unanswerable = generation.get("n_unanswerable")
     if isinstance(n_unanswerable, int) and n_unanswerable:
         score = generation.get("abstention_score")
-        refused = (
-            round(float(score) * n_unanswerable) if isinstance(score, int | float) else None
-        )
+        refused = round(float(score) * n_unanswerable) if isinstance(score, int | float) else None
         if refused is not None:
             lines.append(
                 f"    abstention: {refused} of {n_unanswerable} unanswerable "
@@ -1159,6 +1159,10 @@ def _verification_lines(name: str, verification: dict[str, Any]) -> list[str]:
     lines.append(
         f"    consistency: checks={verification.get('answer_consistency_checks', 0)} "
         f"mismatches={verification.get('answer_consistency_mismatches', 0)}"
+    )
+    lines.append(
+        f"    invented quantities: checks={verification.get('answer_numeric_unsupported_checks', 0)} "
+        f"unsupported={verification.get('answer_numeric_unsupported', 0)}"
     )
     lines.append(
         f"    citations unreferenced: {verification.get('answer_citations_unreferenced', 0)}"
@@ -1352,7 +1356,9 @@ def render_report(
         )
     lines.append(f"  split                : {dataset_name} (snapshot {dataset_snapshot})")
     lines.append(f"  split seed           : {split_seed}")
-    lines.append(f"  model / backend      : {config_body.get('model')} / {config_body.get('backend')}")
+    lines.append(
+        f"  model / backend      : {config_body.get('model')} / {config_body.get('backend')}"
+    )
     lines.append(
         f"  temperature / seed   : {config_body.get('temperature')} / {config_body.get('seed')}"
     )
@@ -1369,7 +1375,9 @@ def render_report(
         f"change to the harness does not change them"
     )
     lines.append(f"  config id            : {config.get('config_id')}")
-    lines.append(f"  weights              : {json.dumps(config_body.get('weights'), sort_keys=True)}")
+    lines.append(
+        f"  weights              : {json.dumps(config_body.get('weights'), sort_keys=True)}"
+    )
     lines.append(f"  normalization        : {config_body.get('normalization')}")
     lines.append(f"  fuzzy threshold      : {config_body.get('fuzzy_threshold')}")
     lines.append(f"  stoplist version     : {config_body.get('stoplist_version')}")
@@ -1447,9 +1455,7 @@ def render_report(
             # re-judge, and the report must not let the reader assume
             # otherwise.
             method = str(spot_check.get("method") or "unnamed")
-            lines.append(
-                f"  method: {method}"
-            )
+            lines.append(f"  method: {method}")
             lines.append(
                 f"  sample: {spot_check.get('sample_size')} answers, "
                 f"{spot_check.get('n_claims_compared')} claims re-scored"
@@ -1462,8 +1468,7 @@ def render_report(
         else:
             lines.append(f"  NOT PERFORMED: {spot_check.get('reason')}")
             lines.append(
-                "  An unmeasured disagreement is not 0% disagreement; it is an "
-                "open measurement."
+                "  An unmeasured disagreement is not 0% disagreement; it is an " "open measurement."
             )
         lines.append("")
         for line in _wrap(SPOT_CHECK_METHOD_NOTE, 74):
