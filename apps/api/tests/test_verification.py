@@ -113,6 +113,78 @@ def test_numeric_check_is_undecided_without_a_node_quantity() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Quantities the node's own quantities cannot back
+# ---------------------------------------------------------------------------
+
+
+def test_numeric_unsupported_flags_a_family_the_node_never_states() -> None:
+    """The node speaks of durations and never mentions the sentence's unit."""
+    node = "Laws shall take effect after thirty days following publication."
+    assert verification.numeric_unsupported("within fifteen hours", node) == (1, 1)
+
+
+def test_numeric_unsupported_is_silent_when_the_node_states_that_family() -> None:
+    """A family the node states is the numeric check's, whatever the value."""
+    assert verification.numeric_unsupported("within fifteen days", ARTICLE_2.text) == (0, 0)
+    assert verification.numeric_unsupported("within thirty days", ARTICLE_2.text) == (0, 0)
+
+
+def test_numeric_unsupported_is_silent_without_a_shared_class() -> None:
+    """Different classes: the node is off-subject, which is the support check's job."""
+    assert verification.numeric_unsupported(
+        "a fine of 5000 pesos is imposed.", "The interest rate is twenty percent."
+    ) == (0, 0)
+    assert verification.numeric_unsupported(
+        "within fifteen hours", "The interest rate is twenty percent."
+    ) == (0, 0)
+
+
+def test_numeric_unsupported_is_silent_when_the_node_states_no_quantity() -> None:
+    """A node that states nothing cannot be shown to discuss the class."""
+    assert verification.numeric_unsupported("within fifteen hours", ARTICLE_3.text) == (0, 0)
+
+
+def test_claim_records_a_quantity_the_node_cannot_back() -> None:
+    """The invented quantity reaches the claim record and fails its consistency."""
+    node = verification.EvidenceNode(
+        node_id="n",
+        title="Article 2.",
+        text="Laws shall take effect after thirty days following publication.",
+    )
+    claim = verification.verify_claim(1, "Laws take effect within fifteen hours", node)
+    assert (claim.numeric_unsupported_checks, claim.numeric_unsupported) == (1, 1)
+    assert claim.numeric_checks == 1
+    assert claim.numeric_mismatches == 1
+    assert claim.numeric_unsupported == 1
+    assert not claim.consistent
+
+
+def test_invented_quantity_fails_the_gate() -> None:
+    """The claim's wording is the node's, and one of its numbers is not."""
+    node = verification.EvidenceNode(
+        node_id="n",
+        title="Article 2.",
+        text=("Within fifteen days following publication, a fine of 5000 pesos " "is imposed."),
+    )
+    outcome = verification.verify_answer(
+        answerable=True,
+        insufficient=False,
+        answer_markdown="Within fifteen hours following publication, a fine of 5000 pesos is imposed [1].",
+        citations=[_cited(1, node)],
+        evidence={node.node_id: node},
+    )
+    assert outcome.n_numeric_unsupported == 1
+    assert outcome.n_numeric_unsupported_checks == 1
+    assert outcome.n_numeric_mismatches == 1
+    assert not outcome.verified
+
+
+def test_verification_version_is_v3() -> None:
+    """A new rule is a different rule set, so the version travels with it."""
+    assert verification.VERIFICATION_VERSION == "verification-v3"
+
+
+# ---------------------------------------------------------------------------
 # Article identifiers
 # ---------------------------------------------------------------------------
 
